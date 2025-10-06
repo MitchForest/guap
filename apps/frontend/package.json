@@ -1,0 +1,32 @@
+{
+  "name": "@guap/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "solid-devtools": "^0.34.3",
+    "tailwindcss": "^4.1.14",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9",
+    "vite-plugin-solid": "^2.11.9"
+  },
+  "dependencies": {
+    "@tanstack/form-core": "^1.24.1",
+    "@tanstack/solid-form": "^1.23.5",
+    "@tanstack/solid-router": "^1.132.41",
+    "@tanstack/solid-table": "^8.21.3",
+    "clsx": "^2.1.1",
+    "convex": "catalog:",
+    "solid-js": "^1.9.9",
+    "solid-motionone": "^1.0.4",
+    "solid-ui": "^2.6.1"
+  }
+}

@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+
+catalog:
+  '@tanstack/form-core': ^1.24.1
+  '@tanstack/solid-form': ^1.23.5
+  '@tanstack/solid-router': ^1.132.41
+  '@tanstack/solid-table': ^8.21.3
+  clsx: ^2.1.1
+  convex: ^1.27.3
+  solid-motionone: ^1.0.4
+  solid-ui: ^2.6.1

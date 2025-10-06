@@ -1,0 +1,34 @@
+@import 'tailwindcss';
+@import './styles/tokens.css';
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--surface);
+  color: #0f172a;
+}
+
+#root {
+  display: contents;
+}
+
+.bg-dot-grid {
+  background-color: var(--canvas-bg-color);
+  background-image: radial-gradient(var(--canvas-dot-color) 1px, transparent 0);
+  background-size: 28px 28px;
+  background-position: -14px -14px;
+}

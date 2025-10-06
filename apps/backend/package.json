@@ -1,0 +1,14 @@
+{
+  "name": "@guap/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "generate": "convex codegen"
+  },
+  "dependencies": {
+    "convex": "^1.13.0"
+  }
+}

@@ -1,0 +1,24 @@
+# Node
+node_modules/
+.pnpm-store/
+
+# Build output
+apps/**/dist/
+dist/
+.vite/
+*.log
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+
+# Env
+.env*
+
+# Misc
+pnpm-debug.log*
+
+# Documentation screenshots
+.docs/get-sequence-screenshots/

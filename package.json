@@ -1,0 +1,10 @@
+{
+  "name": "@guap/monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:frontend": "pnpm --filter @guap/frontend dev",
+    "build:frontend": "pnpm --filter @guap/frontend build",
+    "serve:frontend": "pnpm --filter @guap/frontend serve"
+  }
+}
