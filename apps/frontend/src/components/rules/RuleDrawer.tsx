@@ -11,7 +11,7 @@ export type RuleDraft = {
   sourceNodeId: string;
   trigger: 'incoming' | 'scheduled';
   triggerNodeId: string | null;
-  allocations: AllocationDraft[];
+  allocations: Array<{ id: string; percentage: number; targetNodeId: string }>;
 };
 
 type RuleDrawerProps = {
@@ -88,11 +88,17 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
       return;
     }
 
+    const sanitizedAllocations = allocations().map((allocation) => ({
+      id: allocation.id,
+      percentage: allocation.percentage,
+      targetNodeId: allocation.targetNodeId!,
+    }));
+
     props.onSave({
       sourceNodeId: props.sourceNode.id,
       trigger: trigger(),
       triggerNodeId: triggerNodeId(),
-      allocations: allocations(),
+      allocations: sanitizedAllocations,
     });
     props.onClose();
   };

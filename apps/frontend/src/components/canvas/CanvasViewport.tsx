@@ -24,7 +24,7 @@ type DragPayload = {
   phase: 'start' | 'move' | 'end';
 };
 
-type ConnectStartPayload = {
+type ConnectionEventPayload = {
   nodeId: string;
   anchor: AnchorType;
   event: PointerEvent;
@@ -45,7 +45,8 @@ type CanvasViewportProps = {
   onControlsReady?: (controls: ViewportControls) => void;
   onNodeSelect?: (event: PointerEvent, nodeId: string) => void;
   onNodeDrag?: (payload: DragPayload) => void;
-  onAnchorConnectStart?: (payload: ConnectStartPayload) => void;
+  onConnectionStart?: (payload: ConnectionEventPayload) => void;
+  onConnectionTargetSelect?: (payload: ConnectionEventPayload) => void;
   onNodeOpenDrawer?: (nodeId: string) => void;
   onNodeContextMenu?: (event: PointerEvent, nodeId: string) => void;
   onMarqueeStart?: (payload: MarqueePayload) => void;
@@ -54,7 +55,9 @@ type CanvasViewportProps = {
   getRuleCount?: (nodeId: string) => number;
   connectingFrom?: { nodeId: string; anchor: AnchorType } | null;
   hoveredAnchor?: { nodeId: string; anchor: AnchorType } | null;
+  connectionMode?: boolean;
   onContainerReady?: (element: HTMLDivElement) => void;
+  describeEdge?: (edge: CanvasEdge, source: CanvasNode, target: CanvasNode) => string;
   children?: JSX.Element;
 };
 
@@ -141,7 +144,20 @@ const CanvasViewport: Component<CanvasViewportProps> = (props) => {
   const handlePointerDown: JSX.EventHandlerUnion<HTMLDivElement, PointerEvent> = (event) => {
     if (!containerRef) return;
 
-    if (event.target === containerRef) {
+    const targetElement = event.target as Element | null;
+    if (targetElement?.closest('[data-node-card="true"]') || targetElement?.closest('[data-anchor-node]')) {
+      return;
+    }
+
+    const isBackground = (() => {
+      if (!targetElement) return false;
+      if (targetElement === containerRef) return true;
+      if (targetElement instanceof HTMLElement && targetElement.dataset.canvasSurface === 'content') return true;
+      const surfaceAncestor = targetElement.closest('[data-canvas-surface="content"]');
+      return Boolean(surfaceAncestor);
+    })();
+
+    if (isBackground) {
       if (event.shiftKey) {
         const local = toLocalPoint(event);
         const world = toWorldPoint(local);
@@ -151,9 +167,10 @@ const CanvasViewport: Component<CanvasViewportProps> = (props) => {
         return;
       }
       props.onBackgroundPointerDown?.(event);
+    } else {
+      return;
     }
-
-    if (event.button !== 0 || event.target !== containerRef) return;
+    if (event.button !== 0) return;
 
     panPointerId = event.pointerId;
     panOrigin.x = event.clientX;
@@ -241,11 +258,16 @@ const CanvasViewport: Component<CanvasViewportProps> = (props) => {
     >
       <div
         class="absolute left-0 top-0 origin-top-left"
+        data-canvas-surface="content"
         style={{
           transform: `translate3d(${translate().x}px, ${translate().y}px, 0) scale(${scale()})`,
         }}
       >
-        <EdgeLayer nodes={props.nodes} edges={props.edges} />
+        <EdgeLayer
+          nodes={props.nodes}
+          edges={props.edges}
+          describeEdge={props.describeEdge}
+        />
         <For each={props.nodes}>
           {(node) => (
             <NodeCard
@@ -256,7 +278,9 @@ const CanvasViewport: Component<CanvasViewportProps> = (props) => {
               onDrag={props.onNodeDrag}
               connectingFrom={props.connectingFrom}
               hoveredAnchor={props.hoveredAnchor}
-              onAnchorConnectStart={props.onAnchorConnectStart}
+              connectionMode={props.connectionMode}
+              onConnectionStart={props.onConnectionStart}
+              onConnectionTargetSelect={props.onConnectionTargetSelect}
               onOpenDrawer={props.onNodeOpenDrawer}
               onContextMenu={props.onNodeContextMenu}
               ruleCount={props.getRuleCount?.(node.id) ?? 0}

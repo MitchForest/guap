@@ -1,7 +1,3 @@
 {
-  "project": {
-    "name": "guap",
-    "team": "local"
-  },
   "functions": "convex"
 }

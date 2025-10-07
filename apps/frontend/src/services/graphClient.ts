@@ -1,99 +1,100 @@
 import { convex } from './convexClient';
 
-const WORKSPACE_SLUG = 'demo-canvas';
-const WORKSPACE_NAME = 'Sequence Playground';
+export type WorkspaceRecord = {
+  _id: string;
+  name: string;
+  slug: string;
+};
 
-export async function ensureWorkspace() {
+type GraphPublishPayload = {
+  nodes: Array<{
+    id: string;
+    type: 'income' | 'account' | 'pod' | 'goal' | 'liability';
+    label: string;
+    icon?: string;
+    accent?: string;
+    balance?: number;
+    position: { x: number; y: number };
+  }>;
+  edges: Array<{
+    id: string;
+    sourceId: string;
+    targetId: string;
+    kind?: 'manual' | 'automation';
+    ruleId?: string;
+  }>;
+  rules: Array<{
+    id: string;
+    sourceNodeId: string;
+    trigger: 'incoming' | 'scheduled';
+    triggerNodeId?: string | null;
+    allocations: Array<{ targetNodeId: string; percentage: number }>;
+  }>;
+};
+
+const workspaceCache = new Map<string, WorkspaceRecord | null>();
+
+export async function listWorkspaces(): Promise<WorkspaceRecord[]> {
+  const result = await convex.query('workspaces:list', {});
+  return Array.isArray(result) ? (result as WorkspaceRecord[]) : [];
+}
+
+export async function ensureWorkspace(slug: string, name: string): Promise<WorkspaceRecord | null> {
   await convex.mutation('workspaces:ensure', {
-    slug: WORKSPACE_SLUG,
-    name: WORKSPACE_NAME,
+    slug,
+    name,
   });
+  const workspace = await convex.query('workspaces:getBySlug', { slug });
+  workspaceCache.set(slug, (workspace as WorkspaceRecord) ?? null);
+  return (workspace as WorkspaceRecord) ?? null;
 }
 
-export async function getWorkspace() {
-  return await convex.query('workspaces:getBySlug', { slug: WORKSPACE_SLUG });
-}
-
-export async function fetchGraph() {
-  const result = await convex.query('graph:getGraph', { slug: WORKSPACE_SLUG });
-  return result;
-}
-
-export async function watchGraph(callback: (data: any) => void) {
-  if (typeof (convex as any).watchQuery !== 'function') {
-    console.warn('Convex watchQuery not available; falling back to polling.');
-    const interval = setInterval(async () => {
-      const data = await fetchGraph();
-      callback(data);
-    }, 3000);
-    return () => clearInterval(interval);
+export async function getWorkspace(slug: string): Promise<WorkspaceRecord | null> {
+  if (workspaceCache.has(slug)) {
+    return workspaceCache.get(slug) ?? null;
   }
-
-  const unsubscribe = await (convex as any).watchQuery('graph:getGraph', { slug: WORKSPACE_SLUG }, callback);
-  return unsubscribe as () => void;
+  const workspace = await convex.query('workspaces:getBySlug', { slug });
+  workspaceCache.set(slug, (workspace as WorkspaceRecord) ?? null);
+  return (workspace as WorkspaceRecord) ?? null;
 }
 
-export async function createNode(input: {
-  type: 'income' | 'account' | 'pod' | 'goal' | 'liability';
-  label: string;
-  icon?: string;
-  accent?: string;
-  balanceCents?: number;
-  position: { x: number; y: number };
-}) {
-  const workspace = await getWorkspace();
-  if (!workspace) throw new Error('Workspace missing');
-  const id = await convex.mutation('nodes:create', {
-    workspaceId: workspace._id,
-    ...input,
-  });
-  return id;
+export async function fetchGraph(slug: string) {
+  return await convex.query('graph:getGraph', { slug });
 }
 
-export async function moveNodes(updates: Array<{ nodeId: string; position: { x: number; y: number } }>) {
-  if (updates.length === 0) return;
-  await convex.mutation('nodes:moveMany', {
-    updates: updates.map((update) => ({
-      nodeId: update.nodeId,
-      position: update.position,
+export async function publishGraph(slug: string, payload: GraphPublishPayload) {
+  return await convex.mutation('graph:publish', {
+    slug,
+    nodes: payload.nodes.map((node) => ({
+      clientId: node.id,
+      type: node.type,
+      label: node.label,
+      icon: node.icon,
+      accent: node.accent,
+      balanceCents: typeof node.balance === 'number' ? Math.round(node.balance * 100) : undefined,
+      position: node.position,
+    })),
+    edges: payload.edges.map((edge) => ({
+      clientId: edge.id,
+      sourceClientId: edge.sourceId,
+      targetClientId: edge.targetId,
+      kind: edge.kind,
+      ruleClientId: edge.ruleId,
+    })),
+    rules: payload.rules.map((rule) => ({
+      clientId: rule.id,
+      sourceClientId: rule.sourceNodeId,
+      trigger: rule.trigger,
+      triggerNodeClientId: rule.triggerNodeId ?? null,
+      allocations: rule.allocations.map((alloc) => ({
+        targetClientId: alloc.targetNodeId,
+        percentage: alloc.percentage,
+      })),
     })),
   });
 }
 
-export async function deleteNode(nodeId: string) {
-  await convex.mutation('nodes:remove', { nodeId });
-}
-
-export async function saveAutomationRule(input: {
-  sourceNodeId: string;
-  trigger: 'incoming' | 'scheduled';
-  triggerNodeId?: string | null;
-  allocations: Array<{ targetNodeId: string; percentage: number }>;
-}) {
-  const workspace = await getWorkspace();
-  if (!workspace) throw new Error('Workspace missing');
-  return await convex.mutation('rules:saveAutomation', {
-    workspaceId: workspace._id,
-    sourceNodeId: input.sourceNodeId,
-    trigger: input.trigger,
-    triggerNodeId: input.triggerNodeId ?? null,
-    allocations: input.allocations,
-  });
-}
-
-export async function createEdge(input: {
-  sourceNodeId: string;
-  targetNodeId: string;
-  kind?: 'manual' | 'automation';
-  ruleId?: string;
-}) {
-  const workspace = await getWorkspace();
-  if (!workspace) throw new Error('Workspace missing');
-  await convex.mutation('edges:create', {
-    workspaceId: workspace._id,
-    sourceNodeId: input.sourceNodeId,
-    targetNodeId: input.targetNodeId,
-    kind: input.kind,
-    ruleId: input.ruleId,
-  });
+export async function deleteWorkspace(workspaceId: string) {
+  await convex.mutation('workspaces:remove', { workspaceId });
+  workspaceCache.clear();
 }

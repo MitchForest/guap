@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "pnpm --filter @guap/backend dev & pnpm --filter @guap/frontend dev",
     "dev:frontend": "pnpm --filter @guap/frontend dev",
+    "dev:backend": "pnpm --filter @guap/backend dev",
     "build:frontend": "pnpm --filter @guap/frontend build",
     "serve:frontend": "pnpm --filter @guap/frontend serve"
   }

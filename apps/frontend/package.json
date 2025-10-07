@@ -7,14 +7,22 @@
     "start": "vite",
     "dev": "vite",
     "build": "vite build",
-    "serve": "vite preview"
+    "serve": "vite preview",
+    "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "license": "MIT",
   "devDependencies": {
+    "@eslint/compat": "catalog:",
+    "@eslint/js": "catalog:",
     "@tailwindcss/vite": "^4.1.14",
+    "@typescript-eslint/eslint-plugin": "catalog:",
+    "@typescript-eslint/parser": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-solid": "catalog:",
     "solid-devtools": "^0.34.3",
     "tailwindcss": "^4.1.14",
     "typescript": "^5.9.3",
+    "typescript-eslint": "catalog:",
     "vite": "^7.1.9",
     "vite-plugin-solid": "^2.11.9"
   },

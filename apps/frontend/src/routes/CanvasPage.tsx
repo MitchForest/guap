@@ -1,4 +1,5 @@
-import { Component, JSX, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
+import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, on } from 'solid-js';
+import { Motion } from 'solid-motionone';
 import { createStore } from 'solid-js/store';
 import CanvasViewport, { DragPayload, ViewportControls } from '../components/canvas/CanvasViewport';
 import { CanvasEdge, CanvasNode } from '../types/graph';
@@ -11,16 +12,15 @@ import NodeDrawer from '../components/nodes/NodeDrawer';
 import IncomeSourceModal from '../components/create/IncomeSourceModal';
 import PodModal from '../components/create/PodModal';
 import AccountTypeModal, { AccountOption } from '../components/create/AccountTypeModal';
-import RuleDrawer, { RuleDraft } from '../components/rules/RuleDrawer';
+import RuleDrawer from '../components/rules/RuleDrawer';
+import Modal from '../components/ui/Modal';
 import {
   ensureWorkspace,
   fetchGraph,
-  createNode as createNodeMutation,
-  moveNodes as moveNodesMutation,
-  deleteNode as deleteNodeMutation,
-  saveAutomationRule as saveAutomationRuleMutation,
-  createEdge,
-  watchGraph,
+  publishGraph,
+  listWorkspaces,
+  deleteWorkspace,
+  type WorkspaceRecord,
 } from '../services/graphClient';
 
 const GRID_SIZE = 28;
@@ -49,192 +49,6 @@ const dockMenuItems: DockMenuItem[] = [
   },
 ];
 
-const demoNodes: CanvasNode[] = [
-  {
-    id: 'allowance',
-    type: 'income',
-    label: 'Allowance',
-    icon: '🏦',
-    balance: 820,
-    accent: '#2563eb',
-    position: { x: 520, y: 60 },
-  },
-  {
-    id: 'savings',
-    type: 'account',
-    label: 'Savings',
-    icon: '💰',
-    balance: 40,
-    accent: '#f97316',
-    position: { x: 320, y: 252 },
-  },
-  {
-    id: 'checking',
-    type: 'account',
-    label: 'Checking',
-    icon: '🧾',
-    balance: 440,
-    accent: '#1d4ed8',
-    position: { x: 520, y: 252 },
-  },
-  {
-    id: 'credit-card',
-    type: 'liability',
-    label: 'Credit Card',
-    icon: '💳',
-    balance: 790,
-    accent: '#f59e0b',
-    position: { x: 720, y: 252 },
-  },
-  {
-    id: 'brokerage',
-    type: 'account',
-    label: 'Brokerage Account',
-    icon: '📈',
-    balance: 680,
-    accent: '#16a34a',
-    position: { x: 920, y: 252 },
-  },
-  {
-    id: 'vacation',
-    type: 'goal',
-    label: 'Vacation',
-    icon: '🏖️',
-    balance: 420,
-    accent: '#a855f7',
-    position: { x: 220, y: 440 },
-  },
-  {
-    id: 'college',
-    type: 'goal',
-    label: 'College Tuition',
-    icon: '🎓',
-    balance: 890,
-    accent: '#6366f1',
-    position: { x: 370, y: 440 },
-  },
-  {
-    id: 'needs',
-    type: 'pod',
-    label: 'Needs',
-    icon: '🧺',
-    balance: 520,
-    accent: '#0ea5e9',
-    position: { x: 520, y: 440 },
-  },
-  {
-    id: 'wants',
-    type: 'pod',
-    label: 'Wants',
-    icon: '🎯',
-    balance: 190,
-    accent: '#ec4899',
-    position: { x: 720, y: 440 },
-  },
-];
-
-const demoEdges: CanvasEdge[] = [
-  {
-    id: 'allowance-to-savings',
-    sourceId: 'allowance',
-    targetId: 'savings',
-    kind: 'automation',
-    ruleId: 'rule-allowance-main',
-  },
-  {
-    id: 'allowance-to-checking',
-    sourceId: 'allowance',
-    targetId: 'checking',
-    kind: 'automation',
-    ruleId: 'rule-allowance-main',
-  },
-  {
-    id: 'allowance-to-credit',
-    sourceId: 'allowance',
-    targetId: 'credit-card',
-    kind: 'automation',
-    ruleId: 'rule-allowance-main',
-  },
-  {
-    id: 'checking-to-needs',
-    sourceId: 'checking',
-    targetId: 'needs',
-    kind: 'automation',
-    ruleId: 'rule-checking-distribute',
-  },
-  {
-    id: 'checking-to-wants',
-    sourceId: 'checking',
-    targetId: 'wants',
-    kind: 'automation',
-    ruleId: 'rule-checking-distribute',
-  },
-  {
-    id: 'savings-to-vacation',
-    sourceId: 'savings',
-    targetId: 'vacation',
-    kind: 'automation',
-    ruleId: 'rule-savings-goals',
-  },
-  {
-    id: 'savings-to-college',
-    sourceId: 'savings',
-    targetId: 'college',
-    kind: 'automation',
-    ruleId: 'rule-savings-goals',
-  },
-  {
-    id: 'credit-to-brokerage',
-    sourceId: 'credit-card',
-    targetId: 'brokerage',
-    kind: 'automation',
-    ruleId: 'rule-credit-invest',
-  },
-];
-
-const demoRules: RuleRecord[] = [
-  {
-    id: 'rule-allowance-main',
-    sourceNodeId: 'allowance',
-    trigger: 'incoming',
-    triggerNodeId: 'allowance',
-    allocations: [
-      { targetNodeId: 'savings', percentage: 25 },
-      { targetNodeId: 'checking', percentage: 50 },
-      { targetNodeId: 'credit-card', percentage: 25 },
-    ],
-  },
-  {
-    id: 'rule-checking-distribute',
-    sourceNodeId: 'checking',
-    trigger: 'incoming',
-    triggerNodeId: 'checking',
-    allocations: [
-      { targetNodeId: 'needs', percentage: 60 },
-      { targetNodeId: 'wants', percentage: 40 },
-    ],
-  },
-  {
-    id: 'rule-savings-goals',
-    sourceNodeId: 'savings',
-    trigger: 'incoming',
-    triggerNodeId: 'savings',
-    allocations: [
-      { targetNodeId: 'vacation', percentage: 70 },
-      { targetNodeId: 'college', percentage: 30 },
-    ],
-  },
-  {
-    id: 'rule-credit-invest',
-    sourceNodeId: 'credit-card',
-    trigger: 'incoming',
-    triggerNodeId: 'credit-card',
-    allocations: [
-      { targetNodeId: 'brokerage', percentage: 100 },
-    ],
-  },
-];
-
 type Snapshot = {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
@@ -244,14 +58,112 @@ type Snapshot = {
 
 const HISTORY_CAP = 50;
 
+const WORKSPACE_STORAGE_KEY = 'guap:workspace-slug';
+
+const ChevronDownIcon = () => (
+  <svg
+    class="ml-2 h-4 w-4 text-slate-400"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+);
+
+const ExitIcon = () => (
+  <svg
+    class="h-4 w-4"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M15 6l6 6-6 6" />
+    <path d="M21 12H9" />
+    <path d="M9 5H5a2 2 0 00-2 2v10a2 2 0 002 2h4" />
+  </svg>
+);
+
+const DeleteIcon = () => (
+  <svg
+    class="h-4 w-4"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 6h18" />
+    <path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2" />
+    <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+    <path d="M10 11v6" />
+    <path d="M14 11v6" />
+  </svg>
+);
+
+const SaveIcon = () => (
+  <svg
+    class="h-4 w-4"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M5 21h14a2 2 0 002-2V7.828a2 2 0 00-.586-1.414l-3.828-3.828A2 2 0 0015.172 2H5a2 2 0 00-2 2v15a2 2 0 002 2z" />
+    <path d="M9 21v-6h6v6" />
+    <path d="M9 5h6v4H9z" />
+  </svg>
+);
+
+const createId = () =>
+  typeof globalThis.crypto !== 'undefined' && 'randomUUID' in globalThis.crypto
+    ? globalThis.crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+
 type DragState = {
   nodeIds: string[];
   startPositions: Record<string, { x: number; y: number }>;
 };
 
-type RuleRecord = RuleDraft & { id: string };
+type RuleAllocationRecord = {
+  id: string;
+  targetNodeId: string;
+  percentage: number;
+};
+
+type RuleRecord = {
+  id: string;
+  sourceNodeId: string;
+  trigger: 'incoming' | 'scheduled';
+  triggerNodeId: string | null;
+  allocations: RuleAllocationRecord[];
+};
 
 const CanvasPage: Component = () => {
+  const [workspaces, setWorkspaces] = createSignal<WorkspaceRecord[]>([]);
+  const [workspaceSlug, setWorkspaceSlug] = createSignal<string | null>(null);
+  const [workspaceModal, setWorkspaceModal] = createSignal<'create' | 'delete' | null>(null);
+  const [workspaceDraftName, setWorkspaceDraftName] = createSignal('');
+  const [workspaceToDelete, setWorkspaceToDelete] = createSignal<WorkspaceRecord | null>(null);
+  const [initializingWorkspace, setInitializingWorkspace] = createSignal(true);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = createSignal(false);
+  let workspaceMenuRef: HTMLDivElement | undefined;
+let workspaceMenuButtonRef: HTMLButtonElement | undefined;
+let drawerContainerRef: HTMLDivElement | undefined;
+
   const [graph, setGraph] = createStore<{ nodes: CanvasNode[]; edges: CanvasEdge[] }>({
     nodes: [],
     edges: [],
@@ -265,7 +177,6 @@ const CanvasPage: Component = () => {
     | {
         sourceNodeId: string;
         sourceAnchor: AnchorType;
-        pointerId: number;
         sourcePoint: { x: number; y: number };
         cursorPoint: { x: number; y: number };
       }
@@ -281,6 +192,7 @@ const CanvasPage: Component = () => {
   const [ruleDrawer, setRuleDrawer] = createSignal<{ sourceNodeId: string } | null>(null);
   const [rules, setRules] = createSignal<RuleRecord[]>([]);
   const [showHero, setShowHero] = createSignal(true);
+  const [saving, setSaving] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
   const [history, setHistory] = createSignal<Snapshot[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(-1);
@@ -293,6 +205,75 @@ const CanvasPage: Component = () => {
         currentWorld: { x: number; y: number };
       }
   >(null);
+  const [placementIndex, setPlacementIndex] = createSignal(0);
+  const [hasChanges, setHasChanges] = createSignal(false);
+  const currentWorkspace = createMemo(() => {
+    const slug = workspaceSlug();
+    return workspaces().find((item) => item.slug === slug) ?? null;
+  });
+
+  const resetWorkspaceState = () => {
+    setGraph('nodes', () => []);
+    setGraph('edges', () => []);
+    setRules([]);
+    setSelectedIds([]);
+    setDrawerNodeId(null);
+    setRuleDrawer(null);
+    setMarquee(null);
+    cancelConnection();
+    setPlacementIndex(0);
+    setHistory([]);
+    setHistoryIndex(-1);
+    setHasChanges(false);
+    setShowHero(true);
+  };
+
+  const loadWorkspaces = async () => {
+    const list = await listWorkspaces();
+    setWorkspaces(list);
+    return list;
+  };
+
+  const openCreateWorkspace = () => {
+    setWorkspaceDraftName('');
+    setWorkspaceMenuOpen(false);
+    setWorkspaceModal('create');
+  };
+
+  const handleWorkspaceCreate = async (event: Event) => {
+    event.preventDefault();
+    const name = workspaceDraftName().trim() || 'Untitled Workspace';
+    const slug = `workspace-${createId()}`;
+
+    await ensureWorkspace(slug, name);
+    await loadWorkspaces();
+    setWorkspaceSlug(slug);
+    setWorkspaceModal(null);
+    setWorkspaceDraftName('');
+    setWorkspaceMenuOpen(false);
+  };
+
+  const handleWorkspaceDelete = async () => {
+    const workspace = workspaceToDelete();
+    if (!workspace) return;
+
+    await deleteWorkspace(workspace._id);
+    const list = await loadWorkspaces();
+    const currentSlugValue = workspaceSlug();
+    if (currentSlugValue === workspace.slug) {
+      const nextSlug = list[0]?.slug ?? null;
+      setWorkspaceSlug(nextSlug);
+    }
+
+    setWorkspaceToDelete(null);
+    setWorkspaceModal(null);
+
+    if (list.length === 0) {
+      openCreateWorkspace();
+    }
+
+    setWorkspaceMenuOpen(false);
+  };
 
   const cloneSnapshot = (snap: Snapshot): Snapshot => ({
     nodes: snap.nodes.map((node) => ({ ...node, position: { ...node.position } })),
@@ -316,6 +297,7 @@ const CanvasPage: Component = () => {
     const clone = cloneSnapshot(snap);
     setHistory([clone]);
     setHistoryIndex(0);
+    setHasChanges(false);
   };
 
   const pushHistory = (snap?: Snapshot) => {
@@ -329,6 +311,7 @@ const CanvasPage: Component = () => {
       setHistoryIndex(limited.length - 1);
       return limited;
     });
+    setHasChanges(true);
   };
 
   const applySnapshot = (snap: Snapshot) => {
@@ -422,14 +405,33 @@ const CanvasPage: Component = () => {
       });
     return parts.join(', ');
   };
+
+  const ruleById = createMemo(() => {
+    const map = new Map<string, RuleRecord>();
+    rules().forEach((rule) => map.set(rule.id, rule));
+    return map;
+  });
+
+  const describeEdge = (edge: CanvasEdge, source: CanvasNode, target: CanvasNode) => {
+    if (edge.kind === 'automation') {
+      const rule = edge.ruleId ? ruleById().get(edge.ruleId) : undefined;
+      if (rule) {
+        const allocations = rule.allocations
+          .filter((alloc) => alloc.targetNodeId === target.id)
+          .map((alloc) => `${alloc.percentage}%`);
+        const allocationSegment = allocations.length ? ` (${allocations.join(', ')})` : '';
+        const triggerLabel = rule.trigger === 'scheduled' ? 'Scheduled automation' : 'Automation';
+        return `${triggerLabel}${allocationSegment} from ${source.label} to ${target.label}`;
+      }
+      return `Automation from ${source.label} to ${target.label}`;
+    }
+    return `Manual connection from ${source.label} to ${target.label}`;
+  };
   const ruleSourceNode = createMemo(() => {
     const id = ruleDrawer()?.sourceNodeId;
     if (!id) return null;
     return graph.nodes.find((node) => node.id === id) ?? null;
   });
-
-  let graphUnsubscribe: (() => void) | null = null;
-  let historyPrimed = false;
 
   onMount(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -477,7 +479,7 @@ const CanvasPage: Component = () => {
 
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedIds().length) {
         event.preventDefault();
-        deleteSelectedNodes().catch((error) => console.error('Failed to delete nodes', error));
+        deleteSelectedNodes();
         return;
       }
 
@@ -492,32 +494,29 @@ const CanvasPage: Component = () => {
 
     (async () => {
       try {
-        await ensureWorkspace();
-        let data = await fetchGraph();
-        if (!data || !(data.nodes?.length > 0)) {
-          await seedDemoWorkspace();
-          data = await fetchGraph();
-        }
-        if (data) {
-          hydrateGraph(data, { primeHistory: true });
-          historyPrimed = true;
-        }
+        const list = await loadWorkspaces();
+        const savedSlug =
+          typeof window !== 'undefined' ? window.localStorage.getItem(WORKSPACE_STORAGE_KEY) : null;
+        const hasSaved = savedSlug && list.some((workspace) => workspace.slug === savedSlug);
+        const initialSlug = hasSaved ? savedSlug : list[0]?.slug ?? null;
 
-        graphUnsubscribe = await watchGraph((payload) => {
-          if (!payload) return;
-          const prime = !historyPrimed;
-          hydrateGraph(payload, { primeHistory: prime });
-          if (prime) historyPrimed = true;
-        });
+        if (initialSlug) {
+          setWorkspaceSlug(initialSlug);
+        } else {
+          setLoading(false);
+          setWorkspaceModal('create');
+        }
       } catch (error) {
-        console.error('Failed to load Convex graph', error);
+        console.error('Failed to load workspaces', error);
+        setWorkspaceModal('create');
         setLoading(false);
+      } finally {
+        setInitializingWorkspace(false);
       }
     })();
 
     onCleanup(() => {
       window.removeEventListener('keydown', handleKeyDown);
-      graphUnsubscribe?.();
     });
   });
 
@@ -552,7 +551,8 @@ const CanvasPage: Component = () => {
     sourceNodeId: String(rule.sourceNodeId),
     trigger: rule.triggerType,
     triggerNodeId: rule.triggerNodeId ? String(rule.triggerNodeId) : null,
-    allocations: (allocationsByRule.get(String(rule._id)) ?? []).map((alloc: any) => ({
+    allocations: (allocationsByRule.get(String(rule._id)) ?? []).map((alloc: any, index: number) => ({
+      id: alloc._id ? String(alloc._id) : `${rule._id}-alloc-${index}`,
       targetNodeId: String(alloc.targetNodeId),
       percentage: alloc.percentage,
     })),
@@ -562,6 +562,7 @@ const CanvasPage: Component = () => {
   setGraph('edges', edges);
   setRules(ruleRecords);
   setShowHero(nodes.length === 0);
+  setPlacementIndex(nodes.length);
   if (options.primeHistory) {
     const initialSelection = nodes.length ? [nodes[0].id] : [];
     replaceHistory({
@@ -573,50 +574,110 @@ const CanvasPage: Component = () => {
     setSelectedIds(initialSelection);
   } else {
     setSelectedIds((current) => {
-      const valid = current.filter((id) => nodes.some((node) => node.id === id));
+      const valid = current.filter((id) => nodes.some((node: CanvasNode) => node.id === id));
       if (valid.length > 0) return valid;
       return current.length ? current : nodes.length ? [nodes[0].id] : [];
     });
   }
-  setLoading(false);
   };
 
-  const seedDemoWorkspace = async () => {
-    try {
-      await ensureWorkspace();
-      const idMap = new Map<string, string>();
-      for (const node of demoNodes) {
-        const nodeId = await createNodeMutation({
-          type: node.type,
-          label: node.label,
-          icon: node.icon,
-          accent: node.accent,
-          balanceCents: typeof node.balance === 'number' ? Math.round(node.balance * 100) : undefined,
-          position: node.position,
-        });
-        idMap.set(node.id, nodeId);
-      }
+  createEffect(
+    on(
+      () => workspaceSlug(),
+      (slug) => {
+        if (initializingWorkspace()) return;
 
-    for (const rule of demoRules) {
-        const sourceId = idMap.get(rule.sourceNodeId);
-        if (!sourceId) continue;
-        await saveAutomationRuleMutation({
-          sourceNodeId: sourceId,
-          trigger: rule.trigger,
-          triggerNodeId: rule.triggerNodeId ? idMap.get(rule.triggerNodeId) ?? sourceId : sourceId,
-          allocations: rule.allocations
-            .map((alloc) => {
-              const targetId = idMap.get(alloc.targetNodeId);
-              if (!targetId) return null;
-              return { targetNodeId: targetId, percentage: alloc.percentage };
-            })
-            .filter((alloc): alloc is { targetNodeId: string; percentage: number } => Boolean(alloc)),
-        });
-      }
-    } catch (error) {
-      console.error('Failed to seed workspace', error);
+        if (!slug) {
+          resetWorkspaceState();
+          setLoading(false);
+          return;
+        }
+
+        const slugSnapshot = slug;
+        const workspaceName = currentWorkspace()?.name ?? slugSnapshot;
+
+        resetWorkspaceState();
+        setLoading(true);
+
+        (async () => {
+          try {
+            await ensureWorkspace(slugSnapshot, workspaceName);
+            const data = await fetchGraph(slugSnapshot);
+            if (workspaceSlug() !== slugSnapshot) return;
+
+        if (data && data.nodes?.length) {
+          hydrateGraph(data, { primeHistory: true });
+          setHasChanges(false);
+        } else {
+          resetWorkspaceState();
+        }
+          } catch (error) {
+            if (workspaceSlug() === slugSnapshot) {
+              console.error('Failed to load workspace graph', error);
+              resetWorkspaceState();
+            }
+          } finally {
+            if (workspaceSlug() === slugSnapshot) {
+              setLoading(false);
+            }
+          }
+        })();
+      },
+      { defer: true },
+    ),
+  );
+
+  createEffect(() => {
+    const slug = workspaceSlug();
+    if (typeof window === 'undefined') return;
+    if (slug) {
+      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, slug);
+    } else {
+      window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
     }
-  };
+  });
+
+  createEffect(() => {
+    if (!workspaceMenuOpen()) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (workspaceMenuRef?.contains(target) || workspaceMenuButtonRef?.contains(target as HTMLElement)) {
+        return;
+      }
+      setWorkspaceMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setWorkspaceMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    onCleanup(() => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    });
+  });
+
+  createEffect(() => {
+    if (!drawerOpen()) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (drawerContainerRef?.contains(target as HTMLElement)) return;
+      setDrawerNodeId(null);
+      setRuleDrawer(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDrawerNodeId(null);
+        setRuleDrawer(null);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+    onCleanup(() => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    });
+  });
 
   let viewportControls: ViewportControls | undefined;
   let viewportElement: HTMLDivElement | undefined;
@@ -638,9 +699,24 @@ const CanvasPage: Component = () => {
     });
   };
 
-  const clearSelection = () => setSelectedIds([]);
+  const clearSelection = () => {
+    if (connectingEdge()) {
+      console.log('[connect] clearSelection cancels connection');
+      cancelConnection();
+      return;
+    }
+    setSelectedIds([]);
+  };
 
   const handleNodeSelect = (event: PointerEvent, nodeId: string) => {
+    if (connectingEdge()) {
+      console.log('[connect] node select ignored during connection', {
+        nodeId,
+      });
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
     const multiSelect = event.shiftKey || event.metaKey || event.ctrlKey;
     ensureSelection(nodeId, multiSelect);
   };
@@ -702,28 +778,52 @@ const CanvasPage: Component = () => {
           return node ? { nodeId: id, position: node.position } : null;
         })
         .filter((value): value is { nodeId: string; position: { x: number; y: number } } => Boolean(value));
-      try {
-        if (updates.length) {
-          await moveNodesMutation(updates);
-        }
-      } catch (error) {
-        console.error('Failed to persist node move', error);
+      if (updates.length) {
+        pushHistory();
       }
-      pushHistory();
     }
   };
 
-  const translatePointerToWorld = (event: PointerEvent) => {
+  const translateClientToWorld = (clientX: number, clientY: number) => {
     if (!viewportElement) return null;
     const { scale, translate } = viewportState();
     const rect = viewportElement.getBoundingClientRect();
-    const x = (event.clientX - rect.left - translate.x) / scale;
-    const y = (event.clientY - rect.top - translate.y) / scale;
+    const x = (clientX - rect.left - translate.x) / scale;
+    const y = (clientY - rect.top - translate.y) / scale;
     return { x, y };
   };
 
-  const findAnchorAtPoint = (event: PointerEvent) => {
-    let element = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+  const translatePointerToWorld = (event: PointerEvent) =>
+    translateClientToWorld(event.clientX, event.clientY);
+
+  const updateConnectionCursor = (clientX: number, clientY: number) => {
+    const active = connectingEdge();
+    if (!active) return;
+    const basePoint = translateClientToWorld(clientX, clientY);
+    if (!basePoint) return;
+    let cursorPoint = basePoint;
+    const anchor = findAnchorAtClientPoint(clientX, clientY);
+    if (anchor && anchor.anchor === 'top' && anchor.nodeId !== active.sourceNodeId) {
+      const targetNode = graph.nodes.find((n) => n.id === anchor.nodeId);
+      if (targetNode) {
+        cursorPoint = getAnchorPoint(targetNode, 'top');
+        setHoveredAnchor(anchor);
+        console.log('[connect] cursor over target anchor', {
+          sourceNodeId: active.sourceNodeId,
+          targetNodeId: anchor.nodeId,
+        });
+      } else {
+        console.log('[connect] anchor node not found during cursor update', anchor);
+        setHoveredAnchor(null);
+      }
+    } else {
+      setHoveredAnchor(null);
+    }
+    setConnectingEdge((prev) => (prev ? { ...prev, cursorPoint } : prev));
+  };
+
+  const findAnchorAtClientPoint = (clientX: number, clientY: number) => {
+    let element = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
     while (element) {
       const nodeId = element.dataset.anchorNode;
       const anchorType = element.dataset.anchorType as AnchorType | undefined;
@@ -735,77 +835,138 @@ const CanvasPage: Component = () => {
     return null;
   };
 
-  const removeGlobalPointerListeners = () => {
-    window.removeEventListener('pointermove', handleGlobalPointerMove, true);
-    window.removeEventListener('pointerup', handleGlobalPointerUp, true);
+  const findAnchorAtPoint = (event: PointerEvent) => findAnchorAtClientPoint(event.clientX, event.clientY);
+
+  const findNodeCardAtClientPoint = (clientX: number, clientY: number) => {
+    const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const nodeCard = element?.closest('[data-node-card-id]') as HTMLElement | null;
+    const nodeId = nodeCard?.dataset.nodeCardId;
+    return nodeId ?? null;
   };
 
   const handleGlobalPointerMove = (event: PointerEvent) => {
-    const active = connectingEdge();
-    if (!active || event.pointerId !== active.pointerId) return;
-    const basePoint = translatePointerToWorld(event);
-    if (!basePoint) return;
-    let cursorPoint = basePoint;
-    const anchor = findAnchorAtPoint(event);
-    if (anchor && anchor.anchor === 'top' && anchor.nodeId !== active.sourceNodeId) {
-      const targetNode = graph.nodes.find((n) => n.id === anchor.nodeId);
-      if (targetNode) {
-        cursorPoint = getAnchorPoint(targetNode, 'top');
-        setHoveredAnchor(anchor);
-      } else {
-        setHoveredAnchor(null);
-      }
-    } else {
-      setHoveredAnchor(null);
-    }
-    setConnectingEdge((prev) => (prev ? { ...prev, cursorPoint } : prev));
+    updateConnectionCursor(event.clientX, event.clientY);
   };
 
-  const handleGlobalPointerUp = (event: PointerEvent) => {
-    const active = connectingEdge();
-    if (!active || event.pointerId !== active.pointerId) return;
-    event.preventDefault();
-    const anchor = findAnchorAtPoint(event);
-    if (anchor && anchor.anchor === 'top' && anchor.nodeId !== active.sourceNodeId) {
-      const exists = graph.edges.some(
-        (edge) => edge.sourceId === active.sourceNodeId && edge.targetId === anchor.nodeId
-      );
-      if (!exists) {
-        const id = `${active.sourceNodeId}-${anchor.nodeId}-${Date.now()}`;
-        setGraph('edges', (edges) => [
-          ...edges,
-          { id, sourceId: active.sourceNodeId, targetId: anchor.nodeId, kind: 'manual' },
-        ]);
-        pushHistory();
-        createEdge({
-          sourceNodeId: active.sourceNodeId,
-          targetNodeId: anchor.nodeId,
-          kind: 'manual',
-        }).catch((error) => console.error('Failed to persist edge', error));
-      }
+  function handleConnectionKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      cancelConnection();
+    }
+  }
+
+  const handleGlobalMouseMove = (event: MouseEvent) => {
+    updateConnectionCursor(event.clientX, event.clientY);
+  };
+
+  function removeGlobalPointerListeners() {
+    window.removeEventListener('pointermove', handleGlobalPointerMove, true);
+    window.removeEventListener('pointermove', handleGlobalPointerMove);
+    window.removeEventListener('keydown', handleConnectionKeyDown);
+    window.removeEventListener('mousemove', handleGlobalMouseMove, true);
+    window.removeEventListener('mousemove', handleGlobalMouseMove);
+  }
+
+  function ensureConnectionListeners() {
+    removeGlobalPointerListeners();
+    window.addEventListener('pointermove', handleGlobalPointerMove, true);
+    window.addEventListener('pointermove', handleGlobalPointerMove);
+    window.addEventListener('keydown', handleConnectionKeyDown);
+    window.addEventListener('mousemove', handleGlobalMouseMove, true);
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+  }
+
+  function cancelConnection() {
+    if (connectingEdge()) {
+      console.log('[connect] cancel connection', connectingEdge());
+      console.trace('[connect] cancel stack');
     }
     setConnectingEdge(null);
     setHoveredAnchor(null);
     removeGlobalPointerListeners();
-  };
+  }
 
-  const handleAnchorConnectStart = (payload: { nodeId: string; anchor: AnchorType; event: PointerEvent }) => {
-    if (connectingEdge()) return;
+  function completeConnection(targetNodeId: string) {
+    const active = connectingEdge();
+    if (!active) return;
+    console.log('[connect] attempt complete', {
+      sourceNodeId: active.sourceNodeId,
+      targetNodeId,
+    });
+    if (targetNodeId === active.sourceNodeId) {
+      console.log('[connect] abort self-connection', targetNodeId);
+      cancelConnection();
+      return;
+    }
+    const exists = graph.edges.some(
+      (edge) => edge.sourceId === active.sourceNodeId && edge.targetId === targetNodeId
+    );
+    if (!exists) {
+      const id = `${active.sourceNodeId}-${targetNodeId}-${Date.now()}`;
+      setGraph('edges', (edges) => [
+        ...edges,
+        { id, sourceId: active.sourceNodeId, targetId: targetNodeId, kind: 'manual' },
+      ]);
+      pushHistory();
+      console.log('[connect] edge created', { id, sourceId: active.sourceNodeId, targetId: targetNodeId });
+      console.log('[connect] edges now', graph.edges.map((edge) => edge.id));
+    } else {
+      console.log('[connect] edge already exists', {
+        sourceNodeId: active.sourceNodeId,
+        targetNodeId,
+      });
+    }
+    cancelConnection();
+  }
+
+  const handleConnectionStart = (payload: { nodeId: string; anchor: AnchorType; event: PointerEvent }) => {
     if (payload.anchor !== 'bottom') return;
+    const existing = connectingEdge();
+    if (existing) {
+      if (existing.sourceNodeId === payload.nodeId && existing.sourceAnchor === payload.anchor) {
+        console.log('[connect] duplicate connector press ignored', existing);
+        return;
+      }
+      console.log('[connect] switching source node', {
+        previous: existing.sourceNodeId,
+        next: payload.nodeId,
+      });
+      cancelConnection();
+    }
     const node = graph.nodes.find((n) => n.id === payload.nodeId);
     if (!node) return;
     const sourcePoint = getAnchorPoint(node, payload.anchor);
+    const initialCursor = translatePointerToWorld(payload.event) ?? sourcePoint;
     setConnectingEdge({
       sourceNodeId: payload.nodeId,
       sourceAnchor: payload.anchor,
-      pointerId: payload.event.pointerId,
       sourcePoint,
-      cursorPoint: sourcePoint,
+      cursorPoint: initialCursor,
     });
     setHoveredAnchor(null);
-    removeGlobalPointerListeners();
-    window.addEventListener('pointermove', handleGlobalPointerMove, true);
-    window.addEventListener('pointerup', handleGlobalPointerUp, true);
+    ensureConnectionListeners();
+    updateConnectionCursor(payload.event.clientX, payload.event.clientY);
+    console.log('[connect] connection mode entered', {
+      sourceNodeId: payload.nodeId,
+      sourcePoint,
+    });
+  };
+
+  const handleConnectionTargetSelect = (payload: {
+    nodeId: string;
+    anchor: AnchorType;
+    event: PointerEvent;
+  }) => {
+    if (payload.anchor !== 'top') return;
+    const node = graph.nodes.find((n) => n.id === payload.nodeId);
+    if (!node) return;
+    const targetPoint = getAnchorPoint(node, payload.anchor);
+    setConnectingEdge((prev) => (prev ? { ...prev, cursorPoint: targetPoint } : prev));
+    setHoveredAnchor({ nodeId: payload.nodeId, anchor: 'top' });
+    console.log('[connect] target selected', {
+      nodeId: payload.nodeId,
+      anchor: payload.anchor,
+    });
+    completeConnection(payload.nodeId);
   };
 
   const handleMarqueeStart = (payload: {
@@ -923,7 +1084,15 @@ const CanvasPage: Component = () => {
     accent: string;
     balance?: number;
   }) => {
+    const slug = workspaceSlug();
+    if (!slug) {
+      openCreateWorkspace();
+      return;
+    }
     if (!viewportElement) return;
+    if (graph.nodes.length === 0) {
+      viewportControls?.reset();
+    }
     const { scale, translate } = viewportState();
     const rect = viewportElement.getBoundingClientRect();
     const worldCenter = {
@@ -931,43 +1100,41 @@ const CanvasPage: Component = () => {
       y: (rect.height / 2 - translate.y) / scale,
     };
 
+    const index = placementIndex();
+    const columns = 2;
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const spacingX = NODE_CARD_WIDTH + GRID_SIZE * 2;
+    const spacingY = NODE_CARD_HEIGHT + GRID_SIZE * 2;
+
     const position = {
-      x: snapToGrid(worldCenter.x - 104),
-      y: snapToGrid(worldCenter.y - 66),
+      x: snapToGrid(worldCenter.x - NODE_CARD_WIDTH / 2 + col * spacingX),
+      y: snapToGrid(worldCenter.y - NODE_CARD_HEIGHT / 2 + row * spacingY),
     };
 
-    try {
-      const nodeId = await createNodeMutation({
-        type: preset.type,
-        label: preset.label,
-        icon: preset.icon,
-        accent: preset.accent,
-        balanceCents:
-          typeof preset.balance === 'number' ? Math.round(preset.balance * 100) : undefined,
-        position,
-      });
+    const newNodeId = `node-${createId()}`;
+    const newNode: CanvasNode = {
+      id: newNodeId,
+      type: preset.type,
+      label: preset.label,
+      icon: preset.icon,
+      accent: preset.accent,
+      balance: preset.balance,
+      position,
+    };
 
-      const newNode: CanvasNode = {
-        id: nodeId,
-        type: preset.type,
-        label: preset.label,
-        icon: preset.icon,
-        accent: preset.accent,
-        balance: preset.balance,
-        position,
-      };
-
-      setGraph('nodes', (nodes) => [...nodes, newNode]);
-      setSelectedIds([newNode.id]);
-      setDrawerNodeId(newNode.id);
-      setShowHero(false);
-      pushHistory();
-    } catch (error) {
-      console.error('Failed to create node', error);
-    }
+    setGraph('nodes', (nodes) => [...nodes, newNode]);
+    setSelectedIds([newNode.id]);
+    setShowHero(false);
+    setPlacementIndex(index + 1);
+    pushHistory();
   };
 
   const handleCreateMenuSelect = (item: DockMenuItem) => {
+    if (!workspaceSlug()) {
+      openCreateWorkspace();
+      return;
+    }
     if (item.id === 'automation') {
       const sourceId = selectedIds()[0] ?? graph.nodes.find((node) => node.type === 'income')?.id;
       if (!sourceId) return;
@@ -980,52 +1147,53 @@ const CanvasPage: Component = () => {
     setCreateModal(item.id as 'income' | 'pod' | 'account');
   };
 
-  const duplicateNode = async (nodeId: string) => {
+  const duplicateNode = (nodeId: string) => {
     const original = graph.nodes.find((node) => node.id === nodeId);
     if (!original) return;
     const position = {
       x: snapToGrid(original.position.x + GRID_SIZE * 2),
       y: snapToGrid(original.position.y + GRID_SIZE * 2),
     };
-    try {
-      const nodeIdCreated = await createNodeMutation({
-        type: original.type,
-        label: `${original.label} Copy`,
-        icon: original.icon,
-        accent: original.accent,
-        balanceCents:
-          typeof original.balance === 'number' ? Math.round(original.balance * 100) : undefined,
-        position,
-      });
-
-      const newNode: CanvasNode = {
-        ...original,
-        id: nodeIdCreated,
-        label: `${original.label} Copy`,
-        position,
-      };
-      setGraph('nodes', (nodes) => [...nodes, newNode]);
-      setSelectedIds([newNode.id]);
-      setDrawerNodeId(newNode.id);
-      pushHistory();
-    } catch (error) {
-      console.error('Failed to duplicate node', error);
-    }
+    const newNode: CanvasNode = {
+      ...original,
+      id: `node-${createId()}`,
+      label: `${original.label} Copy`,
+      position,
+    };
+    setGraph('nodes', (nodes) => [...nodes, newNode]);
+    setSelectedIds([newNode.id]);
+    pushHistory();
+    setPlacementIndex((prev) => prev + 1);
   };
 
-  const deleteNode = async (nodeId: string, options: { skipHistory?: boolean } = {}) => {
-    try {
-      await deleteNodeMutation(nodeId);
-    } catch (error) {
-      console.error('Failed to delete node', error);
-    }
+  const deleteNode = (nodeId: string, options: { skipHistory?: boolean } = {}) => {
     setGraph('nodes', (nodes) => {
       const filtered = nodes.filter((node) => node.id !== nodeId);
       if (filtered.length === 0) setShowHero(true);
+      if (filtered.length === 0) {
+        setPlacementIndex(0);
+      }
       return filtered;
     });
     setGraph('edges', (edges) => edges.filter((edge) => edge.sourceId !== nodeId && edge.targetId !== nodeId));
-    setRules((existing) => existing.filter((rule) => rule.sourceNodeId !== nodeId));
+    setRules((existing) =>
+      existing
+        .map((rule) => {
+          if (rule.sourceNodeId === nodeId) return null;
+
+          const allocations = rule.allocations.filter((alloc) => alloc.targetNodeId !== nodeId);
+          if (allocations.length === 0) return null;
+
+          const triggerNodeId = rule.triggerNodeId === nodeId ? rule.sourceNodeId : rule.triggerNodeId;
+
+          return {
+            ...rule,
+            triggerNodeId,
+            allocations,
+          };
+        })
+        .filter((value): value is RuleRecord => Boolean(value))
+    );
     setSelectedIds((ids) => ids.filter((id) => id !== nodeId));
     if (drawerNodeId() === nodeId) {
       setDrawerNodeId(null);
@@ -1035,23 +1203,23 @@ const CanvasPage: Component = () => {
     }
   };
 
-  const handleContextMenuAction = async (action: 'details' | 'duplicate' | 'delete') => {
+  const handleContextMenuAction = (action: 'details' | 'duplicate' | 'delete') => {
     const menu = contextMenu();
     if (!menu) return;
     if (action === 'details') {
       handleNodeOpenDrawer(menu.nodeId);
     } else if (action === 'duplicate') {
-      await duplicateNode(menu.nodeId);
+      duplicateNode(menu.nodeId);
     } else {
-      await deleteNode(menu.nodeId);
+      deleteNode(menu.nodeId);
     }
     setContextMenu(null);
   };
 
-  const deleteSelectedNodes = async () => {
+  const deleteSelectedNodes = () => {
     const ids = selectedIds();
     if (!ids.length) return;
-    await Promise.all(ids.map((id) => deleteNode(id, { skipHistory: true })));
+    ids.forEach((id) => deleteNode(id, { skipHistory: true }));
     setSelectedIds([]);
     setContextMenu(null);
     pushHistory();
@@ -1059,8 +1227,140 @@ const CanvasPage: Component = () => {
 
   const drawerOpen = createMemo(() => Boolean(drawerNode()) || Boolean(ruleDrawer()));
 
+  const handleSave = async () => {
+    const slug = workspaceSlug();
+    if (!slug || saving() || !hasChanges()) return;
+    setSaving(true);
+    try {
+      const result = await publishGraph(slug, {
+        nodes: graph.nodes,
+        edges: graph.edges,
+        rules: rules(),
+      });
+
+      const nodeMap = new Map<string, string>(Object.entries(result.nodes ?? {}));
+      const ruleMap = new Map<string, string>(Object.entries(result.rules ?? {}));
+      const edgeMap = new Map<string, string>(Object.entries(result.edges ?? {}));
+
+      setGraph('nodes', (nodes) =>
+        nodes.map((node) => {
+          const newId = nodeMap.get(node.id);
+          return newId ? { ...node, id: newId } : node;
+        })
+      );
+
+      setGraph('edges', (edges) =>
+        edges.map((edge) => {
+          const newId = edgeMap.get(edge.id);
+          return {
+            ...edge,
+            id: newId ?? edge.id,
+            sourceId: nodeMap.get(edge.sourceId) ?? edge.sourceId,
+            targetId: nodeMap.get(edge.targetId) ?? edge.targetId,
+            ruleId: edge.ruleId ? ruleMap.get(edge.ruleId) ?? edge.ruleId : edge.ruleId,
+          };
+        })
+      );
+
+      setRules((existing) =>
+        existing.map((rule) => ({
+          ...rule,
+          id: ruleMap.get(rule.id) ?? rule.id,
+          sourceNodeId: nodeMap.get(rule.sourceNodeId) ?? rule.sourceNodeId,
+          triggerNodeId: rule.triggerNodeId
+            ? nodeMap.get(rule.triggerNodeId) ?? rule.triggerNodeId
+            : rule.triggerNodeId,
+          allocations: rule.allocations.map((alloc) => ({
+            id: alloc.id,
+            targetNodeId: nodeMap.get(alloc.targetNodeId) ?? alloc.targetNodeId,
+            percentage: alloc.percentage,
+          })),
+        }))
+      );
+
+      setSelectedIds((ids) => ids.map((id) => nodeMap.get(id) ?? id));
+      setPlacementIndex(graph.nodes.length);
+      setShowHero(graph.nodes.length === 0);
+      replaceHistory(snapshotGraph());
+    } catch (error) {
+      console.error('Failed to save graph', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExit = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.location.href = '/';
+    }
+  };
+
   return (
     <div class="relative h-full w-full" classList={{ 'pr-[360px]': drawerOpen() }}>
+      <div class="pointer-events-none absolute left-6 top-6 z-40 flex items-center gap-2">
+        <Show
+          when={!initializingWorkspace()}
+          fallback={
+            <span class="pointer-events-auto rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
+              Loading workspaces…
+            </span>
+          }
+        >
+          <div class="pointer-events-auto flex items-center gap-2">
+            <div class="relative">
+              <button
+                ref={(el) => (workspaceMenuButtonRef = el)}
+                type="button"
+                class="flex h-9 min-w-0 max-w-[240px] items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/20 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setWorkspaceMenuOpen((open) => !open)}
+                disabled={workspaces().length === 0}
+              >
+                <span class="min-w-0 flex-1 truncate">
+                  {currentWorkspace()?.name ?? 'Select workspace'}
+                </span>
+                <ChevronDownIcon />
+              </button>
+              <Show when={workspaceMenuOpen()}>
+                <div
+                  ref={(el) => (workspaceMenuRef = el)}
+                  class="absolute left-0 top-full z-50 mt-2 w-64 rounded-2xl border border-slate-200 bg-white shadow-floating"
+                >
+                  <div class="max-h-64 overflow-y-auto py-1">
+                    <Show when={workspaces().length > 0} fallback={<p class="px-4 py-3 text-xs text-subtle">No workspaces yet.</p>}>
+                      <For each={workspaces()}>
+                        {(workspace) => (
+                          <button
+                            type="button"
+                            class="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                            onClick={() => {
+                              setWorkspaceSlug(workspace.slug);
+                              setWorkspaceMenuOpen(false);
+                            }}
+                          >
+                            <span>{workspace.name}</span>
+                            <Show when={workspaceSlug() === workspace.slug}>
+                              <span class="text-xs text-slate-500">Selected</span>
+                            </Show>
+                          </button>
+                        )}
+                      </For>
+                    </Show>
+                  </div>
+                </div>
+              </Show>
+            </div>
+            <button
+              type="button"
+              class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-base font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+              onClick={openCreateWorkspace}
+            >
+              ＋
+            </button>
+          </div>
+        </Show>
+      </div>
       <CanvasViewport
         nodes={nodes()}
         edges={edges()}
@@ -1078,15 +1378,18 @@ const CanvasPage: Component = () => {
         }}
         onNodeSelect={handleNodeSelect}
         onNodeDrag={handleNodeDrag}
-        onAnchorConnectStart={handleAnchorConnectStart}
+        onConnectionStart={handleConnectionStart}
+        onConnectionTargetSelect={handleConnectionTargetSelect}
         onNodeOpenDrawer={handleNodeOpenDrawer}
         onNodeContextMenu={handleNodeContextMenu}
         onMarqueeStart={handleMarqueeStart}
         onMarqueeUpdate={handleMarqueeUpdate}
         onMarqueeEnd={handleMarqueeEnd}
         getRuleCount={getRuleCount}
+        describeEdge={describeEdge}
         connectingFrom={connectingFrom()}
         hoveredAnchor={hoveredAnchor()}
+        connectionMode={Boolean(connectingEdge())}
         selectionOverlay={marqueeOverlay()}
       >
         {connectingPreview()}
@@ -1096,6 +1399,10 @@ const CanvasPage: Component = () => {
           <div class="pointer-events-auto h-full w-full">
             <EmptyHero
               onCreate={() => {
+                if (!workspaceSlug()) {
+                  openCreateWorkspace();
+                  return;
+                }
                 setShowHero(false);
                 setCreateModal('income');
               }}
@@ -1103,6 +1410,42 @@ const CanvasPage: Component = () => {
           </div>
         </div>
       </Show>
+      <div class="pointer-events-none absolute right-6 top-6 z-10 flex items-center gap-2">
+        <button
+          type="button"
+          class="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+          onClick={handleExit}
+        >
+          <ExitIcon />
+          Exit
+        </button>
+        <button
+          type="button"
+          class="pointer-events-auto flex items-center gap-2 rounded-full border border-rose-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm transition hover:border-rose-300 hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-200/40 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!currentWorkspace()}
+          onClick={() => {
+            const workspace = currentWorkspace();
+            if (!workspace) {
+              openCreateWorkspace();
+              return;
+            }
+            setWorkspaceToDelete(workspace);
+            setWorkspaceModal('delete');
+          }}
+        >
+          <DeleteIcon />
+          Delete
+        </button>
+        <button
+          type="button"
+          class="pointer-events-auto flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-floating transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/40 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:opacity-70"
+          onClick={handleSave}
+          disabled={!workspaceSlug() || saving() || !hasChanges()}
+        >
+          <SaveIcon />
+          {saving() ? 'Saving…' : 'Save'}
+        </button>
+      </div>
       <Show when={contextMenu()}>
         {(menu) => (
           <div class="absolute z-30" style={{ left: `${menu().x}px`, top: `${menu().y}px` }}>
@@ -1114,72 +1457,77 @@ const CanvasPage: Component = () => {
           </div>
         )}
       </Show>
-      <Show when={drawerNode()}>
-        {(node) => (
-          <div class="absolute right-0 top-0 z-20 h-full w-[360px] border-l border-slate-200/70 bg-white">
-            <NodeDrawer
-              node={node()}
-              onClose={() => setDrawerNodeId(null)}
-              rules={rules()
-                .filter((rule) => rule.sourceNodeId === node().id)
-                .map((rule) => ({
-                  id: rule.id,
-                  trigger: rule.trigger === 'incoming' ? 'Triggered by incoming funds' : 'Triggered by date',
-                  summary: describeRule(rule),
-                }))}
-            />
-          </div>
-        )}
-      </Show>
-      <Show when={ruleDrawer()}>
-        <div class="absolute right-0 top-0 z-30 h-full w-[360px] border-l border-slate-200/70 bg-white">
-          <RuleDrawer
-            open={Boolean(ruleDrawer())}
-            sourceNode={ruleSourceNode()}
-            nodes={graph.nodes}
-            onClose={() => setRuleDrawer(null)}
-            onSave={async (rule) => {
-              try {
-                const savedId = await saveAutomationRuleMutation({
+      <div
+        class="absolute right-0 top-0 z-40 h-full w-[360px]"
+        classList={{ 'pointer-events-none': !drawerOpen() }}
+      >
+        <Motion.div
+          class="h-full border-l border-slate-200/70 bg-white shadow-xl"
+          initial={{ x: 360, opacity: 0 }}
+          animate={{ x: drawerOpen() ? 0 : 360, opacity: drawerOpen() ? 1 : 0.4 }}
+          transition={{ duration: 0.2, easing: [0.16, 1, 0.3, 1] }}
+          ref={(el) => (drawerContainerRef = el)}
+        >
+          <Show when={drawerNode()}>
+            {(node) => (
+              <NodeDrawer
+                node={node()}
+                onClose={() => setDrawerNodeId(null)}
+                rules={rules()
+                  .filter((rule) => rule.sourceNodeId === node().id)
+                  .map((rule) => ({
+                    id: rule.id,
+                    trigger:
+                      rule.trigger === 'incoming' ? 'Triggered by incoming funds' : 'Triggered by date',
+                    summary: describeRule(rule),
+                  }))}
+              />
+            )}
+          </Show>
+          <Show when={!drawerNode() && ruleDrawer()}>
+            <RuleDrawer
+              open={Boolean(ruleDrawer())}
+              sourceNode={ruleSourceNode()}
+              nodes={graph.nodes}
+              onClose={() => setRuleDrawer(null)}
+              onSave={(rule) => {
+                const ruleId = `rule-${createId()}`;
+                const record: RuleRecord = {
+                  id: ruleId,
                   sourceNodeId: rule.sourceNodeId,
                   trigger: rule.trigger,
-                  triggerNodeId: rule.triggerNodeId,
+                  triggerNodeId: rule.triggerNodeId ?? rule.sourceNodeId,
                   allocations: rule.allocations,
-                });
-
-                const record: RuleRecord = {
-                  id: savedId as string,
-                  ...rule,
                 };
-                setRules((existing) => [...existing, record]);
+                setRules((existing) => [...existing.filter((r) => r.id !== ruleId), record]);
                 setGraph('edges', (edges) => {
                   const next = [...edges];
                   rule.allocations.forEach((alloc) => {
-                    const exists = next.some(
+                    const existing = next.find(
                       (edge) => edge.sourceId === rule.sourceNodeId && edge.targetId === alloc.targetNodeId,
                     );
-                    if (!exists) {
+                    if (existing) {
+                      existing.kind = 'automation';
+                      existing.ruleId = ruleId;
+                    } else {
                       next.push({
-                        id: `edge-${rule.sourceNodeId}-${alloc.targetNodeId}-${Date.now()}`,
+                        id: `edge-${createId()}`,
                         sourceId: rule.sourceNodeId,
                         targetId: alloc.targetNodeId,
                         kind: 'automation',
-                        ruleId: savedId as string,
+                        ruleId,
                       });
                     }
                   });
                   return next;
                 });
                 pushHistory();
-              } catch (error) {
-                console.error('Failed to save automation rule', error);
-              } finally {
                 setRuleDrawer(null);
-              }
-            }}
-          />
-        </div>
-      </Show>
+              }}
+            />
+          </Show>
+        </Motion.div>
+      </div>
       <BottomDock
         zoomPercent={scalePercent()}
         menuItems={dockMenuItems}
@@ -1219,6 +1567,89 @@ const CanvasPage: Component = () => {
           });
         }}
       />
+      <Modal
+        open={workspaceModal() === 'create'}
+        onClose={() => {
+          setWorkspaceModal(null);
+        }}
+      >
+        <form
+          class="flex w-full flex-col gap-5"
+          onSubmit={handleWorkspaceCreate}
+        >
+          <div class="space-y-1 text-center">
+            <h2 class="text-xl font-semibold text-slate-900">Create workspace</h2>
+            <p class="text-sm text-subtle">Workspaces group your nodes, edges, and rules.</p>
+          </div>
+          <div class="flex flex-col gap-3 text-left">
+            <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Name
+              <input
+                class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                placeholder="New workspace"
+                value={workspaceDraftName()}
+                onInput={(event) => {
+                  const value = event.currentTarget.value;
+                  setWorkspaceDraftName(value);
+                }}
+              />
+            </label>
+          </div>
+          <div class="flex flex-col gap-2">
+            <button
+              type="submit"
+              class="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-floating transition hover:bg-slate-800"
+            >
+              Create workspace
+            </button>
+            <button
+              type="button"
+              class="w-full rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+              onClick={() => {
+                setWorkspaceModal(null);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+      <Modal
+        open={workspaceModal() === 'delete'}
+        onClose={() => {
+          setWorkspaceModal(null);
+          setWorkspaceToDelete(null);
+        }}
+      >
+        <div class="flex w-full flex-col gap-5">
+          <div class="space-y-1 text-left">
+            <h2 class="text-xl font-semibold text-slate-900">Delete workspace</h2>
+            <p class="text-sm text-subtle">
+              This removes <strong>{workspaceToDelete()?.name ?? ''}</strong> and all associated nodes, edges,
+              and rules. This action cannot be undone.
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+              onClick={() => {
+                setWorkspaceModal(null);
+                setWorkspaceToDelete(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-semibold text-white shadow-floating transition hover:bg-rose-500"
+              onClick={handleWorkspaceDelete}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
