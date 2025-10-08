@@ -9,20 +9,21 @@ export type WorkspaceRecord = {
 type GraphPublishPayload = {
   nodes: Array<{
     id: string;
-    kind: 'income' | 'account' | 'subAccount';
+    kind: 'income' | 'account' | 'pod' | 'goal' | 'liability';
     category?: string | null;
     parentId?: string | null;
+    podType?: string | null;
     label: string;
     icon?: string;
     accent?: string;
     balance?: number;
     position: { x: number; y: number };
+    metadata?: Record<string, unknown> | null;
   }>;
   flows: Array<{
     id: string;
     sourceId: string;
     targetId: string;
-    tone: 'manual' | 'auto';
     ruleId?: string;
   }>;
   rules: Array<{
@@ -67,22 +68,38 @@ export async function fetchGraph(slug: string) {
 export async function publishGraph(slug: string, payload: GraphPublishPayload) {
   return await convex.mutation('graph:publish', {
     slug,
-    nodes: payload.nodes.map((node) => ({
-      clientId: node.id,
-      type: node.kind === 'income' ? 'income' : node.kind === 'subAccount' ? 'pod' : 'account',
-      label: node.label,
-      icon: node.icon,
-      accent: node.accent,
-      balanceCents: typeof node.balance === 'number' ? Math.round(node.balance * 100) : undefined,
-      position: node.position,
-      parentClientId: node.parentId ?? null,
-      category: node.category ?? null,
-    })),
+    nodes: payload.nodes.map((node) => {
+      const metadata: Record<string, unknown> = node.metadata ? { ...node.metadata } : {};
+      if (node.podType) metadata.podType = node.podType;
+      if (node.inflow) metadata.inflow = node.inflow;
+
+      return {
+        clientId: node.id,
+        type:
+          node.kind === 'income'
+            ? 'income'
+            : node.kind === 'pod'
+            ? 'pod'
+            : node.kind === 'goal'
+            ? 'goal'
+            : node.kind === 'liability'
+            ? 'liability'
+            : 'account',
+        label: node.label,
+        icon: node.icon,
+        accent: node.accent,
+        balanceCents: typeof node.balance === 'number' ? Math.round(node.balance * 100) : undefined,
+        position: node.position,
+        parentClientId: node.parentId ?? null,
+        category: node.category ?? null,
+        metadata: Object.keys(metadata).length ? metadata : undefined,
+      };
+    }),
     edges: payload.flows.map((flow) => ({
       clientId: flow.id,
       sourceClientId: flow.sourceId,
       targetClientId: flow.targetId,
-      kind: flow.tone === 'manual' ? 'manual' : 'automation',
+      kind: flow.ruleId ? 'automation' : 'manual',
       ruleClientId: flow.ruleId,
     })),
     rules: payload.rules.map((rule) => ({

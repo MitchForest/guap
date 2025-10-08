@@ -4,7 +4,7 @@ import { clsx } from 'clsx';
 type BottomDockProps = {
   onAddIncome?: () => void;
   onAddAccount?: () => void;
-  onAddSubAccount?: () => void;
+  onAddPod?: () => void;
   onStartFlow?: () => void;
 };
 
@@ -25,17 +25,17 @@ const BottomDock: Component<BottomDockProps> = (props) => {
   return (
     <div class="pointer-events-none absolute inset-x-0 bottom-8 flex justify-center">
       <div class={bubbleClass}>
-        <button type="button" class={primaryButton} onClick={props.onAddIncome}>
-          Income
+        <button type="button" class={primaryButton} onClick={props.onAddIncome} title="Add income source">
+          <span class="text-base">💰</span>
+          <span>Income</span>
         </button>
-        <button type="button" class={actionButton} onClick={props.onAddAccount}>
-          Account
+        <button type="button" class={actionButton} onClick={props.onAddAccount} title="Add account">
+          <span class="text-base">🏦</span>
+          <span>Account</span>
         </button>
-        <button type="button" class={actionButton} onClick={props.onAddSubAccount}>
-          Sub-account
-        </button>
-        <button type="button" class={actionButton} onClick={props.onStartFlow}>
-          Flow
+        <button type="button" class={actionButton} onClick={props.onAddPod} title="Add goal or category">
+          <span class="text-base">🎯</span>
+          <span>Pod</span>
         </button>
       </div>
     </div>

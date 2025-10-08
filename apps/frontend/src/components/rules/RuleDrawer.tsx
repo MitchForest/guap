@@ -8,6 +8,7 @@ export type AllocationDraft = {
 };
 
 export type RuleDraft = {
+  id?: string;
   sourceNodeId: string;
   trigger: 'incoming' | 'scheduled';
   triggerNodeId: string | null;
@@ -18,9 +19,12 @@ type RuleDrawerProps = {
   open: boolean;
   sourceNode: CanvasNode | null;
   nodes: CanvasNode[];
+  initialRule?: RuleDraft | null;
   onClose: () => void;
   onSave: (rule: RuleDraft) => void;
 };
+
+const ALLOCATION_TOLERANCE = 0.001;
 
 const RuleDrawer: Component<RuleDrawerProps> = (props) => {
   const [trigger, setTrigger] = createSignal<'incoming' | 'scheduled'>('incoming');
@@ -31,20 +35,26 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
   createEffect(() => {
     if (!props.open) return;
     const source = props.sourceNode;
-    setTrigger('incoming');
-    setTriggerNodeId(source ? source.id : null);
-    setAllocations([
-      {
-        id: `alloc-${Date.now()}`,
-        percentage: 50,
-        targetNodeId: null,
-      },
-      {
-        id: `alloc-${Date.now()}-b`,
-        percentage: 50,
-        targetNodeId: null,
-      },
-    ]);
+    const initial = props.initialRule ?? null;
+    setTrigger(initial?.trigger ?? 'incoming');
+    setTriggerNodeId(initial?.triggerNodeId ?? (source ? source.id : null));
+    if (initial) {
+      setAllocations(
+        initial.allocations.map((allocation) => ({
+          id: allocation.id,
+          percentage: allocation.percentage,
+          targetNodeId: allocation.targetNodeId,
+        }))
+      );
+    } else {
+      setAllocations([
+        {
+          id: `alloc-${Date.now()}`,
+          percentage: 100,
+          targetNodeId: null,
+        },
+      ]);
+    }
     setError(null);
   });
 
@@ -79,7 +89,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
       return;
     }
     const remaining = remainingPercent();
-    if (remaining !== 0) {
+    if (Math.abs(remaining) > ALLOCATION_TOLERANCE) {
       setError('Allocation must total 100%.');
       return;
     }
@@ -95,6 +105,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
     }));
 
     props.onSave({
+      id: props.initialRule?.id,
       sourceNodeId: props.sourceNode.id,
       trigger: trigger(),
       triggerNodeId: triggerNodeId(),
@@ -189,11 +200,13 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                           value={allocation.percentage}
                           min={0}
                           max={100}
-                          onInput={(event) =>
+                          onInput={(event) => {
+                            const next = Number(event.currentTarget.value);
+                            const sanitized = Number.isFinite(next) ? next : 0;
                             updateAllocation(allocation.id, {
-                              percentage: Number(event.currentTarget.value),
-                            })
-                          }
+                              percentage: sanitized,
+                            });
+                          }}
                         />
                       </div>
                       <span class="text-sm text-slate-500">To</span>

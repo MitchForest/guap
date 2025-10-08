@@ -1,4 +1,13 @@
-export type CanvasNodeKind = 'income' | 'account' | 'subAccount';
+export type CanvasNodeKind = 'income' | 'account' | 'pod' | 'goal' | 'liability';
+
+export type CanvasPodType = 'goal' | 'category' | 'envelope' | 'custom';
+
+export type CanvasInflowCadence = 'daily' | 'weekly' | 'monthly';
+
+export type CanvasInflow = {
+  amount: number;
+  cadence: CanvasInflowCadence;
+};
 
 export type CanvasAccountCategory =
   | 'checking'
@@ -21,23 +30,25 @@ export type CanvasNode = {
   label: string;
   category?: CanvasAccountCategory;
   parentId?: string | null;
+  podType?: CanvasPodType | null;
   balance?: number;
+  inflow?: CanvasInflow | null;
+  returnRate?: number;
   icon?: string;
   accent?: string;
   position: { x: number; y: number };
+  metadata?: Record<string, unknown> | null;
 };
-
-export type CanvasFlowTone = 'manual' | 'auto';
 
 export type CanvasFlow = {
   id: string;
   sourceId: CanvasNode['id'];
   targetId: CanvasNode['id'];
-  tone: CanvasFlowTone;
   tag?: string;
   amountCents?: number;
   note?: string;
   ruleId?: string;
+  percentage?: number;
 };
 
 export type CanvasGraph = {

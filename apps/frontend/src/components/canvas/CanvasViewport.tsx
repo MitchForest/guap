@@ -10,7 +10,7 @@ import {
 } from 'solid-js';
 import { CanvasFlow, CanvasNode } from '../../types/graph';
 import EdgeLayer from './EdgeLayer';
-import NodeCard, { AnchorType } from './NodeCard';
+import NodeCard, { AnchorType, NodeAllocationStatus } from './NodeCard';
 
 type ViewportControls = {
   zoomIn: () => void;
@@ -59,6 +59,7 @@ type CanvasViewportProps = {
   connectionMode?: boolean;
   onContainerReady?: (element: HTMLDivElement) => void;
   describeFlow?: (flow: CanvasFlow, source: CanvasNode, target: CanvasNode) => string;
+  allocationStatuses?: Map<string, NodeAllocationStatus>;
   children?: JSX.Element;
 };
 
@@ -289,6 +290,7 @@ const CanvasViewport: Component<CanvasViewportProps> = (props) => {
               onOpenDrawer={props.onNodeOpenDrawer}
               onContextMenu={props.onNodeContextMenu}
               ruleCount={props.getRuleCount?.(node.id) ?? 0}
+              allocationStatus={props.allocationStatuses?.get(node.id) ?? null}
             />
           )}
         </For>

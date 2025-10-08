@@ -68,7 +68,7 @@ const EdgeLayer: Component<EdgeLayerProps> = (props) => {
             return { path, description };
           });
 
-          const isAuto = flow.tone === 'auto';
+          const isAuto = Boolean(flow.ruleId);
           const strokeColor = isAuto ? '#0891b2' : '#475569';
           const strokeWidth = isAuto ? 2.5 : 3.5;
           const strokeDash = isAuto ? '10 6' : undefined;

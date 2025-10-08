@@ -2,7 +2,9 @@ import { Component, For, Match, Show, Switch, createEffect, createMemo, createSi
 import { Motion } from 'solid-motionone';
 import { createStore } from 'solid-js/store';
 import CanvasViewport, { DragPayload, ViewportControls } from '../components/canvas/CanvasViewport';
-import { CanvasFlow, CanvasNode } from '../types/graph';
+import type { NodeAllocationStatus } from '../components/canvas/NodeCard';
+import { CanvasFlow, CanvasNode, CanvasInflow, CanvasInflowCadence, CanvasPodType } from '../types/graph';
+import { simulateGraph, type SimulationResult } from '../utils/simulation';
 import BottomDock from '../components/layout/BottomDock';
 import ZoomPad from '../components/layout/ZoomPad';
 import { AnchorType, NODE_CARD_HEIGHT, NODE_CARD_WIDTH } from '../components/canvas/NodeCard';
@@ -141,6 +143,44 @@ type FlowComposerState =
       cursorPoint: { x: number; y: number };
     };
 
+type AllocationHealth = 'missing' | 'under' | 'over' | 'complete';
+
+type AllocationIssue = {
+  nodeId: string;
+  label: string;
+  total: number;
+  state: AllocationHealth;
+};
+
+const ALLOCATION_TOLERANCE = 0.001;
+
+const getDefaultReturnRate = (node: { kind: CanvasNode['kind']; category?: CanvasNode['category']; podType?: CanvasNode['podType'] | null }) => {
+  if (node.kind === 'account') {
+    if (node.category === 'brokerage') return 0.1;
+    if (node.category === 'savings') return 0.04;
+  }
+  if (node.kind === 'goal' && node.podType === 'goal') {
+    return 0.04;
+  }
+  return 0;
+};
+
+const currencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 2,
+});
+
+const formatMonths = (value: number | null) => {
+  if (value === null) return 'Not reached';
+  if (value === 0) return 'Now';
+  const years = Math.floor(value / 12);
+  const months = value % 12;
+  const yearSegment = years > 0 ? `${years} yr${years === 1 ? '' : 's'}` : '';
+  const monthSegment = months > 0 ? `${months} mo${months === 1 ? '' : 's'}` : '';
+  return [yearSegment, monthSegment].filter(Boolean).join(' ').trim();
+};
+
 const CanvasPage: Component = () => {
   const [workspaces, setWorkspaces] = createSignal<WorkspaceRecord[]>([]);
   const [workspaceSlug, setWorkspaceSlug] = createSignal<string | null>(null);
@@ -170,7 +210,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
     null
   );
   const [createModal, setCreateModal] = createSignal<'income' | 'pod' | 'account' | null>(null);
-  const [subAccountParentId, setSubAccountParentId] = createSignal<string | null>(null);
+  const [podParentId, setPodParentId] = createSignal<string | null>(null);
   const [ruleDrawer, setRuleDrawer] = createSignal<{ sourceNodeId: string } | null>(null);
   const [rules, setRules] = createSignal<RuleRecord[]>([]);
   const [showHero, setShowHero] = createSignal(true);
@@ -178,6 +218,12 @@ let drawerContainerRef: HTMLDivElement | undefined;
   const [loading, setLoading] = createSignal(true);
   const [history, setHistory] = createSignal<Snapshot[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(-1);
+  const [simulationSettings, setSimulationSettings] = createSignal({ horizonYears: 10 });
+  const [simulationResult, setSimulationResult] = createSignal<SimulationResult | null>(null);
+  const [simulationError, setSimulationError] = createSignal<string | null>(null);
+  const [simulationMenuOpen, setSimulationMenuOpen] = createSignal(false);
+  let simulationMenuRef: HTMLDivElement | undefined;
+  let simulationButtonRef: HTMLButtonElement | undefined;
   const [marquee, setMarquee] = createSignal<
     | null
     | {
@@ -383,21 +429,93 @@ let drawerContainerRef: HTMLDivElement | undefined;
     rules().forEach((rule) => map.set(rule.id, rule));
     return map;
   });
+  const rulesBySource = createMemo(() => {
+    const map = new Map<string, RuleRecord>();
+    rules().forEach((rule) => map.set(rule.sourceNodeId, rule));
+    return map;
+  });
+
+  const allocationStatuses = createMemo<Map<string, NodeAllocationStatus>>(() => {
+    const map = new Map<string, NodeAllocationStatus>();
+    const incomes = graph.nodes.filter((node) => node.kind === 'income');
+    const totals = new Map<string, { total: number; hasRule: boolean }>();
+    incomes.forEach((income) => totals.set(income.id, { total: 0, hasRule: false }));
+
+    rules().forEach((rule) => {
+      const entry = totals.get(rule.sourceNodeId);
+      if (!entry) return;
+      entry.hasRule = true;
+      const sum = rule.allocations.reduce((acc, allocation) => acc + allocation.percentage, 0);
+      entry.total += sum;
+    });
+
+    incomes.forEach((income) => {
+      const entry = totals.get(income.id) ?? { total: 0, hasRule: false };
+      let state: AllocationHealth = 'missing';
+      if (!entry.hasRule) {
+        state = 'missing';
+      } else if (entry.total > 100 + ALLOCATION_TOLERANCE) {
+        state = 'over';
+      } else if (entry.total < 100 - ALLOCATION_TOLERANCE) {
+        state = 'under';
+      } else {
+        state = 'complete';
+      }
+      map.set(income.id, { state, total: entry.total });
+    });
+
+    return map;
+  });
+
+  const allocationIssues = createMemo<AllocationIssue[]>(() => {
+    const statuses = allocationStatuses();
+    return graph.nodes
+      .filter((node) => node.kind === 'income')
+      .map((node) => {
+        const status = statuses.get(node.id);
+        return {
+          nodeId: node.id,
+          label: node.label,
+          total: status?.total ?? 0,
+          state: status?.state ?? 'missing',
+        } satisfies AllocationIssue;
+      })
+      .filter((issue) => issue.state !== 'complete');
+  });
+
+  const allocationIssueMessage = createMemo(() => {
+    const issues = allocationIssues();
+    if (issues.length === 0) return null;
+    if (issues.length === 1) {
+      const issue = issues[0];
+      const rounded = Math.round(issue.total * 10) / 10;
+      switch (issue.state) {
+        case 'missing':
+          return `${issue.label} needs an allocation rule before you can save.`;
+        case 'under':
+          return `${issue.label} is only ${rounded}% allocated. Allocations must total 100%.`;
+        case 'over':
+          return `${issue.label} exceeds 100% allocation (${rounded}%). Adjust the rule before saving.`;
+      }
+    }
+    return 'Complete allocations for every income source before saving.';
+  });
+  const ruleForDrawer = createMemo(() => {
+    const sourceId = ruleDrawer()?.sourceNodeId;
+    if (!sourceId) return null;
+    return rulesBySource().get(sourceId) ?? null;
+  });
 
   const describeFlow = (flow: CanvasFlow, source: CanvasNode, target: CanvasNode) => {
-    if (flow.tone === 'auto') {
-      const rule = flow.ruleId ? ruleById().get(flow.ruleId) : undefined;
-      if (rule) {
-        const allocations = rule.allocations
-          .filter((alloc) => alloc.targetNodeId === target.id)
-          .map((alloc) => `${alloc.percentage}%`);
-        const allocationSegment = allocations.length ? ` (${allocations.join(', ')})` : '';
-        const triggerLabel = rule.trigger === 'scheduled' ? 'Scheduled automation' : 'Automation';
-        return `${triggerLabel}${allocationSegment} from ${source.label} to ${target.label}`;
-      }
-      return `Automation from ${source.label} to ${target.label}`;
+    const rule = flow.ruleId ? ruleById().get(flow.ruleId) : undefined;
+    if (rule) {
+      const allocations = rule.allocations
+        .filter((alloc) => alloc.targetNodeId === target.id)
+        .map((alloc) => `${alloc.percentage}%`);
+      const allocationSegment = allocations.length ? ` (${allocations.join(', ')})` : '';
+      return `Flow${allocationSegment} from ${source.label} to ${target.label}`;
     }
-    return `Manual connection from ${source.label} to ${target.label}`;
+    return `Flow from ${source.label} to ${target.label}`;
   };
   const ruleSourceNode = createMemo(() => {
     const id = ruleDrawer()?.sourceNodeId;
@@ -495,19 +613,47 @@ let drawerContainerRef: HTMLDivElement | undefined;
   const hydrateGraph = (data: any, options: { primeHistory?: boolean } = {}) => {
     const nodes = (data.nodes ?? []).map((node: any) => {
       const type = node.type ?? 'account';
-      const kind: CanvasNode['kind'] = type === 'income' ? 'income' : type === 'pod' || type === 'goal' ? 'subAccount' : 'account';
-      const category = node.category ?? (type === 'income' ? undefined : type === 'liability' ? 'creditCard' : undefined);
+      let kind: CanvasNode['kind'];
+      switch (type) {
+        case 'income':
+          kind = 'income';
+          break;
+        case 'pod':
+          kind = 'pod';
+          break;
+        case 'goal':
+          kind = 'goal';
+          break;
+        case 'liability':
+          kind = 'liability';
+          break;
+        default:
+          kind = 'account';
+      }
+      const category = node.category ?? (type === 'liability' ? 'creditCard' : undefined);
+      const metadata = (node.metadata ?? null) as Record<string, unknown> | null;
+      const podType = metadata && typeof metadata.podType === 'string' ? (metadata.podType as CanvasPodType) : null;
+      const inflowRaw = metadata && typeof metadata.inflow === 'object' ? (metadata.inflow as Partial<CanvasInflow>) : null;
+      const inflow: CanvasInflow | null = inflowRaw && typeof inflowRaw.amount === 'number' && typeof inflowRaw.cadence === 'string'
+        ? { amount: inflowRaw.amount, cadence: inflowRaw.cadence as CanvasInflowCadence }
+        : null;
+      const storedReturnRate = metadata && typeof metadata.returnRate === 'number' ? (metadata.returnRate as number) : undefined;
+      const returnRate = storedReturnRate !== undefined ? storedReturnRate : getDefaultReturnRate({ kind, category, podType });
 
       return {
         id: String(node._id),
         kind,
         category,
         parentId: node.parentId ? String(node.parentId) : null,
+        podType,
         label: node.label,
         icon: node.icon ?? undefined,
         accent: node.accent ?? undefined,
         balance: typeof node.balanceCents === 'number' ? node.balanceCents / 100 : undefined,
+        inflow,
+        returnRate,
         position: node.position,
+        metadata,
       } satisfies CanvasNode;
     });
 
@@ -515,7 +661,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
       id: String(edge._id),
       sourceId: String(edge.sourceNodeId),
       targetId: String(edge.targetNodeId),
-      tone: edge.kind === 'manual' ? 'manual' : 'auto',
       tag: edge.tag ?? undefined,
       amountCents: typeof edge.amountCents === 'number' ? edge.amountCents : undefined,
       note: edge.note ?? undefined,
@@ -631,6 +776,26 @@ let drawerContainerRef: HTMLDivElement | undefined;
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setWorkspaceMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    onCleanup(() => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    });
+  });
+
+  createEffect(() => {
+    if (!simulationMenuOpen()) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (simulationMenuRef?.contains(target) || simulationButtonRef?.contains(target as HTMLElement)) {
+        return;
+      }
+      setSimulationMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSimulationMenuOpen(false);
     };
     document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
@@ -908,11 +1073,17 @@ let drawerContainerRef: HTMLDivElement | undefined;
       const id = `${composer.sourceNodeId}-${targetNodeId}-${Date.now()}`;
       setGraph('flows', (flows) => [
         ...flows,
-        { id, sourceId: composer.sourceNodeId, targetId: targetNodeId, tone: 'manual', tag: 'Flow' },
+        { id, sourceId: composer.sourceNodeId, targetId: targetNodeId, tag: 'Flow' },
       ]);
       pushHistory();
       console.log('[flow] created', { id, sourceNodeId: composer.sourceNodeId, targetNodeId });
       console.log('[flow] all', graph.flows.map((flow) => flow.id));
+      
+      // Auto-open drawer for income nodes to set up allocation rules
+      const sourceNode = graph.nodes.find((n) => n.id === composer.sourceNodeId);
+      if (sourceNode?.kind === 'income') {
+        setRuleDrawer({ sourceNodeId: composer.sourceNodeId });
+      }
     } else {
       console.log('[flow] already exists', {
         sourceNodeId: composer.sourceNodeId,
@@ -1098,11 +1269,15 @@ let drawerContainerRef: HTMLDivElement | undefined;
     kind: CanvasNode['kind'];
     category?: CanvasNode['category'];
     parentId?: string | null;
+    podType?: CanvasNode['podType'];
     label: string;
     icon: string;
     accent: string;
     balance?: number;
-  }) => {
+    inflow?: CanvasInflow | null;
+    returnRate?: number;
+    metadata?: CanvasNode['metadata'];
+  }): Promise<string> => {
     const slug = workspaceSlug();
     if (!slug) {
       openCreateWorkspace();
@@ -1132,16 +1307,32 @@ let drawerContainerRef: HTMLDivElement | undefined;
     };
 
     const newNodeId = `node-${createId()}`;
+    const defaultReturnRate = preset.returnRate ?? getDefaultReturnRate({
+      kind: preset.kind,
+      category: preset.category,
+      podType: preset.podType ?? null,
+    });
+
+    const baseMetadata: Record<string, unknown> = preset.metadata ? { ...preset.metadata } : {};
+    if (preset.podType) baseMetadata.podType = preset.podType;
+    if (preset.inflow) baseMetadata.inflow = preset.inflow;
+    if (defaultReturnRate) baseMetadata.returnRate = defaultReturnRate;
+    const metadata = Object.keys(baseMetadata).length ? baseMetadata : null;
+
     const newNode: CanvasNode = {
       id: newNodeId,
       kind: preset.kind,
       category: preset.category,
       parentId: preset.parentId ?? null,
+      podType: preset.podType ?? null,
       label: preset.label,
       icon: preset.icon,
       accent: preset.accent,
       balance: preset.balance,
+      inflow: preset.inflow ?? null,
+      returnRate: defaultReturnRate,
       position,
+      metadata,
     };
 
     setGraph('nodes', (nodes) => [...nodes, newNode]);
@@ -1149,6 +1340,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
     setShowHero(false);
     setPlacementIndex(index + 1);
     pushHistory();
+    return newNodeId;
   };
 
   const handleAddIncome = () => {
@@ -1171,7 +1363,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
     setCreateModal('account');
   };
 
-  const handleAddSubAccount = () => {
+  const handleAddPod = () => {
     if (!workspaceSlug()) {
       openCreateWorkspace();
       return;
@@ -1183,7 +1375,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
     }
     const selectedAccount = selectedIds().find((id) => available.some((node) => node.id === id));
     const parentId = selectedAccount ?? available[0].id;
-    setSubAccountParentId(parentId);
+    setPodParentId(parentId);
     setRuleDrawer(null);
     setShowHero(false);
     setCreateModal('pod');
@@ -1222,6 +1414,134 @@ let drawerContainerRef: HTMLDivElement | undefined;
     setSelectedIds([newNode.id]);
     pushHistory();
     setPlacementIndex((prev) => prev + 1);
+  };
+
+  const updateNodeBalance = (nodeId: string, balance: number | null) => {
+    const index = graph.nodes.findIndex((node) => node.id === nodeId);
+    if (index < 0) return;
+    const current = graph.nodes[index];
+    const normalized = typeof balance === 'number' ? balance : undefined;
+    const existing = current.balance;
+    const unchanged =
+      (normalized === undefined && existing === undefined) ||
+      (typeof normalized === 'number' && typeof existing === 'number' && Math.abs(existing - normalized) < 0.0001);
+    if (unchanged) return;
+    setGraph('nodes', index, (node) => ({
+      ...node,
+      balance: normalized,
+    }));
+    pushHistory();
+  };
+
+  const updateNodeInflow = (nodeId: string, inflow: CanvasInflow | null) => {
+    const index = graph.nodes.findIndex((node) => node.id === nodeId);
+    if (index < 0) return;
+    const current = graph.nodes[index];
+    const nextInflow = inflow ? { amount: inflow.amount, cadence: inflow.cadence } : null;
+    const existing = current.inflow ?? null;
+    const unchanged =
+      (!existing && !nextInflow) ||
+      (existing && nextInflow && Math.abs(existing.amount - nextInflow.amount) < 0.0001 && existing.cadence === nextInflow.cadence);
+    if (unchanged) return;
+    const metadata = { ...(current.metadata ?? {}) } as Record<string, unknown>;
+    if (nextInflow) metadata.inflow = nextInflow;
+    else delete metadata.inflow;
+    const normalizedMetadata = Object.keys(metadata).length ? metadata : null;
+    setGraph('nodes', index, (node) => ({
+      ...node,
+      inflow: nextInflow,
+      metadata: normalizedMetadata,
+    }));
+    pushHistory();
+  };
+
+  const updateNodePodType = (nodeId: string, podType: CanvasPodType) => {
+    const index = graph.nodes.findIndex((node) => node.id === nodeId);
+    if (index < 0) return;
+    const current = graph.nodes[index];
+    if (current.podType === podType) return;
+    const metadata = { ...(current.metadata ?? {}) } as Record<string, unknown>;
+    metadata.podType = podType;
+    const normalizedMetadata = Object.keys(metadata).length ? metadata : null;
+    setGraph('nodes', index, (node) => ({
+      ...node,
+      podType,
+      metadata: normalizedMetadata,
+    }));
+    pushHistory();
+  };
+
+  const updateNodeReturnRate = (nodeId: string, returnRate: number | null) => {
+    const index = graph.nodes.findIndex((node) => node.id === nodeId);
+    if (index < 0) return;
+    const current = graph.nodes[index];
+    const override = returnRate !== null ? returnRate : undefined;
+    const baseRate = override !== undefined ? override : getDefaultReturnRate(current);
+    const existing = current.returnRate ?? getDefaultReturnRate(current);
+    const unchanged =
+      Math.abs(existing - baseRate) < 0.0001;
+    if (unchanged) return;
+    const metadata = { ...(current.metadata ?? {}) } as Record<string, unknown>;
+    if (override !== undefined) metadata.returnRate = override;
+    else delete metadata.returnRate;
+    const normalizedMetadata = Object.keys(metadata).length ? metadata : null;
+    setGraph('nodes', index, (node) => ({
+      ...node,
+      returnRate: baseRate,
+      metadata: normalizedMetadata,
+    }));
+    pushHistory();
+  };
+
+  const runSimulation = (years?: number) => {
+    if (years) {
+      setSimulationSettings({ horizonYears: years });
+    }
+    
+    if (graph.nodes.length === 0) {
+      setSimulationError('Add nodes before running a simulation.');
+      setSimulationResult(null);
+      return;
+    }
+    if (allocationIssues().length > 0) {
+      setSimulationError('Resolve allocation coverage for every income source before simulating.');
+      setSimulationResult(null);
+      return;
+    }
+
+    const settings = years ? { horizonYears: years } : simulationSettings();
+    
+    const nodesForSimulation = graph.nodes.map((node) => ({
+      id: node.id,
+      kind: node.kind,
+      category: node.category,
+      balance: typeof node.balance === 'number' ? node.balance : 0,
+      inflow: node.inflow ?? null,
+      returnRate: node.returnRate ?? getDefaultReturnRate(node),
+    }));
+
+    const rulesForSimulation = rules().map((rule) => ({
+      sourceNodeId: rule.sourceNodeId,
+      allocations: rule.allocations.map((alloc) => ({
+        targetNodeId: alloc.targetNodeId,
+        percentage: alloc.percentage,
+      })),
+    }));
+
+    try {
+      const result = simulateGraph({
+        nodes: nodesForSimulation,
+        rules: rulesForSimulation,
+        settings,
+      });
+      setSimulationResult(result);
+      setSimulationError(null);
+      setSimulationMenuOpen(false);
+    } catch (error) {
+      console.error('Simulation failed', error);
+      setSimulationError('Simulation failed. Check console for details.');
+      setSimulationResult(null);
+    }
   };
 
   const deleteNode = (nodeId: string, options: { skipHistory?: boolean } = {}) => {
@@ -1288,6 +1608,10 @@ let drawerContainerRef: HTMLDivElement | undefined;
   const handleSave = async () => {
     const slug = workspaceSlug();
     if (!slug || saving() || !hasChanges()) return;
+    if (allocationIssues().length > 0) {
+      console.warn('Cannot save until all income allocations total 100%.');
+      return;
+    }
     setSaving(true);
     try {
       const result = await publishGraph(slug, {
@@ -1362,7 +1686,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
           when={!initializingWorkspace()}
           fallback={
             <span class="pointer-events-auto rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
-              Loading workspaces…
+              Loading…
             </span>
           }
         >
@@ -1371,14 +1695,18 @@ let drawerContainerRef: HTMLDivElement | undefined;
               <button
                 ref={(el) => (workspaceMenuButtonRef = el)}
                 type="button"
-                class="flex h-9 min-w-0 max-w-[240px] items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/20 disabled:cursor-not-allowed disabled:opacity-60"
+                class="flex h-8 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/70 px-3 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20 disabled:cursor-not-allowed disabled:opacity-60 backdrop-blur-sm"
                 onClick={() => setWorkspaceMenuOpen((open) => !open)}
                 disabled={workspaces().length === 0}
+                title={currentWorkspace()?.name ?? 'Select workspace'}
               >
-                <span class="min-w-0 flex-1 truncate">
-                  {currentWorkspace()?.name ?? 'Select workspace'}
+                <span class="text-[10px]">📁</span>
+                <span class="max-w-[120px] truncate">
+                  {currentWorkspace()?.name ?? 'Workspace'}
                 </span>
-                <ChevronDownIcon />
+                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
               </button>
               <Show when={workspaceMenuOpen()}>
                 <div
@@ -1411,8 +1739,9 @@ let drawerContainerRef: HTMLDivElement | undefined;
             </div>
             <button
               type="button"
-              class="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/90 text-base font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+              class="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/60 bg-white/70 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20 backdrop-blur-sm"
               onClick={openCreateWorkspace}
+              title="New workspace"
             >
               ＋
             </button>
@@ -1450,6 +1779,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
         hoveredAnchor={hoveredAnchor()}
         connectionMode={flowComposer().stage === 'pickTarget'}
         selectionOverlay={marqueeOverlay()}
+        allocationStatuses={allocationStatuses()}
       >
         {connectingPreview()}
       </CanvasViewport>
@@ -1495,15 +1825,86 @@ let drawerContainerRef: HTMLDivElement | undefined;
           <DeleteIcon />
           Delete
         </button>
-        <button
-          type="button"
-          class="pointer-events-auto flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-floating transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/40 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:opacity-70"
-          onClick={handleSave}
-          disabled={!workspaceSlug() || saving() || !hasChanges()}
-        >
-          <SaveIcon />
-          {saving() ? 'Saving…' : 'Save'}
-        </button>
+        <Show when={simulationError()}>
+          {(message) => (
+            <span class="pointer-events-auto rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm">
+              {message()}
+            </span>
+          )}
+        </Show>
+        <div class="pointer-events-auto relative">
+          <button
+            ref={(el) => (simulationButtonRef = el)}
+            type="button"
+            class="flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+            onClick={() => setSimulationMenuOpen((open) => !open)}
+          >
+            ▶ Simulate
+            <ChevronDownIcon />
+          </button>
+          <Show when={simulationMenuOpen()}>
+            <div
+              ref={(el) => (simulationMenuRef = el)}
+              class="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-floating"
+            >
+              <div class="py-1">
+                <button
+                  type="button"
+                  class="w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => runSimulation(5)}
+                >
+                  5 Years
+                </button>
+                <button
+                  type="button"
+                  class="w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => runSimulation(10)}
+                >
+                  10 Years
+                </button>
+                <button
+                  type="button"
+                  class="w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => runSimulation(20)}
+                >
+                  20 Years
+                </button>
+                <button
+                  type="button"
+                  class="w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => runSimulation(30)}
+                >
+                  30 Years
+                </button>
+              </div>
+            </div>
+          </Show>
+        </div>
+        <div class="pointer-events-auto relative group">
+          <button
+            type="button"
+            class="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-floating transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/40 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:opacity-70"
+            onClick={handleSave}
+            disabled={!workspaceSlug() || saving() || !hasChanges() || allocationIssues().length > 0}
+          >
+            <SaveIcon />
+            {saving() ? 'Saving…' : 'Save'}
+          </button>
+          <Show when={!saving() && (!hasChanges() || allocationIssues().length > 0)}>
+            <div class="pointer-events-none absolute bottom-full right-0 mb-2 w-64 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-lg opacity-0 transition-opacity group-hover:opacity-100">
+              <Show
+                when={!hasChanges()}
+                fallback={
+                  <p class="font-medium">
+                    Complete allocation rules for all income sources to save.
+                  </p>
+                }
+              >
+                <p class="font-medium text-slate-500">No changes to save</p>
+              </Show>
+            </div>
+          </Show>
+        </div>
       </div>
       <Show when={contextMenu()}>
         {(menu) => (
@@ -1537,7 +1938,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
                   .map((flow) => ({
                     id: flow.id,
                     partnerLabel: lookup.get(flow.targetId)?.label ?? 'Unknown',
-                    tone: flow.tone,
+                    hasRule: Boolean(flow.ruleId),
                     tag: flow.tag,
                   }));
                 const inbound = flows()
@@ -1545,16 +1946,37 @@ let drawerContainerRef: HTMLDivElement | undefined;
                   .map((flow) => ({
                     id: flow.id,
                     partnerLabel: lookup.get(flow.sourceId)?.label ?? 'Unknown',
-                    tone: flow.tone,
+                    hasRule: Boolean(flow.ruleId),
                     tag: flow.tag,
                   }));
+                const rule = rulesBySource().get(selected.id) ?? null;
+                const allocationDetails = rule
+                  ? rule.allocations.map((alloc) => ({
+                      id: alloc.id,
+                      percentage: alloc.percentage,
+                      targetLabel: lookup.get(alloc.targetNodeId)?.label ?? 'Unknown',
+                    }))
+                  : [];
+                const allocationStatus = allocationStatuses().get(selected.id) ?? null;
                 return (
-              <NodeDrawer
-                node={node()}
-                onClose={() => setDrawerNodeId(null)}
-                outbound={outbound}
-                inbound={inbound}
-              />
+                  <NodeDrawer
+                    node={node()}
+                    onClose={() => setDrawerNodeId(null)}
+                    outbound={outbound}
+                    inbound={inbound}
+                    allocations={allocationDetails}
+                    allocationStatus={allocationStatus}
+                    onManageRules={selected.kind === 'income'
+                      ? (nodeId) => {
+                          setDrawerNodeId(null);
+                          setRuleDrawer({ sourceNodeId: nodeId });
+                        }
+                      : undefined}
+                    onUpdateBalance={updateNodeBalance}
+                    onUpdateInflow={updateNodeInflow}
+                    onUpdatePodType={updateNodePodType}
+                    onUpdateReturnRate={updateNodeReturnRate}
+                  />
                 );
               })()
             )}
@@ -1564,38 +1986,56 @@ let drawerContainerRef: HTMLDivElement | undefined;
               open={Boolean(ruleDrawer())}
               sourceNode={ruleSourceNode()}
               nodes={graph.nodes}
+              initialRule={ruleForDrawer()}
               onClose={() => setRuleDrawer(null)}
               onSave={(rule) => {
-                const ruleId = `rule-${createId()}`;
+                const fallbackId = `rule-${createId()}`;
+                const ruleId = rule.id ?? rulesBySource().get(rule.sourceNodeId)?.id ?? fallbackId;
                 const record: RuleRecord = {
                   id: ruleId,
                   sourceNodeId: rule.sourceNodeId,
                   trigger: rule.trigger,
                   triggerNodeId: rule.triggerNodeId ?? rule.sourceNodeId,
-                  allocations: rule.allocations,
+                  allocations: rule.allocations.map((alloc) => ({ ...alloc })),
                 };
-                setRules((existing) => [...existing.filter((r) => r.id !== ruleId), record]);
+                setRules((existing) => [
+                  ...existing.filter((r) => r.sourceNodeId !== rule.sourceNodeId),
+                  record,
+                ]);
                 setGraph('flows', (flows) => {
-                  const next = [...flows];
-                  rule.allocations.forEach((alloc) => {
-                    const existing = next.find(
-                      (flow) => flow.sourceId === rule.sourceNodeId && flow.targetId === alloc.targetNodeId,
+                  const targets = new Set(rule.allocations.map((alloc) => alloc.targetNodeId));
+                  const next = flows
+                    .map((flow) => {
+                      if (flow.sourceId !== rule.sourceNodeId) return flow;
+                      if (targets.has(flow.targetId)) {
+                        return {
+                          ...flow,
+                          ruleId,
+                          tag: flow.tag ?? 'Flow',
+                        };
+                      }
+                      if (flow.ruleId === ruleId) {
+                        return null;
+                      }
+                      return flow.ruleId ? null : flow;
+                    })
+                    .filter((flow): flow is CanvasFlow => flow !== null);
+
+                  targets.forEach((targetId) => {
+                    const existingFlow = next.find(
+                      (flow) => flow.sourceId === rule.sourceNodeId && flow.targetId === targetId,
                     );
-                    if (existing) {
-                      existing.tone = 'auto';
-                      existing.ruleId = ruleId;
-                      existing.tag = existing.tag ?? 'Flow';
-                    } else {
+                    if (!existingFlow) {
                       next.push({
                         id: `flow-${createId()}`,
                         sourceId: rule.sourceNodeId,
-                        targetId: alloc.targetNodeId,
-                        tone: 'auto',
+                        targetId,
                         ruleId,
                         tag: 'Flow',
                       });
                     }
                   });
+
                   return next;
                 });
                 pushHistory();
@@ -1608,7 +2048,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
       <BottomDock
         onAddIncome={handleAddIncome}
         onAddAccount={handleAddAccount}
-        onAddSubAccount={handleAddSubAccount}
+        onAddPod={handleAddPod}
         onStartFlow={handleStartFlow}
       />
       <ZoomPad
@@ -1617,53 +2057,134 @@ let drawerContainerRef: HTMLDivElement | undefined;
         onZoomOut={() => viewportControls?.zoomOut()}
         onReset={() => viewportControls?.reset()}
       />
-      <Show when={flowComposer().stage !== 'idle'}>
-        <div class="pointer-events-none absolute left-1/2 top-8 -translate-x-1/2">
-          <span class="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-floating">
-            <Switch>
-              <Match when={flowComposer().stage === 'pickSource'}>Flow mode: Pick a source</Match>
-              <Match when={flowComposer().stage === 'pickTarget'}>Flow mode: Pick a destination</Match>
-            </Switch>
-          </span>
-        </div>
+      <Show when={simulationResult()}>
+        {(sim) => {
+          const settings = simulationSettings();
+          const result = sim();
+          const horizonYears = settings.horizonYears;
+          const lookup = nodeLookup();
+          const sortedBalances = Object.entries(result.finalBalances)
+            .map(([id, value]) => ({ id, value, label: lookup.get(id)?.label ?? 'Unknown node' }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 5);
+
+          return (
+            <div class="pointer-events-none absolute left-6 bottom-6 z-40 w-[380px]">
+              <div class="pointer-events-auto space-y-4 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-floating backdrop-blur-sm">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="space-y-1">
+                    <h2 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      {horizonYears}-Year Projection
+                    </h2>
+                    <p class="text-2xl font-bold text-slate-900 tracking-tight">
+                      {currencyFormatter.format(result.finalTotal)}
+                    </p>
+                    <p class="text-xs text-slate-500">Total Portfolio Value</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                    onClick={() => setSimulationResult(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                <div class="space-y-2">
+                  <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Financial Milestones
+                  </h3>
+                  <div class="space-y-1.5">
+                    {result.milestones.map((milestone) => (
+                      <div class="flex items-center justify-between rounded-lg border border-slate-200/60 bg-slate-50 px-3 py-2">
+                        <span class="text-sm font-medium text-slate-700">{milestone.label}</span>
+                        <span class="text-xs font-semibold text-slate-500">{formatMonths(milestone.reachedAtMonth)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div class="space-y-2">
+                  <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Top Account Balances
+                  </h3>
+                  <div class="space-y-2">
+                    {sortedBalances.map((entry, index) => {
+                      const maxValue = sortedBalances[0].value;
+                      const percentage = (entry.value / maxValue) * 100;
+                      return (
+                        <div class="space-y-1">
+                          <div class="flex items-center justify-between">
+                            <span class="text-sm font-medium text-slate-700">{entry.label}</span>
+                            <span class="text-xs font-semibold text-slate-500">{currencyFormatter.format(entry.value)}</span>
+                          </div>
+                          <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              class="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 transition-all duration-300"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }}
       </Show>
       <IncomeSourceModal
         open={createModal() === 'income'}
         onClose={() => setCreateModal(null)}
-        onSubmit={async (name) => {
-          await createNodeAtViewport({ kind: 'income', label: name, icon: '🏦', accent: '#2563eb' });
+        onSubmit={async ({ name, startingBalance, inflow }) => {
+          const metadata = inflow ? { inflow } : undefined;
+          const id = await createNodeAtViewport({
+            kind: 'income',
+            label: name,
+            icon: '🏦',
+            accent: '#2563eb',
+            balance: startingBalance ?? undefined,
+            inflow,
+            metadata,
+          });
+          setDrawerNodeId(id);
         }}
       />
       <PodModal
         open={createModal() === 'pod'}
         accounts={accountOptions()}
-        defaultAccountId={subAccountParentId()}
+        defaultAccountId={podParentId()}
         onClose={() => {
           setCreateModal(null);
-          setSubAccountParentId(null);
+          setPodParentId(null);
         }}
-        onSubmit={async ({ name, parentAccountId }) => {
-          await createNodeAtViewport({
-            kind: 'subAccount',
+        onSubmit={async ({ name, parentAccountId, podType, startingBalance }) => {
+          const id = await createNodeAtViewport({
+            kind: 'pod',
             label: name,
             icon: '💰',
             accent: '#0ea5e9',
             parentId: parentAccountId,
+            podType,
+            balance: startingBalance ?? undefined,
           });
-          setSubAccountParentId(parentAccountId);
+          setPodParentId(parentAccountId);
+          setDrawerNodeId(id);
         }}
       />
       <AccountTypeModal
         open={createModal() === 'account'}
         onClose={() => setCreateModal(null)}
         onSubmit={async (option: AccountOption) => {
-          await createNodeAtViewport({
+          const id = await createNodeAtViewport({
             kind: 'account',
             category: option.category,
             label: option.label,
             icon: option.icon,
             accent: option.accent,
           });
+          setDrawerNodeId(id);
         }}
       />
       <Modal

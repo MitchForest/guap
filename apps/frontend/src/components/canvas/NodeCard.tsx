@@ -1,4 +1,4 @@
-import { Component, JSX, createMemo, createSignal } from 'solid-js';
+import { Component, JSX, Show, createMemo, createSignal } from 'solid-js';
 import { Motion } from 'solid-motionone';
 import { CanvasNode } from '../../types/graph';
 import { DragPayload } from './CanvasViewport';
@@ -6,6 +6,11 @@ import { DragPayload } from './CanvasViewport';
 export const NODE_CARD_WIDTH = 240;
 export const NODE_CARD_HEIGHT = 120;
 export type AnchorType = 'top' | 'bottom';
+
+export type NodeAllocationStatus = {
+  state: 'missing' | 'under' | 'over' | 'complete';
+  total: number;
+};
 
 const GRID_CLASS =
   'absolute select-none rounded-2xl border border-slate-200/60 bg-white p-4 shadow-card cursor-grab';
@@ -31,6 +36,7 @@ type NodeCardProps = {
   onOpenDrawer?: (nodeId: string) => void;
   onContextMenu?: (event: PointerEvent, nodeId: string) => void;
   ruleCount?: number;
+  allocationStatus?: NodeAllocationStatus | null;
 };
 
 const NodeCard: Component<NodeCardProps> = (props) => {
@@ -42,7 +48,12 @@ const NodeCard: Component<NodeCardProps> = (props) => {
   const subtitle = createMemo(() => {
     const current = node();
     if (current.kind === 'income') return 'income source';
-    if (current.kind === 'subAccount') return 'sub-account';
+    if (current.kind === 'pod') {
+      if (current.podType) return `${current.podType} pod`;
+      return 'pod';
+    }
+    if (current.kind === 'goal') return 'goal';
+    if (current.kind === 'liability') return 'liability';
     return current.category ? current.category.replace(/-/g, ' ') : 'account';
   });
 
@@ -69,6 +80,36 @@ const NodeCard: Component<NodeCardProps> = (props) => {
       return hovered() || props.selected || props.connectingFrom?.nodeId === nodeId();
     }
   );
+
+  const allocationStatus = () => props.allocationStatus ?? null;
+  const inflowSummary = createMemo(() => {
+    const info = node().inflow;
+    if (!info || node().kind !== 'income') return null;
+    const cadenceLabel = info.cadence === 'monthly' ? 'mo' : info.cadence === 'weekly' ? 'wk' : 'day';
+    return `${formatter.format(info.amount)}/${cadenceLabel}`;
+  });
+
+  const showInfoIcon = createMemo(() => {
+    if (node().kind !== 'income') return false;
+    const status = allocationStatus();
+    return !status || status.state !== 'complete';
+  });
+
+  const infoIconMessage = createMemo(() => {
+    if (node().kind !== 'income') return null;
+    const status = allocationStatus();
+    if (!status || status.state === 'missing') {
+      return 'Income needs allocation rules before saving';
+    }
+    const rounded = Math.round(status.total * 10) / 10;
+    if (status.state === 'under') {
+      return `Only ${rounded}% allocated. Allocate remaining funds.`;
+    }
+    if (status.state === 'over') {
+      return `${rounded}% allocated. Reduce to 100%.`;
+    }
+    return null;
+  });
 
   const handlePointerDown: JSX.EventHandlerUnion<HTMLDivElement, PointerEvent> = (event) => {
     if (props.connectionMode && !isConnectingFromHere()) {
@@ -162,7 +203,12 @@ const NodeCard: Component<NodeCardProps> = (props) => {
     <div
       ref={(el: HTMLDivElement) => (element = el)}
       class={`${GRID_CLASS} group`}
-      classList={{ 'ring-4 ring-offset-2 ring-offset-white ring-sky-400/50': props.selected }}
+      classList={{
+        'ring-4 ring-offset-2 ring-offset-white ring-sky-400/50': props.selected,
+        'border-emerald-300': allocationStatus()?.state === 'complete',
+        'border-amber-300': allocationStatus()?.state === 'under' || allocationStatus()?.state === 'missing',
+        'border-rose-300': allocationStatus()?.state === 'over',
+      }}
       style={{
         width: `${NODE_CARD_WIDTH}px`,
         height: `${NODE_CARD_HEIGHT}px`,
@@ -185,6 +231,16 @@ const NodeCard: Component<NodeCardProps> = (props) => {
         animate={{ opacity: 1, scale: props.selected ? 1.02 : 1 }}
         transition={{ duration: 0.2 }}
       >
+        <Show when={showInfoIcon()}>
+          <div class="absolute right-4 top-4 group/info">
+            <div class="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 text-amber-700 cursor-help">
+              <span class="text-sm font-bold">ⓘ</span>
+            </div>
+            <div class="pointer-events-none absolute right-0 top-full mt-2 w-48 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 shadow-lg opacity-0 transition-opacity group-hover/info:opacity-100">
+              {infoIconMessage()}
+            </div>
+          </div>
+        </Show>
         <div class="absolute left-1/2 top-0 flex -translate-x-1/2 -translate-y-full flex-col items-center">
           <button
             type="button"
@@ -215,23 +271,38 @@ const NodeCard: Component<NodeCardProps> = (props) => {
         </div>
         <div class="flex items-center gap-3">
           <div
-            class="flex h-11 w-11 items-center justify-center rounded-xl"
-            style={{ background: `${accent()}1A`, color: accent() }}
+            class="flex h-10 w-10 items-center justify-center rounded-xl"
+            style={{ background: `${accent()}18`, color: accent() }}
           >
-            <span class="text-xl">{icon()}</span>
+            <span class="text-lg">{icon()}</span>
           </div>
-          <div>
-            <p class="text-sm font-semibold text-slate-800 truncate">{node().label}</p>
-            <p class="text-xs capitalize text-slate-500">{subtitle()}</p>
+          <div class="min-w-0 flex-1">
+            <p class="text-xs font-medium text-slate-600 truncate">{node().label}</p>
+            <p class="text-[10px] uppercase tracking-wider text-slate-400">{subtitle()}</p>
           </div>
         </div>
-        {node().balance !== undefined ? (
-          <p class="mt-5 text-2xl font-semibold text-slate-900">
-            {formatter.format(node().balance ?? 0)}
-          </p>
-        ) : (
-          <p class="mt-5 text-sm text-slate-500">Balance not set</p>
-        )}
+        <div class="mt-4">
+          <Show
+            when={node().kind === 'income'}
+            fallback={
+              <>
+                {node().balance !== undefined ? (
+                  <p class="text-3xl font-bold text-slate-900 tracking-tight">
+                    {formatter.format(node().balance ?? 0)}
+                  </p>
+                ) : (
+                  <p class="text-sm font-medium text-slate-400">Balance not set</p>
+                )}
+              </>
+            }
+          >
+            <Show when={inflowSummary()} fallback={<p class="text-sm font-medium text-slate-400">Set income amount</p>}>
+              {(summary) => (
+                <p class="text-3xl font-bold text-slate-900 tracking-tight">{summary()}</p>
+              )}
+            </Show>
+          </Show>
+        </div>
         <Motion.div
           class="pointer-events-none absolute left-1/2 bottom-0 flex -translate-x-1/2 translate-y-full"
           initial={{ opacity: 0, scale: 0.6, y: 16 }}
