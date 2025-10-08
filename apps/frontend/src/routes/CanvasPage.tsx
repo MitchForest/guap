@@ -2,7 +2,7 @@ import { Component, For, Match, Show, Switch, createEffect, createMemo, createSi
 import { Motion } from 'solid-motionone';
 import { createStore } from 'solid-js/store';
 import CanvasViewport, { DragPayload, ViewportControls } from '../components/canvas/CanvasViewport';
-import type { NodeAllocationStatus } from '../components/canvas/NodeCard';
+import type { NodeAllocationStatus, IncomingAllocationInfo } from '../components/canvas/NodeCard';
 import { CanvasFlow, CanvasNode, CanvasInflow, CanvasInflowCadence, CanvasPodType } from '../types/graph';
 import { simulateGraph, type SimulationResult } from '../utils/simulation';
 import BottomDock from '../components/layout/BottomDock';
@@ -15,7 +15,6 @@ import NodeDrawer from '../components/nodes/NodeDrawer';
 import IncomeSourceModal from '../components/create/IncomeSourceModal';
 import PodModal from '../components/create/PodModal';
 import AccountTypeModal, { AccountOption } from '../components/create/AccountTypeModal';
-import RuleDrawer from '../components/rules/RuleDrawer';
 import Modal from '../components/ui/Modal';
 import {
   ensureWorkspace,
@@ -211,7 +210,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
   );
   const [createModal, setCreateModal] = createSignal<'income' | 'pod' | 'account' | null>(null);
   const [podParentId, setPodParentId] = createSignal<string | null>(null);
-  const [ruleDrawer, setRuleDrawer] = createSignal<{ sourceNodeId: string } | null>(null);
   const [rules, setRules] = createSignal<RuleRecord[]>([]);
   const [showHero, setShowHero] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
@@ -246,7 +244,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
     setRules([]);
     setSelectedIds([]);
     setDrawerNodeId(null);
-    setRuleDrawer(null);
     setMarquee(null);
     exitFlowMode();
     setPlacementIndex(0);
@@ -349,7 +346,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
     setRules(clone.rules);
     setSelectedIds(clone.selectedIds);
     setDrawerNodeId(null);
-    setRuleDrawer(null);
     setMarquee(null);
     exitFlowMode();
     setHoveredAnchor(null);
@@ -467,6 +463,26 @@ let drawerContainerRef: HTMLDivElement | undefined;
     return map;
   });
 
+  const incomingAllocationsMap = createMemo<Map<string, IncomingAllocationInfo[]>>(() => {
+    const map = new Map<string, IncomingAllocationInfo[]>();
+    
+    rules().forEach((rule) => {
+      const sourceNode = graph.nodes.find((n) => n.id === rule.sourceNodeId);
+      if (!sourceNode) return;
+      
+      rule.allocations.forEach((alloc) => {
+        const existing = map.get(alloc.targetNodeId) ?? [];
+        existing.push({
+          percentage: alloc.percentage,
+          sourceLabel: sourceNode.label,
+        });
+        map.set(alloc.targetNodeId, existing);
+      });
+    });
+    
+    return map;
+  });
+
   const allocationIssues = createMemo<AllocationIssue[]>(() => {
     const statuses = allocationStatuses();
     return graph.nodes
@@ -500,12 +516,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
     }
     return 'Complete allocations for every income source before saving.';
   });
-  const ruleForDrawer = createMemo(() => {
-    const sourceId = ruleDrawer()?.sourceNodeId;
-    if (!sourceId) return null;
-    return rulesBySource().get(sourceId) ?? null;
-  });
-
   const describeFlow = (flow: CanvasFlow, source: CanvasNode, target: CanvasNode) => {
     const rule = flow.ruleId ? ruleById().get(flow.ruleId) : undefined;
     if (rule) {
@@ -517,11 +527,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
     }
     return `Flow from ${source.label} to ${target.label}`;
   };
-  const ruleSourceNode = createMemo(() => {
-    const id = ruleDrawer()?.sourceNodeId;
-    if (!id) return null;
-    return graph.nodes.find((node) => node.id === id) ?? null;
-  });
 
   onMount(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -811,12 +816,10 @@ let drawerContainerRef: HTMLDivElement | undefined;
       const target = event.target as Node;
       if (drawerContainerRef?.contains(target as HTMLElement)) return;
       setDrawerNodeId(null);
-      setRuleDrawer(null);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setDrawerNodeId(null);
-        setRuleDrawer(null);
       }
     };
     document.addEventListener('pointerdown', handlePointerDown, true);
@@ -896,7 +899,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
 
   const handleNodeOpenDrawer = (nodeId: string) => {
     ensureSelection(nodeId, false);
-    setRuleDrawer(null);
     setDrawerNodeId(nodeId);
   };
 
@@ -1082,7 +1084,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
       // Auto-open drawer for income nodes to set up allocation rules
       const sourceNode = graph.nodes.find((n) => n.id === composer.sourceNodeId);
       if (sourceNode?.kind === 'income') {
-        setRuleDrawer({ sourceNodeId: composer.sourceNodeId });
+        setDrawerNodeId(composer.sourceNodeId);
       }
     } else {
       console.log('[flow] already exists', {
@@ -1277,13 +1279,13 @@ let drawerContainerRef: HTMLDivElement | undefined;
     inflow?: CanvasInflow | null;
     returnRate?: number;
     metadata?: CanvasNode['metadata'];
-  }): Promise<string> => {
+  }): Promise<string | undefined> => {
     const slug = workspaceSlug();
     if (!slug) {
       openCreateWorkspace();
-      return;
+      return undefined;
     }
-    if (!viewportElement) return;
+    if (!viewportElement) return undefined;
     if (graph.nodes.length === 0) {
       viewportControls?.reset();
     }
@@ -1348,7 +1350,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
       openCreateWorkspace();
       return;
     }
-    setRuleDrawer(null);
     setShowHero(false);
     setCreateModal('income');
   };
@@ -1358,7 +1359,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
       openCreateWorkspace();
       return;
     }
-    setRuleDrawer(null);
     setShowHero(false);
     setCreateModal('account');
   };
@@ -1376,7 +1376,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
     const selectedAccount = selectedIds().find((id) => available.some((node) => node.id === id));
     const parentId = selectedAccount ?? available[0].id;
     setPodParentId(parentId);
-    setRuleDrawer(null);
     setShowHero(false);
     setCreateModal('pod');
   };
@@ -1603,7 +1602,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
     pushHistory();
   };
 
-  const drawerOpen = createMemo(() => Boolean(drawerNode()) || Boolean(ruleDrawer()));
+  const drawerOpen = createMemo(() => Boolean(drawerNode()));
 
   const handleSave = async () => {
     const slug = workspaceSlug();
@@ -1780,6 +1779,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
         connectionMode={flowComposer().stage === 'pickTarget'}
         selectionOverlay={marqueeOverlay()}
         allocationStatuses={allocationStatuses()}
+        incomingAllocations={incomingAllocationsMap()}
       >
         {connectingPreview()}
       </CanvasViewport>
@@ -1955,23 +1955,72 @@ let drawerContainerRef: HTMLDivElement | undefined;
                       id: alloc.id,
                       percentage: alloc.percentage,
                       targetLabel: lookup.get(alloc.targetNodeId)?.label ?? 'Unknown',
+                      targetNodeId: alloc.targetNodeId,
                     }))
                   : [];
                 const allocationStatus = allocationStatuses().get(selected.id) ?? null;
                 return (
                   <NodeDrawer
                     node={node()}
+                    nodes={graph.nodes}
                     onClose={() => setDrawerNodeId(null)}
                     outbound={outbound}
                     inbound={inbound}
                     allocations={allocationDetails}
                     allocationStatus={allocationStatus}
-                    onManageRules={selected.kind === 'income'
-                      ? (nodeId) => {
-                          setDrawerNodeId(null);
-                          setRuleDrawer({ sourceNodeId: nodeId });
-                        }
-                      : undefined}
+                    initialRule={rule}
+                    onSaveRule={(ruleDraft) => {
+                      const fallbackId = `rule-${createId()}`;
+                      const ruleId = ruleDraft.id ?? rulesBySource().get(ruleDraft.sourceNodeId)?.id ?? fallbackId;
+                      const record: RuleRecord = {
+                        id: ruleId,
+                        sourceNodeId: ruleDraft.sourceNodeId,
+                        trigger: ruleDraft.trigger,
+                        triggerNodeId: ruleDraft.triggerNodeId ?? ruleDraft.sourceNodeId,
+                        allocations: ruleDraft.allocations.map((alloc) => ({ ...alloc })),
+                      };
+                      setRules((existing) => [
+                        ...existing.filter((r) => r.sourceNodeId !== ruleDraft.sourceNodeId),
+                        record,
+                      ]);
+                      setGraph('flows', (flows) => {
+                        const targets = new Set(ruleDraft.allocations.map((alloc) => alloc.targetNodeId));
+                        const next = flows
+                          .map((flow) => {
+                            if (flow.sourceId !== ruleDraft.sourceNodeId) return flow;
+                            if (targets.has(flow.targetId)) {
+                              return {
+                                ...flow,
+                                ruleId,
+                                tag: flow.tag ?? 'Flow',
+                              };
+                            }
+                            if (flow.ruleId === ruleId) {
+                              return null;
+                            }
+                            return flow.ruleId ? null : flow;
+                          })
+                          .filter((flow): flow is CanvasFlow => flow !== null);
+
+                        targets.forEach((targetId) => {
+                          const existingFlow = next.find(
+                            (flow) => flow.sourceId === ruleDraft.sourceNodeId && flow.targetId === targetId,
+                          );
+                          if (!existingFlow) {
+                            next.push({
+                              id: `flow-${createId()}`,
+                              sourceId: ruleDraft.sourceNodeId,
+                              targetId,
+                              ruleId,
+                              tag: 'Flow',
+                            });
+                          }
+                        });
+
+                        return next;
+                      });
+                      pushHistory();
+                    }}
                     onUpdateBalance={updateNodeBalance}
                     onUpdateInflow={updateNodeInflow}
                     onUpdatePodType={updateNodePodType}
@@ -1980,68 +2029,6 @@ let drawerContainerRef: HTMLDivElement | undefined;
                 );
               })()
             )}
-          </Show>
-          <Show when={!drawerNode() && ruleDrawer()}>
-            <RuleDrawer
-              open={Boolean(ruleDrawer())}
-              sourceNode={ruleSourceNode()}
-              nodes={graph.nodes}
-              initialRule={ruleForDrawer()}
-              onClose={() => setRuleDrawer(null)}
-              onSave={(rule) => {
-                const fallbackId = `rule-${createId()}`;
-                const ruleId = rule.id ?? rulesBySource().get(rule.sourceNodeId)?.id ?? fallbackId;
-                const record: RuleRecord = {
-                  id: ruleId,
-                  sourceNodeId: rule.sourceNodeId,
-                  trigger: rule.trigger,
-                  triggerNodeId: rule.triggerNodeId ?? rule.sourceNodeId,
-                  allocations: rule.allocations.map((alloc) => ({ ...alloc })),
-                };
-                setRules((existing) => [
-                  ...existing.filter((r) => r.sourceNodeId !== rule.sourceNodeId),
-                  record,
-                ]);
-                setGraph('flows', (flows) => {
-                  const targets = new Set(rule.allocations.map((alloc) => alloc.targetNodeId));
-                  const next = flows
-                    .map((flow) => {
-                      if (flow.sourceId !== rule.sourceNodeId) return flow;
-                      if (targets.has(flow.targetId)) {
-                        return {
-                          ...flow,
-                          ruleId,
-                          tag: flow.tag ?? 'Flow',
-                        };
-                      }
-                      if (flow.ruleId === ruleId) {
-                        return null;
-                      }
-                      return flow.ruleId ? null : flow;
-                    })
-                    .filter((flow): flow is CanvasFlow => flow !== null);
-
-                  targets.forEach((targetId) => {
-                    const existingFlow = next.find(
-                      (flow) => flow.sourceId === rule.sourceNodeId && flow.targetId === targetId,
-                    );
-                    if (!existingFlow) {
-                      next.push({
-                        id: `flow-${createId()}`,
-                        sourceId: rule.sourceNodeId,
-                        targetId,
-                        ruleId,
-                        tag: 'Flow',
-                      });
-                    }
-                  });
-
-                  return next;
-                });
-                pushHistory();
-                setRuleDrawer(null);
-              }}
-            />
           </Show>
         </Motion.div>
       </div>
@@ -2072,9 +2059,9 @@ let drawerContainerRef: HTMLDivElement | undefined;
             <div class="pointer-events-none absolute left-6 bottom-6 z-40 w-[380px]">
               <div class="pointer-events-auto space-y-4 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-floating backdrop-blur-sm">
                 <div class="flex items-start justify-between gap-3">
-                  <div class="space-y-1">
+                  <div class="flex-1 space-y-1">
                     <h2 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      {horizonYears}-Year Projection
+                      Projection
                     </h2>
                     <p class="text-2xl font-bold text-slate-900 tracking-tight">
                       {currencyFormatter.format(result.finalTotal)}
@@ -2087,6 +2074,32 @@ let drawerContainerRef: HTMLDivElement | undefined;
                     onClick={() => setSimulationResult(null)}
                   >
                     ✕
+                  </button>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <label class="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    Horizon:
+                    <select
+                      class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                      value={horizonYears}
+                      onChange={(event) => {
+                        const years = Number(event.currentTarget.value);
+                        runSimulation(years);
+                      }}
+                    >
+                      <option value={5}>5 Years</option>
+                      <option value={10}>10 Years</option>
+                      <option value={20}>20 Years</option>
+                      <option value={30}>30 Years</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    class="ml-auto rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
+                    onClick={() => runSimulation()}
+                  >
+                    ↻ Re-run
                   </button>
                 </div>
                 
@@ -2148,7 +2161,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
             inflow,
             metadata,
           });
-          setDrawerNodeId(id);
+          if (id) setDrawerNodeId(id);
         }}
       />
       <PodModal
@@ -2170,7 +2183,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
             balance: startingBalance ?? undefined,
           });
           setPodParentId(parentAccountId);
-          setDrawerNodeId(id);
+          if (id) setDrawerNodeId(id);
         }}
       />
       <AccountTypeModal
@@ -2184,7 +2197,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
             icon: option.icon,
             accent: option.accent,
           });
-          setDrawerNodeId(id);
+          if (id) setDrawerNodeId(id);
         }}
       />
       <Modal

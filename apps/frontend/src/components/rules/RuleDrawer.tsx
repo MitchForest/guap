@@ -31,9 +31,16 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
   const [triggerNodeId, setTriggerNodeId] = createSignal<string | null>(null);
   const [allocations, setAllocations] = createSignal<AllocationDraft[]>([]);
   const [error, setError] = createSignal<string | null>(null);
+  const [initialized, setInitialized] = createSignal(false);
 
   createEffect(() => {
-    if (!props.open) return;
+    // Only initialize when drawer opens (transitions from false to true)
+    if (!props.open) {
+      setInitialized(false);
+      return;
+    }
+    if (initialized()) return; // Don't re-initialize if already open
+    
     const source = props.sourceNode;
     const initial = props.initialRule ?? null;
     setTrigger(initial?.trigger ?? 'incoming');
@@ -56,6 +63,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
       ]);
     }
     setError(null);
+    setInitialized(true);
   });
 
   const remainingPercent = createMemo(() => {
@@ -228,7 +236,15 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                   </div>
                 )}
               </For>
-              <p class="text-xs font-semibold text-slate-500">{Math.max(remainingPercent(), 0)}% remaining</p>
+              <p 
+                class="text-xs font-semibold"
+                classList={{
+                  'text-rose-600': remainingPercent() < 0,
+                  'text-slate-500': remainingPercent() >= 0,
+                }}
+              >
+                {remainingPercent() < 0 ? '' : ''}{remainingPercent().toFixed(1)}% remaining
+              </p>
               <Show when={error()}>
                 <p class="text-xs font-semibold text-rose-600">{error()}</p>
               </Show>

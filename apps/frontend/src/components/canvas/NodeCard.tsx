@@ -12,6 +12,11 @@ export type NodeAllocationStatus = {
   total: number;
 };
 
+export type IncomingAllocationInfo = {
+  percentage: number;
+  sourceLabel: string;
+};
+
 const GRID_CLASS =
   'absolute select-none rounded-2xl border border-slate-200/60 bg-white p-4 shadow-card cursor-grab';
 
@@ -37,6 +42,7 @@ type NodeCardProps = {
   onContextMenu?: (event: PointerEvent, nodeId: string) => void;
   ruleCount?: number;
   allocationStatus?: NodeAllocationStatus | null;
+  incomingAllocations?: IncomingAllocationInfo[];
 };
 
 const NodeCard: Component<NodeCardProps> = (props) => {
@@ -239,6 +245,20 @@ const NodeCard: Component<NodeCardProps> = (props) => {
             <div class="pointer-events-none absolute right-0 top-full mt-2 w-48 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 shadow-lg opacity-0 transition-opacity group-hover/info:opacity-100">
               {infoIconMessage()}
             </div>
+          </div>
+        </Show>
+        <Show when={props.incomingAllocations && props.incomingAllocations.length > 0}>
+          <div class="absolute right-4 top-4 flex flex-wrap gap-1 justify-end max-w-[120px]">
+            <For each={props.incomingAllocations}>
+              {(allocation) => (
+                <span 
+                  class="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold text-sky-700 border border-sky-200"
+                  title={`${allocation.percentage}% from ${allocation.sourceLabel}`}
+                >
+                  {Math.round(allocation.percentage)}%
+                </span>
+              )}
+            </For>
           </div>
         </Show>
         <div class="absolute left-1/2 top-0 flex -translate-x-1/2 -translate-y-full flex-col items-center">
