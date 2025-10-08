@@ -9,18 +9,20 @@ export type WorkspaceRecord = {
 type GraphPublishPayload = {
   nodes: Array<{
     id: string;
-    type: 'income' | 'account' | 'pod' | 'goal' | 'liability';
+    kind: 'income' | 'account' | 'subAccount';
+    category?: string | null;
+    parentId?: string | null;
     label: string;
     icon?: string;
     accent?: string;
     balance?: number;
     position: { x: number; y: number };
   }>;
-  edges: Array<{
+  flows: Array<{
     id: string;
     sourceId: string;
     targetId: string;
-    kind?: 'manual' | 'automation';
+    tone: 'manual' | 'auto';
     ruleId?: string;
   }>;
   rules: Array<{
@@ -67,19 +69,21 @@ export async function publishGraph(slug: string, payload: GraphPublishPayload) {
     slug,
     nodes: payload.nodes.map((node) => ({
       clientId: node.id,
-      type: node.type,
+      type: node.kind === 'income' ? 'income' : node.kind === 'subAccount' ? 'pod' : 'account',
       label: node.label,
       icon: node.icon,
       accent: node.accent,
       balanceCents: typeof node.balance === 'number' ? Math.round(node.balance * 100) : undefined,
       position: node.position,
+      parentClientId: node.parentId ?? null,
+      category: node.category ?? null,
     })),
-    edges: payload.edges.map((edge) => ({
-      clientId: edge.id,
-      sourceClientId: edge.sourceId,
-      targetClientId: edge.targetId,
-      kind: edge.kind,
-      ruleClientId: edge.ruleId,
+    edges: payload.flows.map((flow) => ({
+      clientId: flow.id,
+      sourceClientId: flow.sourceId,
+      targetClientId: flow.targetId,
+      kind: flow.tone === 'manual' ? 'manual' : 'automation',
+      ruleClientId: flow.ruleId,
     })),
     rules: payload.rules.map((rule) => ({
       clientId: rule.id,

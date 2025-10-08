@@ -1,11 +1,12 @@
-import { Component, For, createMemo } from 'solid-js';
-import { CanvasEdge, CanvasNode } from '../../types/graph';
+import { Component, For, Show, createMemo } from 'solid-js';
+import { CanvasFlow, CanvasNode } from '../../types/graph';
 import { AnchorType, NODE_CARD_HEIGHT, NODE_CARD_WIDTH } from './NodeCard';
+import { EDGE_LAYER_PADDING, buildEdgeViewBox } from './canvasGeometry';
 
 type EdgeLayerProps = {
   nodes: CanvasNode[];
-  edges: CanvasEdge[];
-  describeEdge?: (edge: CanvasEdge, source: CanvasNode, target: CanvasNode) => string;
+  flows: CanvasFlow[];
+  describeFlow?: (flow: CanvasFlow, source: CanvasNode, target: CanvasNode) => string;
 };
 
 const buildNodeIndex = (nodes: CanvasNode[]) =>
@@ -34,42 +35,7 @@ export const buildEdgePath = (source: { x: number; y: number }, target: { x: num
 
 const EdgeLayer: Component<EdgeLayerProps> = (props) => {
   const nodeIndex = createMemo(() => buildNodeIndex(props.nodes));
-  const bounds = createMemo(() => {
-    if (props.nodes.length === 0) {
-      return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
-    }
-
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const node of props.nodes) {
-      const { x, y } = node.position;
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      const right = x + NODE_CARD_WIDTH;
-      const bottom = y + NODE_CARD_HEIGHT;
-      if (right > maxX) maxX = right;
-      if (bottom > maxY) maxY = bottom;
-    }
-
-    return {
-      minX: Math.min(0, minX),
-      minY: Math.min(0, minY),
-      maxX,
-      maxY,
-    };
-  });
-
-  const padding = 200;
-  const viewBox = createMemo(() => {
-    const box = bounds();
-    const width = Math.max(box.maxX - box.minX, 1) + padding * 2;
-    const height = Math.max(box.maxY - box.minY, 1) + padding * 2;
-    const x = box.minX - padding;
-    const y = box.minY - padding;
-    return { x, y, width, height };
-  });
+  const viewBox = createMemo(() => buildEdgeViewBox(props.nodes, EDGE_LAYER_PADDING));
 
   return (
     <svg
@@ -78,45 +44,59 @@ const EdgeLayer: Component<EdgeLayerProps> = (props) => {
         overflow: 'visible',
         width: `${viewBox().width}px`,
         height: `${viewBox().height}px`,
+        transform: `translate3d(${viewBox().x}px, ${viewBox().y}px, 0)`,
       }}
       viewBox={`${viewBox().x} ${viewBox().y} ${viewBox().width} ${viewBox().height}`}
     >
-      <For each={props.edges}>
-        {(edge) => {
-          const source = nodeIndex()[edge.sourceId];
-          const target = nodeIndex()[edge.targetId];
+      <For each={props.flows}>
+        {(flow) => {
+          const edge = createMemo(() => {
+            const index = nodeIndex();
+            const sourceNode = index[flow.sourceId];
+            const targetNode = index[flow.targetId];
+            if (!sourceNode || !targetNode) return null;
 
-          if (!source || !target) return null;
+            const path = buildEdgePath(
+              getAnchorPoint(sourceNode, 'bottom'),
+              getAnchorPoint(targetNode, 'top')
+            );
 
-          const path = buildEdgePath(getAnchorPoint(source, 'bottom'), getAnchorPoint(target, 'top'));
-          const description = props.describeEdge
-            ? props.describeEdge(edge, source, target)
-            : `${source.label} → ${target.label}`;
+            const description = props.describeFlow
+              ? props.describeFlow(flow, sourceNode, targetNode)
+              : `${sourceNode.label} → ${targetNode.label}`;
 
-          const strokeColor = edge.kind === 'automation' ? '#0891b2' : '#475569';
-          const strokeWidth = edge.kind === 'automation' ? 2.5 : 3.5;
-          const strokeDash = edge.kind === 'automation' ? '10 6' : undefined;
+            return { path, description };
+          });
+
+          const isAuto = flow.tone === 'auto';
+          const strokeColor = isAuto ? '#0891b2' : '#475569';
+          const strokeWidth = isAuto ? 2.5 : 3.5;
+          const strokeDash = isAuto ? '10 6' : undefined;
 
           return (
-            <path
-              id={`edge-${edge.id}`}
-              d={path}
-              stroke={strokeColor}
-              stroke-width={strokeWidth}
-              stroke-dasharray={strokeDash}
-              fill="none"
-              stroke-linecap="round"
-              stroke-opacity={0.9}
-              style={{
-                'pointer-events': 'stroke' as const,
-                filter: edge.kind === 'automation'
-                  ? 'drop-shadow(0 1px 3px rgba(8, 145, 178, 0.35))'
-                  : 'drop-shadow(0 2px 4px rgba(15, 23, 42, 0.25))',
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              <title>{description}</title>
-            </path>
+            <Show when={edge()} keyed>
+              {(data) => (
+                <path
+                  id={`flow-${flow.id}`}
+                  d={data.path}
+                  stroke={strokeColor}
+                  stroke-width={strokeWidth}
+                  stroke-dasharray={strokeDash}
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-opacity={0.9}
+                  style={{
+                    'pointer-events': 'stroke' as const,
+                    filter: isAuto
+                      ? 'drop-shadow(0 1px 3px rgba(8, 145, 178, 0.35))'
+                      : 'drop-shadow(0 2px 4px rgba(15, 23, 42, 0.25))',
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <title>{data.description}</title>
+                </path>
+              )}
+            </Show>
           );
         }}
       </For>

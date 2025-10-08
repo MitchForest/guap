@@ -1,9 +1,10 @@
-import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, on } from 'solid-js';
+import { Component, For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, on } from 'solid-js';
 import { Motion } from 'solid-motionone';
 import { createStore } from 'solid-js/store';
 import CanvasViewport, { DragPayload, ViewportControls } from '../components/canvas/CanvasViewport';
-import { CanvasEdge, CanvasNode } from '../types/graph';
-import BottomDock, { DockMenuItem } from '../components/layout/BottomDock';
+import { CanvasFlow, CanvasNode } from '../types/graph';
+import BottomDock from '../components/layout/BottomDock';
+import ZoomPad from '../components/layout/ZoomPad';
 import { AnchorType, NODE_CARD_HEIGHT, NODE_CARD_WIDTH } from '../components/canvas/NodeCard';
 import { buildEdgePath, getAnchorPoint } from '../components/canvas/EdgeLayer';
 import EmptyHero from '../components/empty/EmptyHero';
@@ -26,32 +27,9 @@ import {
 const GRID_SIZE = 28;
 const snapToGrid = (value: number) => Math.round(value / GRID_SIZE) * GRID_SIZE;
 
-const dockMenuItems: DockMenuItem[] = [
-  {
-    id: 'income',
-    label: 'Income Source',
-    description: 'An internal account for fast fund transfers',
-  },
-  {
-    id: 'pod',
-    label: 'Pod',
-    description: 'A sub-account for organizing your money',
-  },
-  {
-    id: 'account',
-    label: 'Account',
-    description: 'Add deposit, investment, or liability accounts',
-  },
-  {
-    id: 'automation',
-    label: 'Automation',
-    description: 'Create a rule triggered by funds or schedule',
-  },
-];
-
 type Snapshot = {
   nodes: CanvasNode[];
-  edges: CanvasEdge[];
+  flows: CanvasFlow[];
   rules: RuleRecord[];
   selectedIds: string[];
 };
@@ -136,6 +114,7 @@ const createId = () =>
 type DragState = {
   nodeIds: string[];
   startPositions: Record<string, { x: number; y: number }>;
+  delta: { x: number; y: number };
 };
 
 type RuleAllocationRecord = {
@@ -152,6 +131,16 @@ type RuleRecord = {
   allocations: RuleAllocationRecord[];
 };
 
+type FlowComposerState =
+  | { stage: 'idle' }
+  | { stage: 'pickSource' }
+  | {
+      stage: 'pickTarget';
+      sourceNodeId: string;
+      sourcePoint: { x: number; y: number };
+      cursorPoint: { x: number; y: number };
+    };
+
 const CanvasPage: Component = () => {
   const [workspaces, setWorkspaces] = createSignal<WorkspaceRecord[]>([]);
   const [workspaceSlug, setWorkspaceSlug] = createSignal<string | null>(null);
@@ -164,23 +153,15 @@ const CanvasPage: Component = () => {
 let workspaceMenuButtonRef: HTMLButtonElement | undefined;
 let drawerContainerRef: HTMLDivElement | undefined;
 
-  const [graph, setGraph] = createStore<{ nodes: CanvasNode[]; edges: CanvasEdge[] }>({
+  const [graph, setGraph] = createStore<{ nodes: CanvasNode[]; flows: CanvasFlow[] }>({
     nodes: [],
-    edges: [],
+    flows: [],
   });
   const [selectedIds, setSelectedIds] = createSignal<string[]>([]);
   const [scalePercent, setScalePercent] = createSignal(100);
   const [dragState, setDragState] = createSignal<DragState | null>(null);
   const [viewportState, setViewportState] = createSignal({ scale: 1, translate: { x: 0, y: 0 } });
-  const [connectingEdge, setConnectingEdge] = createSignal<
-    | null
-    | {
-        sourceNodeId: string;
-        sourceAnchor: AnchorType;
-        sourcePoint: { x: number; y: number };
-        cursorPoint: { x: number; y: number };
-      }
-  >(null);
+  const [flowComposer, setFlowComposer] = createSignal<FlowComposerState>({ stage: 'idle' });
   const [hoveredAnchor, setHoveredAnchor] = createSignal<{ nodeId: string; anchor: AnchorType } | null>(
     null
   );
@@ -189,6 +170,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
     null
   );
   const [createModal, setCreateModal] = createSignal<'income' | 'pod' | 'account' | null>(null);
+  const [subAccountParentId, setSubAccountParentId] = createSignal<string | null>(null);
   const [ruleDrawer, setRuleDrawer] = createSignal<{ sourceNodeId: string } | null>(null);
   const [rules, setRules] = createSignal<RuleRecord[]>([]);
   const [showHero, setShowHero] = createSignal(true);
@@ -214,13 +196,13 @@ let drawerContainerRef: HTMLDivElement | undefined;
 
   const resetWorkspaceState = () => {
     setGraph('nodes', () => []);
-    setGraph('edges', () => []);
+    setGraph('flows', () => []);
     setRules([]);
     setSelectedIds([]);
     setDrawerNodeId(null);
     setRuleDrawer(null);
     setMarquee(null);
-    cancelConnection();
+    exitFlowMode();
     setPlacementIndex(0);
     setHistory([]);
     setHistoryIndex(-1);
@@ -277,7 +259,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
 
   const cloneSnapshot = (snap: Snapshot): Snapshot => ({
     nodes: snap.nodes.map((node) => ({ ...node, position: { ...node.position } })),
-    edges: snap.edges.map((edge) => ({ ...edge })),
+    flows: snap.flows.map((flow) => ({ ...flow })),
     rules: snap.rules.map((rule) => ({
       ...rule,
       allocations: rule.allocations.map((alloc) => ({ ...alloc })),
@@ -288,7 +270,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
   const snapshotGraph = (): Snapshot =>
     cloneSnapshot({
       nodes: graph.nodes,
-      edges: graph.edges,
+      flows: graph.flows,
       rules: rules(),
       selectedIds: selectedIds(),
     });
@@ -317,13 +299,13 @@ let drawerContainerRef: HTMLDivElement | undefined;
   const applySnapshot = (snap: Snapshot) => {
     const clone = cloneSnapshot(snap);
     setGraph('nodes', () => clone.nodes);
-    setGraph('edges', () => clone.edges);
+    setGraph('flows', () => clone.flows);
     setRules(clone.rules);
     setSelectedIds(clone.selectedIds);
     setDrawerNodeId(null);
     setRuleDrawer(null);
     setMarquee(null);
-    setConnectingEdge(null);
+    exitFlowMode();
     setHoveredAnchor(null);
   };
 
@@ -396,25 +378,15 @@ let drawerContainerRef: HTMLDivElement | undefined;
     return map;
   });
   const getRuleCount = (nodeId: string) => rules().filter((rule) => rule.sourceNodeId === nodeId).length;
-  const describeRule = (rule: RuleRecord) => {
-    const parts = rule.allocations
-      .filter((alloc) => alloc.targetNodeId)
-      .map((alloc) => {
-        const target = alloc.targetNodeId ? nodeLookup().get(alloc.targetNodeId) : null;
-        return `${alloc.percentage}% to ${target?.label ?? 'Unknown'}`;
-      });
-    return parts.join(', ');
-  };
-
   const ruleById = createMemo(() => {
     const map = new Map<string, RuleRecord>();
     rules().forEach((rule) => map.set(rule.id, rule));
     return map;
   });
 
-  const describeEdge = (edge: CanvasEdge, source: CanvasNode, target: CanvasNode) => {
-    if (edge.kind === 'automation') {
-      const rule = edge.ruleId ? ruleById().get(edge.ruleId) : undefined;
+  const describeFlow = (flow: CanvasFlow, source: CanvasNode, target: CanvasNode) => {
+    if (flow.tone === 'auto') {
+      const rule = flow.ruleId ? ruleById().get(flow.ruleId) : undefined;
       if (rule) {
         const allocations = rule.allocations
           .filter((alloc) => alloc.targetNodeId === target.id)
@@ -521,23 +493,34 @@ let drawerContainerRef: HTMLDivElement | undefined;
   });
 
   const hydrateGraph = (data: any, options: { primeHistory?: boolean } = {}) => {
-    const nodes = (data.nodes ?? []).map((node: any) => ({
-      id: String(node._id),
-      type: node.type,
-      label: node.label,
-      icon: node.icon ?? undefined,
-      accent: node.accent ?? undefined,
-      balance: typeof node.balanceCents === 'number' ? node.balanceCents / 100 : undefined,
-      position: node.position,
-    }));
+    const nodes = (data.nodes ?? []).map((node: any) => {
+      const type = node.type ?? 'account';
+      const kind: CanvasNode['kind'] = type === 'income' ? 'income' : type === 'pod' || type === 'goal' ? 'subAccount' : 'account';
+      const category = node.category ?? (type === 'income' ? undefined : type === 'liability' ? 'creditCard' : undefined);
 
-    const edges = (data.edges ?? []).map((edge: any) => ({
+      return {
+        id: String(node._id),
+        kind,
+        category,
+        parentId: node.parentId ? String(node.parentId) : null,
+        label: node.label,
+        icon: node.icon ?? undefined,
+        accent: node.accent ?? undefined,
+        balance: typeof node.balanceCents === 'number' ? node.balanceCents / 100 : undefined,
+        position: node.position,
+      } satisfies CanvasNode;
+    });
+
+    const flows = (data.edges ?? []).map((edge: any) => ({
       id: String(edge._id),
       sourceId: String(edge.sourceNodeId),
       targetId: String(edge.targetNodeId),
-      kind: edge.kind ?? 'automation',
+      tone: edge.kind === 'manual' ? 'manual' : 'auto',
+      tag: edge.tag ?? undefined,
+      amountCents: typeof edge.amountCents === 'number' ? edge.amountCents : undefined,
+      note: edge.note ?? undefined,
       ruleId: edge.ruleId ? String(edge.ruleId) : undefined,
-    }));
+    } satisfies CanvasFlow));
 
     const allocationsByRule = new Map<string, any[]>();
     (data.allocations ?? []).forEach((alloc: any) => {
@@ -559,7 +542,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
   }));
 
   setGraph('nodes', nodes);
-  setGraph('edges', edges);
+  setGraph('flows', flows);
   setRules(ruleRecords);
   setShowHero(nodes.length === 0);
   setPlacementIndex(nodes.length);
@@ -567,7 +550,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
     const initialSelection = nodes.length ? [nodes[0].id] : [];
     replaceHistory({
       nodes,
-      edges,
+      flows,
       rules: ruleRecords,
       selectedIds: initialSelection,
     });
@@ -682,8 +665,24 @@ let drawerContainerRef: HTMLDivElement | undefined;
   let viewportControls: ViewportControls | undefined;
   let viewportElement: HTMLDivElement | undefined;
 
-  const nodes = createMemo(() => graph.nodes);
-  const edges = createMemo(() => graph.edges);
+  const livePositions = createMemo(() => {
+    const state = dragState();
+    if (!state) return null;
+    const overrides = new Map<string, { x: number; y: number }>();
+    const { delta, startPositions } = state;
+    state.nodeIds.forEach((id) => {
+      const start = startPositions[id];
+      if (!start) return;
+      overrides.set(id, {
+        x: start.x + delta.x,
+        y: start.y + delta.y,
+      });
+    });
+    return overrides;
+  });
+  const accountNodes = createMemo(() => graph.nodes.filter((node) => node.kind === 'account'));
+  const accountOptions = createMemo(() => accountNodes().map((node) => ({ id: node.id, label: node.label })));
+  const flows = createMemo(() => graph.flows);
 
   const ensureSelection = (nodeId: string, additive: boolean) => {
     setSelectedIds((prev) => {
@@ -700,21 +699,30 @@ let drawerContainerRef: HTMLDivElement | undefined;
   };
 
   const clearSelection = () => {
-    if (connectingEdge()) {
-      console.log('[connect] clearSelection cancels connection');
-      cancelConnection();
+    if (flowComposer().stage !== 'idle') {
+      console.log('[flow] clearSelection cancels active flow');
+      exitFlowMode();
       return;
     }
     setSelectedIds([]);
   };
 
   const handleNodeSelect = (event: PointerEvent, nodeId: string) => {
-    if (connectingEdge()) {
-      console.log('[connect] node select ignored during connection', {
-        nodeId,
-      });
+    const composer = flowComposer();
+    if (composer.stage === 'pickTarget') {
       event.stopPropagation();
       event.preventDefault();
+      if (composer.sourceNodeId === nodeId) {
+        exitFlowMode();
+        return;
+      }
+      completeFlow(nodeId);
+      return;
+    }
+    if (composer.stage === 'pickSource') {
+      event.stopPropagation();
+      event.preventDefault();
+      startFlowFromNode(nodeId, event);
       return;
     }
     const multiSelect = event.shiftKey || event.metaKey || event.ctrlKey;
@@ -750,35 +758,39 @@ let drawerContainerRef: HTMLDivElement | undefined;
           startPositions[id] = { x: node.position.x, y: node.position.y };
         }
       });
-      setDragState({ nodeIds: Array.from(idsToMove), startPositions });
+      setDragState({ nodeIds: Array.from(idsToMove), startPositions, delta: { x: 0, y: 0 } });
       return;
     }
 
     const state = dragState();
     if (!state) return;
 
-    state.nodeIds.forEach((id) => {
-      const start = state.startPositions[id];
-      if (!start) return;
-      const nextPosition = {
-        x: snapToGrid(start.x + delta.x),
-        y: snapToGrid(start.y + delta.y),
-      };
-      const index = graph.nodes.findIndex((node) => node.id === id);
-      if (index >= 0) {
-        setGraph('nodes', index, 'position', nextPosition);
-      }
-    });
+    if (phase === 'move') {
+      setDragState((prev) => (prev ? { ...prev, delta: { x: delta.x, y: delta.y } } : prev));
+      return;
+    }
 
     if (phase === 'end') {
+      const finalDelta = state.delta;
+      let moved = false;
+      state.nodeIds.forEach((id) => {
+        const start = state.startPositions[id];
+        if (!start) return;
+        const nextPosition = {
+          x: snapToGrid(start.x + finalDelta.x),
+          y: snapToGrid(start.y + finalDelta.y),
+        };
+        const index = graph.nodes.findIndex((node) => node.id === id);
+        if (index >= 0) {
+          const current = graph.nodes[index].position;
+          if (current.x !== nextPosition.x || current.y !== nextPosition.y) {
+            moved = true;
+            setGraph('nodes', index, 'position', nextPosition);
+          }
+        }
+      });
       setDragState(null);
-      const updates = state.nodeIds
-        .map((id) => {
-          const node = graph.nodes.find((n) => n.id === id);
-          return node ? { nodeId: id, position: node.position } : null;
-        })
-        .filter((value): value is { nodeId: string; position: { x: number; y: number } } => Boolean(value));
-      if (updates.length) {
+      if (moved) {
         pushHistory();
       }
     }
@@ -796,30 +808,30 @@ let drawerContainerRef: HTMLDivElement | undefined;
   const translatePointerToWorld = (event: PointerEvent) =>
     translateClientToWorld(event.clientX, event.clientY);
 
-  const updateConnectionCursor = (clientX: number, clientY: number) => {
-    const active = connectingEdge();
-    if (!active) return;
+  const updateFlowCursor = (clientX: number, clientY: number) => {
+    const composer = flowComposer();
+    if (composer.stage !== 'pickTarget') return;
     const basePoint = translateClientToWorld(clientX, clientY);
     if (!basePoint) return;
     let cursorPoint = basePoint;
     const anchor = findAnchorAtClientPoint(clientX, clientY);
-    if (anchor && anchor.anchor === 'top' && anchor.nodeId !== active.sourceNodeId) {
+    if (anchor && anchor.anchor === 'top' && anchor.nodeId !== composer.sourceNodeId) {
       const targetNode = graph.nodes.find((n) => n.id === anchor.nodeId);
       if (targetNode) {
         cursorPoint = getAnchorPoint(targetNode, 'top');
         setHoveredAnchor(anchor);
-        console.log('[connect] cursor over target anchor', {
-          sourceNodeId: active.sourceNodeId,
+        console.log('[flow] cursor over target anchor', {
+          sourceNodeId: composer.sourceNodeId,
           targetNodeId: anchor.nodeId,
         });
       } else {
-        console.log('[connect] anchor node not found during cursor update', anchor);
+        console.log('[flow] anchor node not found during cursor update', anchor);
         setHoveredAnchor(null);
       }
     } else {
       setHoveredAnchor(null);
     }
-    setConnectingEdge((prev) => (prev ? { ...prev, cursorPoint } : prev));
+    setFlowComposer((prev) => (prev.stage === 'pickTarget' ? { ...prev, cursorPoint } : prev));
   };
 
   const findAnchorAtClientPoint = (clientX: number, clientY: number) => {
@@ -835,138 +847,141 @@ let drawerContainerRef: HTMLDivElement | undefined;
     return null;
   };
 
-  const findAnchorAtPoint = (event: PointerEvent) => findAnchorAtClientPoint(event.clientX, event.clientY);
-
-  const findNodeCardAtClientPoint = (clientX: number, clientY: number) => {
-    const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
-    const nodeCard = element?.closest('[data-node-card-id]') as HTMLElement | null;
-    const nodeId = nodeCard?.dataset.nodeCardId;
-    return nodeId ?? null;
-  };
-
   const handleGlobalPointerMove = (event: PointerEvent) => {
-    updateConnectionCursor(event.clientX, event.clientY);
+    updateFlowCursor(event.clientX, event.clientY);
   };
 
-  function handleConnectionKeyDown(event: KeyboardEvent) {
+  function handleFlowComposerKeyDown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
-      cancelConnection();
+      exitFlowMode();
     }
   }
 
   const handleGlobalMouseMove = (event: MouseEvent) => {
-    updateConnectionCursor(event.clientX, event.clientY);
+    updateFlowCursor(event.clientX, event.clientY);
   };
 
-  function removeGlobalPointerListeners() {
+  function removeFlowListeners() {
     window.removeEventListener('pointermove', handleGlobalPointerMove, true);
     window.removeEventListener('pointermove', handleGlobalPointerMove);
-    window.removeEventListener('keydown', handleConnectionKeyDown);
+    window.removeEventListener('keydown', handleFlowComposerKeyDown);
     window.removeEventListener('mousemove', handleGlobalMouseMove, true);
     window.removeEventListener('mousemove', handleGlobalMouseMove);
   }
 
-  function ensureConnectionListeners() {
-    removeGlobalPointerListeners();
+  function ensureFlowListeners() {
+    removeFlowListeners();
     window.addEventListener('pointermove', handleGlobalPointerMove, true);
     window.addEventListener('pointermove', handleGlobalPointerMove);
-    window.addEventListener('keydown', handleConnectionKeyDown);
+    window.addEventListener('keydown', handleFlowComposerKeyDown);
     window.addEventListener('mousemove', handleGlobalMouseMove, true);
     window.addEventListener('mousemove', handleGlobalMouseMove);
   }
 
-  function cancelConnection() {
-    if (connectingEdge()) {
-      console.log('[connect] cancel connection', connectingEdge());
-      console.trace('[connect] cancel stack');
+  const exitFlowMode = () => {
+    const composer = flowComposer();
+    if (composer.stage !== 'idle') {
+      console.log('[flow] cancel', composer);
+      console.trace('[flow] cancel stack');
     }
-    setConnectingEdge(null);
+    setFlowComposer({ stage: 'idle' });
     setHoveredAnchor(null);
-    removeGlobalPointerListeners();
-  }
+    removeFlowListeners();
+  };
 
-  function completeConnection(targetNodeId: string) {
-    const active = connectingEdge();
-    if (!active) return;
-    console.log('[connect] attempt complete', {
-      sourceNodeId: active.sourceNodeId,
+  const completeFlow = (targetNodeId: string) => {
+    const composer = flowComposer();
+    if (composer.stage !== 'pickTarget') return;
+    console.log('[flow] attempt complete', {
+      sourceNodeId: composer.sourceNodeId,
       targetNodeId,
     });
-    if (targetNodeId === active.sourceNodeId) {
-      console.log('[connect] abort self-connection', targetNodeId);
-      cancelConnection();
+    if (targetNodeId === composer.sourceNodeId) {
+      console.log('[flow] abort self-connection', targetNodeId);
+      exitFlowMode();
       return;
     }
-    const exists = graph.edges.some(
-      (edge) => edge.sourceId === active.sourceNodeId && edge.targetId === targetNodeId
+    const exists = graph.flows.some(
+      (flow) => flow.sourceId === composer.sourceNodeId && flow.targetId === targetNodeId
     );
     if (!exists) {
-      const id = `${active.sourceNodeId}-${targetNodeId}-${Date.now()}`;
-      setGraph('edges', (edges) => [
-        ...edges,
-        { id, sourceId: active.sourceNodeId, targetId: targetNodeId, kind: 'manual' },
+      const id = `${composer.sourceNodeId}-${targetNodeId}-${Date.now()}`;
+      setGraph('flows', (flows) => [
+        ...flows,
+        { id, sourceId: composer.sourceNodeId, targetId: targetNodeId, tone: 'manual', tag: 'Flow' },
       ]);
       pushHistory();
-      console.log('[connect] edge created', { id, sourceId: active.sourceNodeId, targetId: targetNodeId });
-      console.log('[connect] edges now', graph.edges.map((edge) => edge.id));
+      console.log('[flow] created', { id, sourceNodeId: composer.sourceNodeId, targetNodeId });
+      console.log('[flow] all', graph.flows.map((flow) => flow.id));
     } else {
-      console.log('[connect] edge already exists', {
-        sourceNodeId: active.sourceNodeId,
+      console.log('[flow] already exists', {
+        sourceNodeId: composer.sourceNodeId,
         targetNodeId,
       });
     }
-    cancelConnection();
-  }
+    exitFlowMode();
+  };
 
-  const handleConnectionStart = (payload: { nodeId: string; anchor: AnchorType; event: PointerEvent }) => {
-    if (payload.anchor !== 'bottom') return;
-    const existing = connectingEdge();
-    if (existing) {
-      if (existing.sourceNodeId === payload.nodeId && existing.sourceAnchor === payload.anchor) {
-        console.log('[connect] duplicate connector press ignored', existing);
-        return;
-      }
-      console.log('[connect] switching source node', {
-        previous: existing.sourceNodeId,
-        next: payload.nodeId,
-      });
-      cancelConnection();
-    }
-    const node = graph.nodes.find((n) => n.id === payload.nodeId);
+  const startFlowFromNode = (nodeId: string, event?: PointerEvent) => {
+    const node = graph.nodes.find((n) => n.id === nodeId);
     if (!node) return;
-    const sourcePoint = getAnchorPoint(node, payload.anchor);
-    const initialCursor = translatePointerToWorld(payload.event) ?? sourcePoint;
-    setConnectingEdge({
-      sourceNodeId: payload.nodeId,
-      sourceAnchor: payload.anchor,
+    const sourcePoint = getAnchorPoint(node, 'bottom');
+    const initialCursor = event ? translatePointerToWorld(event) ?? sourcePoint : sourcePoint;
+
+    setFlowComposer({
+      stage: 'pickTarget',
+      sourceNodeId: nodeId,
       sourcePoint,
       cursorPoint: initialCursor,
     });
     setHoveredAnchor(null);
-    ensureConnectionListeners();
-    updateConnectionCursor(payload.event.clientX, payload.event.clientY);
-    console.log('[connect] connection mode entered', {
-      sourceNodeId: payload.nodeId,
+    ensureFlowListeners();
+    if (event) {
+      updateFlowCursor(event.clientX, event.clientY);
+    }
+    console.log('[flow] source selected', {
+      sourceNodeId: nodeId,
       sourcePoint,
     });
   };
 
-  const handleConnectionTargetSelect = (payload: {
+  const enterFlowMode = () => {
+    const composer = flowComposer();
+    if (composer.stage === 'pickTarget') return;
+    setFlowComposer({ stage: 'pickSource' });
+    setHoveredAnchor(null);
+    removeFlowListeners();
+    console.log('[flow] mode armed for source selection');
+  };
+
+  const handleFlowStartFromAnchor = (payload: { nodeId: string; anchor: AnchorType; event: PointerEvent }) => {
+    if (payload.anchor !== 'bottom') return;
+    const composer = flowComposer();
+    if (composer.stage === 'pickTarget' && composer.sourceNodeId === payload.nodeId) {
+      console.log('[flow] duplicate source trigger ignored', composer);
+      return;
+    }
+    startFlowFromNode(payload.nodeId, payload.event);
+  };
+
+  const handleFlowTargetSelect = (payload: {
     nodeId: string;
     anchor: AnchorType;
     event: PointerEvent;
   }) => {
     if (payload.anchor !== 'top') return;
+    const composer = flowComposer();
+    if (composer.stage !== 'pickTarget') return;
     const node = graph.nodes.find((n) => n.id === payload.nodeId);
     if (!node) return;
     const targetPoint = getAnchorPoint(node, payload.anchor);
-    setConnectingEdge((prev) => (prev ? { ...prev, cursorPoint: targetPoint } : prev));
+    setFlowComposer((prev) => (prev.stage === 'pickTarget' ? { ...prev, cursorPoint: targetPoint } : prev));
     setHoveredAnchor({ nodeId: payload.nodeId, anchor: 'top' });
-    console.log('[connect] target selected', {
+    console.log('[flow] target anchor pressed', {
       nodeId: payload.nodeId,
       anchor: payload.anchor,
     });
-    completeConnection(payload.nodeId);
+    completeFlow(payload.nodeId);
   };
 
   const handleMarqueeStart = (payload: {
@@ -1030,7 +1045,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
   });
 
   onCleanup(() => {
-    removeGlobalPointerListeners();
+    removeFlowListeners();
   });
 
   createEffect(() => {
@@ -1055,9 +1070,9 @@ let drawerContainerRef: HTMLDivElement | undefined;
   };
 
   const connectingPreview = createMemo(() => {
-    const active = connectingEdge();
-    if (!active) return null;
-    const path = buildEdgePath(active.sourcePoint, active.cursorPoint);
+    const composer = flowComposer();
+    if (composer.stage !== 'pickTarget') return null;
+    const path = buildEdgePath(composer.sourcePoint, composer.cursorPoint);
     return (
       <svg class="absolute inset-0 h-full w-full pointer-events-none" style={{ overflow: 'visible' }}>
         <path
@@ -1073,12 +1088,16 @@ let drawerContainerRef: HTMLDivElement | undefined;
   });
 
   const connectingFrom = createMemo(() => {
-    const active = connectingEdge();
-    return active ? { nodeId: active.sourceNodeId, anchor: active.sourceAnchor } : null;
+    const composer = flowComposer();
+    return composer.stage === 'pickTarget'
+      ? { nodeId: composer.sourceNodeId, anchor: 'bottom' as AnchorType }
+      : null;
   });
 
   const createNodeAtViewport = async (preset: {
-    type: CanvasNode['type'];
+    kind: CanvasNode['kind'];
+    category?: CanvasNode['category'];
+    parentId?: string | null;
     label: string;
     icon: string;
     accent: string;
@@ -1115,7 +1134,9 @@ let drawerContainerRef: HTMLDivElement | undefined;
     const newNodeId = `node-${createId()}`;
     const newNode: CanvasNode = {
       id: newNodeId,
-      type: preset.type,
+      kind: preset.kind,
+      category: preset.category,
+      parentId: preset.parentId ?? null,
       label: preset.label,
       icon: preset.icon,
       accent: preset.accent,
@@ -1130,21 +1151,58 @@ let drawerContainerRef: HTMLDivElement | undefined;
     pushHistory();
   };
 
-  const handleCreateMenuSelect = (item: DockMenuItem) => {
+  const handleAddIncome = () => {
     if (!workspaceSlug()) {
       openCreateWorkspace();
       return;
     }
-    if (item.id === 'automation') {
-      const sourceId = selectedIds()[0] ?? graph.nodes.find((node) => node.type === 'income')?.id;
-      if (!sourceId) return;
-      setDrawerNodeId(null);
-      setRuleDrawer({ sourceNodeId: sourceId });
+    setRuleDrawer(null);
+    setShowHero(false);
+    setCreateModal('income');
+  };
+
+  const handleAddAccount = () => {
+    if (!workspaceSlug()) {
+      openCreateWorkspace();
       return;
     }
     setRuleDrawer(null);
     setShowHero(false);
-    setCreateModal(item.id as 'income' | 'pod' | 'account');
+    setCreateModal('account');
+  };
+
+  const handleAddSubAccount = () => {
+    if (!workspaceSlug()) {
+      openCreateWorkspace();
+      return;
+    }
+    const available = accountNodes();
+    if (available.length === 0) {
+      handleAddAccount();
+      return;
+    }
+    const selectedAccount = selectedIds().find((id) => available.some((node) => node.id === id));
+    const parentId = selectedAccount ?? available[0].id;
+    setSubAccountParentId(parentId);
+    setRuleDrawer(null);
+    setShowHero(false);
+    setCreateModal('pod');
+  };
+
+  const handleStartFlow = () => {
+    if (!workspaceSlug()) {
+      openCreateWorkspace();
+      return;
+    }
+    const stage = flowComposer().stage;
+    if (stage === 'pickSource') {
+      exitFlowMode();
+      return;
+    }
+    if (stage === 'pickTarget') {
+      exitFlowMode();
+    }
+    enterFlowMode();
   };
 
   const duplicateNode = (nodeId: string) => {
@@ -1175,7 +1233,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
       }
       return filtered;
     });
-    setGraph('edges', (edges) => edges.filter((edge) => edge.sourceId !== nodeId && edge.targetId !== nodeId));
+    setGraph('flows', (flows) => flows.filter((flow) => flow.sourceId !== nodeId && flow.targetId !== nodeId));
     setRules((existing) =>
       existing
         .map((rule) => {
@@ -1234,13 +1292,13 @@ let drawerContainerRef: HTMLDivElement | undefined;
     try {
       const result = await publishGraph(slug, {
         nodes: graph.nodes,
-        edges: graph.edges,
+        flows: graph.flows,
         rules: rules(),
       });
 
       const nodeMap = new Map<string, string>(Object.entries(result.nodes ?? {}));
       const ruleMap = new Map<string, string>(Object.entries(result.rules ?? {}));
-      const edgeMap = new Map<string, string>(Object.entries(result.edges ?? {}));
+      const flowMap = new Map<string, string>(Object.entries(result.flows ?? result.edges ?? {}));
 
       setGraph('nodes', (nodes) =>
         nodes.map((node) => {
@@ -1249,15 +1307,15 @@ let drawerContainerRef: HTMLDivElement | undefined;
         })
       );
 
-      setGraph('edges', (edges) =>
-        edges.map((edge) => {
-          const newId = edgeMap.get(edge.id);
+      setGraph('flows', (flows) =>
+        flows.map((flow) => {
+          const newId = flowMap.get(flow.id);
           return {
-            ...edge,
-            id: newId ?? edge.id,
-            sourceId: nodeMap.get(edge.sourceId) ?? edge.sourceId,
-            targetId: nodeMap.get(edge.targetId) ?? edge.targetId,
-            ruleId: edge.ruleId ? ruleMap.get(edge.ruleId) ?? edge.ruleId : edge.ruleId,
+            ...flow,
+            id: newId ?? flow.id,
+            sourceId: nodeMap.get(flow.sourceId) ?? flow.sourceId,
+            targetId: nodeMap.get(flow.targetId) ?? flow.targetId,
+            ruleId: flow.ruleId ? ruleMap.get(flow.ruleId) ?? flow.ruleId : flow.ruleId,
           };
         })
       );
@@ -1362,8 +1420,9 @@ let drawerContainerRef: HTMLDivElement | undefined;
         </Show>
       </div>
       <CanvasViewport
-        nodes={nodes()}
-        edges={edges()}
+        nodes={graph.nodes}
+        positions={livePositions()}
+        flows={flows()}
         selectedNodeIds={selectedIdSet()}
         onBackgroundPointerDown={clearSelection}
         onViewportChange={(payload) => {
@@ -1378,18 +1437,18 @@ let drawerContainerRef: HTMLDivElement | undefined;
         }}
         onNodeSelect={handleNodeSelect}
         onNodeDrag={handleNodeDrag}
-        onConnectionStart={handleConnectionStart}
-        onConnectionTargetSelect={handleConnectionTargetSelect}
+        onConnectionStart={handleFlowStartFromAnchor}
+        onConnectionTargetSelect={handleFlowTargetSelect}
         onNodeOpenDrawer={handleNodeOpenDrawer}
         onNodeContextMenu={handleNodeContextMenu}
         onMarqueeStart={handleMarqueeStart}
         onMarqueeUpdate={handleMarqueeUpdate}
         onMarqueeEnd={handleMarqueeEnd}
         getRuleCount={getRuleCount}
-        describeEdge={describeEdge}
+        describeFlow={describeFlow}
         connectingFrom={connectingFrom()}
         hoveredAnchor={hoveredAnchor()}
-        connectionMode={Boolean(connectingEdge())}
+        connectionMode={flowComposer().stage === 'pickTarget'}
         selectionOverlay={marqueeOverlay()}
       >
         {connectingPreview()}
@@ -1470,18 +1529,34 @@ let drawerContainerRef: HTMLDivElement | undefined;
         >
           <Show when={drawerNode()}>
             {(node) => (
+              (() => {
+                const selected = node();
+                const lookup = nodeLookup();
+                const outbound = flows()
+                  .filter((flow) => flow.sourceId === selected.id)
+                  .map((flow) => ({
+                    id: flow.id,
+                    partnerLabel: lookup.get(flow.targetId)?.label ?? 'Unknown',
+                    tone: flow.tone,
+                    tag: flow.tag,
+                  }));
+                const inbound = flows()
+                  .filter((flow) => flow.targetId === selected.id)
+                  .map((flow) => ({
+                    id: flow.id,
+                    partnerLabel: lookup.get(flow.sourceId)?.label ?? 'Unknown',
+                    tone: flow.tone,
+                    tag: flow.tag,
+                  }));
+                return (
               <NodeDrawer
                 node={node()}
                 onClose={() => setDrawerNodeId(null)}
-                rules={rules()
-                  .filter((rule) => rule.sourceNodeId === node().id)
-                  .map((rule) => ({
-                    id: rule.id,
-                    trigger:
-                      rule.trigger === 'incoming' ? 'Triggered by incoming funds' : 'Triggered by date',
-                    summary: describeRule(rule),
-                  }))}
+                outbound={outbound}
+                inbound={inbound}
               />
+                );
+              })()
             )}
           </Show>
           <Show when={!drawerNode() && ruleDrawer()}>
@@ -1500,22 +1575,24 @@ let drawerContainerRef: HTMLDivElement | undefined;
                   allocations: rule.allocations,
                 };
                 setRules((existing) => [...existing.filter((r) => r.id !== ruleId), record]);
-                setGraph('edges', (edges) => {
-                  const next = [...edges];
+                setGraph('flows', (flows) => {
+                  const next = [...flows];
                   rule.allocations.forEach((alloc) => {
                     const existing = next.find(
-                      (edge) => edge.sourceId === rule.sourceNodeId && edge.targetId === alloc.targetNodeId,
+                      (flow) => flow.sourceId === rule.sourceNodeId && flow.targetId === alloc.targetNodeId,
                     );
                     if (existing) {
-                      existing.kind = 'automation';
+                      existing.tone = 'auto';
                       existing.ruleId = ruleId;
+                      existing.tag = existing.tag ?? 'Flow';
                     } else {
                       next.push({
-                        id: `edge-${createId()}`,
+                        id: `flow-${createId()}`,
                         sourceId: rule.sourceNodeId,
                         targetId: alloc.targetNodeId,
-                        kind: 'automation',
+                        tone: 'auto',
                         ruleId,
+                        tag: 'Flow',
                       });
                     }
                   });
@@ -1529,30 +1606,51 @@ let drawerContainerRef: HTMLDivElement | undefined;
         </Motion.div>
       </div>
       <BottomDock
+        onAddIncome={handleAddIncome}
+        onAddAccount={handleAddAccount}
+        onAddSubAccount={handleAddSubAccount}
+        onStartFlow={handleStartFlow}
+      />
+      <ZoomPad
         zoomPercent={scalePercent()}
-        menuItems={dockMenuItems}
-        onCreateNode={handleCreateMenuSelect}
-        onLinkNodes={() => {
-          const first = graph.nodes[0];
-          if (first) {
-            setSelectedIds([first.id]);
-          }
-        }}
         onZoomIn={() => viewportControls?.zoomIn()}
         onZoomOut={() => viewportControls?.zoomOut()}
+        onReset={() => viewportControls?.reset()}
       />
+      <Show when={flowComposer().stage !== 'idle'}>
+        <div class="pointer-events-none absolute left-1/2 top-8 -translate-x-1/2">
+          <span class="rounded-full border border-slate-200 bg-white/90 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-floating">
+            <Switch>
+              <Match when={flowComposer().stage === 'pickSource'}>Flow mode: Pick a source</Match>
+              <Match when={flowComposer().stage === 'pickTarget'}>Flow mode: Pick a destination</Match>
+            </Switch>
+          </span>
+        </div>
+      </Show>
       <IncomeSourceModal
         open={createModal() === 'income'}
         onClose={() => setCreateModal(null)}
         onSubmit={async (name) => {
-          await createNodeAtViewport({ type: 'income', label: name, icon: '🏦', accent: '#2563eb' });
+          await createNodeAtViewport({ kind: 'income', label: name, icon: '🏦', accent: '#2563eb' });
         }}
       />
       <PodModal
         open={createModal() === 'pod'}
-        onClose={() => setCreateModal(null)}
-        onSubmit={async (name) => {
-          await createNodeAtViewport({ type: 'pod', label: name, icon: '💰', accent: '#0ea5e9' });
+        accounts={accountOptions()}
+        defaultAccountId={subAccountParentId()}
+        onClose={() => {
+          setCreateModal(null);
+          setSubAccountParentId(null);
+        }}
+        onSubmit={async ({ name, parentAccountId }) => {
+          await createNodeAtViewport({
+            kind: 'subAccount',
+            label: name,
+            icon: '💰',
+            accent: '#0ea5e9',
+            parentId: parentAccountId,
+          });
+          setSubAccountParentId(parentAccountId);
         }}
       />
       <AccountTypeModal
@@ -1560,7 +1658,8 @@ let drawerContainerRef: HTMLDivElement | undefined;
         onClose={() => setCreateModal(null)}
         onSubmit={async (option: AccountOption) => {
           await createNodeAtViewport({
-            type: option.nodeType,
+            kind: 'account',
+            category: option.category,
             label: option.label,
             icon: option.icon,
             accent: option.accent,
@@ -1579,7 +1678,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
         >
           <div class="space-y-1 text-center">
             <h2 class="text-xl font-semibold text-slate-900">Create workspace</h2>
-            <p class="text-sm text-subtle">Workspaces group your nodes, edges, and rules.</p>
+            <p class="text-sm text-subtle">Workspaces group your nodes, flows, and rules.</p>
           </div>
           <div class="flex flex-col gap-3 text-left">
             <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -1625,7 +1724,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
           <div class="space-y-1 text-left">
             <h2 class="text-xl font-semibold text-slate-900">Delete workspace</h2>
             <p class="text-sm text-subtle">
-              This removes <strong>{workspaceToDelete()?.name ?? ''}</strong> and all associated nodes, edges,
+              This removes <strong>{workspaceToDelete()?.name ?? ''}</strong> and all associated nodes, flows,
               and rules. This action cannot be undone.
             </p>
           </div>

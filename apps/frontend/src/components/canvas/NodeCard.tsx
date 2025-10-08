@@ -18,6 +18,7 @@ const formatter = new Intl.NumberFormat('en-US', {
 
 type NodeCardProps = {
   node: CanvasNode;
+  position: { x: number; y: number };
   scale: number;
   selected?: boolean;
   onSelect?: (event: PointerEvent, nodeId: string) => void;
@@ -33,18 +34,26 @@ type NodeCardProps = {
 };
 
 const NodeCard: Component<NodeCardProps> = (props) => {
-  const { node } = props;
-  const accent = () => node.accent ?? '#312e81';
-  const icon = () => node.icon ?? '🏦';
+  const node = () => props.node;
+  const nodeId = () => node().id;
+  const accent = () => node().accent ?? '#312e81';
+  const icon = () => node().icon ?? '🏦';
+  const position = () => props.position;
+  const subtitle = createMemo(() => {
+    const current = node();
+    if (current.kind === 'income') return 'income source';
+    if (current.kind === 'subAccount') return 'sub-account';
+    return current.category ? current.category.replace(/-/g, ' ') : 'account';
+  });
 
   const isConnectingFromHere = createMemo(
-    () => props.connectingFrom?.nodeId === node.id && props.connectingFrom?.anchor === 'bottom'
+    () => props.connectingFrom?.nodeId === nodeId() && props.connectingFrom?.anchor === 'bottom'
   );
   const isDropTarget = createMemo(
-    () => props.hoveredAnchor?.nodeId === node.id && props.hoveredAnchor?.anchor === 'top'
+    () => props.hoveredAnchor?.nodeId === nodeId() && props.hoveredAnchor?.anchor === 'top'
   );
   const canAcceptConnection = createMemo(
-    () => Boolean(props.connectionMode) && props.connectingFrom?.nodeId !== node.id
+    () => Boolean(props.connectionMode) && props.connectingFrom?.nodeId !== nodeId()
   );
 
   let element: HTMLDivElement | undefined;
@@ -57,7 +66,7 @@ const NodeCard: Component<NodeCardProps> = (props) => {
       if (props.connectionMode) {
         return isConnectingFromHere();
       }
-      return hovered() || props.selected || props.connectingFrom?.nodeId === node.id;
+      return hovered() || props.selected || props.connectingFrom?.nodeId === nodeId();
     }
   );
 
@@ -67,18 +76,18 @@ const NodeCard: Component<NodeCardProps> = (props) => {
       event.stopPropagation();
       event.preventDefault();
       event.stopImmediatePropagation?.();
-      props.onConnectionTargetSelect?.({ nodeId: node.id, anchor: 'top', event });
+      props.onConnectionTargetSelect?.({ nodeId: nodeId(), anchor: 'top', event });
       return;
     }
     if (event.defaultPrevented) return;
     event.stopPropagation();
-    props.onSelect?.(event, node.id);
+    props.onSelect?.(event, nodeId());
     startPointer.x = event.clientX;
     startPointer.y = event.clientY;
     isDragging = true;
     hasDragged = false;
     element?.setPointerCapture(event.pointerId);
-    props.onDrag?.({ nodeId: node.id, delta: { x: 0, y: 0 }, phase: 'start' });
+    props.onDrag?.({ nodeId: nodeId(), delta: { x: 0, y: 0 }, phase: 'start' });
     element?.classList.add('cursor-grabbing');
   };
 
@@ -90,7 +99,7 @@ const NodeCard: Component<NodeCardProps> = (props) => {
     if (!hasDragged && Math.hypot(dx, dy) > 3) {
       hasDragged = true;
     }
-    props.onDrag?.({ nodeId: node.id, delta: { x: dx, y: dy }, phase: 'move' });
+    props.onDrag?.({ nodeId: nodeId(), delta: { x: dx, y: dy }, phase: 'move' });
   };
 
   const handlePointerUp: JSX.EventHandlerUnion<HTMLDivElement, PointerEvent> = (event) => {
@@ -98,7 +107,7 @@ const NodeCard: Component<NodeCardProps> = (props) => {
     const scale = props.scale || 1;
     const dx = (event.clientX - startPointer.x) / scale;
     const dy = (event.clientY - startPointer.y) / scale;
-    props.onDrag?.({ nodeId: node.id, delta: { x: dx, y: dy }, phase: 'end' });
+    props.onDrag?.({ nodeId: nodeId(), delta: { x: dx, y: dy }, phase: 'end' });
     element?.releasePointerCapture(event.pointerId);
     isDragging = false;
     element?.classList.remove('cursor-grabbing');
@@ -106,7 +115,7 @@ const NodeCard: Component<NodeCardProps> = (props) => {
     if (event.button !== 0) return;
     if (hasDragged) return;
     if (event.shiftKey || event.metaKey || event.ctrlKey) return;
-    props.onOpenDrawer?.(node.id);
+    props.onOpenDrawer?.(nodeId());
   };
 
   const handleConnectorPointerDown = (event: PointerEvent) => {
@@ -114,13 +123,13 @@ const NodeCard: Component<NodeCardProps> = (props) => {
     event.stopPropagation();
     event.preventDefault();
     event.stopImmediatePropagation?.();
-    props.onSelect?.(event, node.id);
-    console.log('[connect] source pointer down', {
-      nodeId: node.id,
-      label: node.label,
+    props.onSelect?.(event, nodeId());
+    console.log('[flow] source pointer down', {
+      nodeId: nodeId(),
+      label: node().label,
       connectionMode: props.connectionMode,
     });
-    props.onConnectionStart?.({ nodeId: node.id, anchor: 'bottom', event });
+    props.onConnectionStart?.({ nodeId: nodeId(), anchor: 'bottom', event });
   };
 
   const handleTargetPointerDown = (event: PointerEvent) => {
@@ -129,24 +138,24 @@ const NodeCard: Component<NodeCardProps> = (props) => {
     event.stopPropagation();
     event.preventDefault();
     event.stopImmediatePropagation?.();
-    console.log('[connect] target pointer down', {
-      nodeId: node.id,
-      label: node.label,
+    console.log('[flow] target pointer down', {
+      nodeId: nodeId(),
+      label: node().label,
       isDropTarget: isDropTarget(),
       connectingFrom: props.connectingFrom,
     });
-    props.onConnectionTargetSelect?.({ nodeId: node.id, anchor: 'top', event });
+    props.onConnectionTargetSelect?.({ nodeId: nodeId(), anchor: 'top', event });
   };
 
   const handleDoubleClick: JSX.EventHandlerUnion<HTMLDivElement, MouseEvent> = (event) => {
-    props.onSelect?.(event as unknown as PointerEvent, node.id);
-    props.onOpenDrawer?.(node.id);
+    props.onSelect?.(event as unknown as PointerEvent, nodeId());
+    props.onOpenDrawer?.(nodeId());
   };
 
   const handleContextMenu: JSX.EventHandlerUnion<HTMLDivElement, MouseEvent> = (event) => {
     event.preventDefault();
-    props.onSelect?.(event as unknown as PointerEvent, node.id);
-    props.onContextMenu?.(event as unknown as PointerEvent, node.id);
+    props.onSelect?.(event as unknown as PointerEvent, nodeId());
+    props.onContextMenu?.(event as unknown as PointerEvent, nodeId());
   };
 
   return (
@@ -157,10 +166,10 @@ const NodeCard: Component<NodeCardProps> = (props) => {
       style={{
         width: `${NODE_CARD_WIDTH}px`,
         height: `${NODE_CARD_HEIGHT}px`,
-        transform: `translate3d(${node.position.x}px, ${node.position.y}px, 0)`
+        transform: `translate3d(${position().x}px, ${position().y}px, 0)`
       }}
       data-node-card="true"
-      data-node-card-id={node.id}
+      data-node-card-id={nodeId()}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -180,7 +189,7 @@ const NodeCard: Component<NodeCardProps> = (props) => {
           <button
             type="button"
             class="h-8 w-24"
-            data-anchor-node={node.id}
+            data-anchor-node={nodeId()}
             data-anchor-type="top"
             aria-label="Connect to this node"
             onPointerDown={handleTargetPointerDown}
@@ -212,13 +221,13 @@ const NodeCard: Component<NodeCardProps> = (props) => {
             <span class="text-xl">{icon()}</span>
           </div>
           <div>
-            <p class="text-sm font-semibold text-slate-800 truncate">{node.label}</p>
-            <p class="text-xs capitalize text-slate-500">{node.type}</p>
+            <p class="text-sm font-semibold text-slate-800 truncate">{node().label}</p>
+            <p class="text-xs capitalize text-slate-500">{subtitle()}</p>
           </div>
         </div>
-        {node.balance !== undefined ? (
+        {node().balance !== undefined ? (
           <p class="mt-5 text-2xl font-semibold text-slate-900">
-            {formatter.format(node.balance)}
+            {formatter.format(node().balance ?? 0)}
           </p>
         ) : (
           <p class="mt-5 text-sm text-slate-500">Balance not set</p>
@@ -236,7 +245,7 @@ const NodeCard: Component<NodeCardProps> = (props) => {
           <button
             type="button"
             class="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl font-semibold text-slate-700 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-            data-anchor-node={node.id}
+            data-anchor-node={nodeId()}
             data-anchor-type="bottom"
             onPointerDown={handleConnectorPointerDown}
             onPointerEnter={() => setHovered(true)}

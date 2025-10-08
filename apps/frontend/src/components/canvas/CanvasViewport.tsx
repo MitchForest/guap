@@ -8,7 +8,7 @@ import {
   onCleanup,
   onMount,
 } from 'solid-js';
-import { CanvasEdge, CanvasNode } from '../../types/graph';
+import { CanvasFlow, CanvasNode } from '../../types/graph';
 import EdgeLayer from './EdgeLayer';
 import NodeCard, { AnchorType } from './NodeCard';
 
@@ -37,7 +37,8 @@ type MarqueePayload = {
 
 type CanvasViewportProps = {
   nodes: CanvasNode[];
-  edges: CanvasEdge[];
+  flows: CanvasFlow[];
+  positions?: Map<string, { x: number; y: number }> | null;
   selectedNodeIds?: Set<string>;
   selectionOverlay?: JSX.Element;
   onBackgroundPointerDown?: (event: PointerEvent) => void;
@@ -57,7 +58,7 @@ type CanvasViewportProps = {
   hoveredAnchor?: { nodeId: string; anchor: AnchorType } | null;
   connectionMode?: boolean;
   onContainerReady?: (element: HTMLDivElement) => void;
-  describeEdge?: (edge: CanvasEdge, source: CanvasNode, target: CanvasNode) => string;
+  describeFlow?: (flow: CanvasFlow, source: CanvasNode, target: CanvasNode) => string;
   children?: JSX.Element;
 };
 
@@ -78,6 +79,9 @@ const CanvasViewport: Component<CanvasViewportProps> = (props) => {
   let marqueePointerId: number | null = null;
   const panOrigin = { x: 0, y: 0 };
   const panTranslate = { x: 0, y: 0 };
+
+  const nodesForEdges = createMemo(() => nodesForEdgesMemo(props.nodes, props.positions));
+  const resolvePosition = (node: CanvasNode) => props.positions?.get(node.id) ?? node.position;
 
   const viewportState: Accessor<{ scale: number; translate: { x: number; y: number } }> = createMemo(
     () => ({ scale: scale(), translate: translate() })
@@ -264,14 +268,15 @@ const CanvasViewport: Component<CanvasViewportProps> = (props) => {
         }}
       >
         <EdgeLayer
-          nodes={props.nodes}
-          edges={props.edges}
-          describeEdge={props.describeEdge}
+          nodes={nodesForEdges()}
+          flows={props.flows}
+          describeFlow={props.describeFlow}
         />
         <For each={props.nodes}>
           {(node) => (
             <NodeCard
               node={node}
+              position={resolvePosition(node)}
               scale={scale()}
               selected={props.selectedNodeIds?.has(node.id) ?? false}
               onSelect={props.onNodeSelect}
@@ -293,6 +298,13 @@ const CanvasViewport: Component<CanvasViewportProps> = (props) => {
     </div>
   );
 };
+
+const nodesForEdgesMemo = (nodes: CanvasNode[], positions?: Map<string, { x: number; y: number }> | null) =>
+  nodes.map((node) => {
+    const override = positions?.get(node.id);
+    if (!override) return node;
+    return { ...node, position: override } satisfies CanvasNode;
+  });
 
 export default CanvasViewport;
 export type { ViewportControls, DragPayload };

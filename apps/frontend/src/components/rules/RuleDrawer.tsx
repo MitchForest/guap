@@ -108,8 +108,8 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
       <aside class="flex h-full flex-col bg-white">
         <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>
-            <h2 class="text-lg font-semibold text-slate-900">Incoming funds rule</h2>
-            <p class="text-sm text-subtle">Distribute income automatically between accounts.</p>
+            <h2 class="text-lg font-semibold text-slate-900">Set up an auto flow</h2>
+            <p class="text-sm text-subtle">Route money automatically when cash hits an account.</p>
           </div>
           <button
             class="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
@@ -120,7 +120,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
         </div>
         <div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
           <section class="space-y-3">
-            <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Trigger</h3>
+            <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">When should it run?</h3>
             <div class="flex gap-2">
               <button
                 class="flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition"
@@ -130,7 +130,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                 }}
                 onClick={() => setTrigger('incoming')}
               >
-                Triggered by incoming funds
+                Whenever money arrives
               </button>
               <button
                 class="flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition"
@@ -140,11 +140,11 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                 }}
                 onClick={() => setTrigger('scheduled')}
               >
-                Triggered by date
+                On a schedule
               </button>
             </div>
             <div class="rounded-2xl border border-slate-200 px-4 py-4">
-              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Funds received in</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Watch this account</p>
               <select
                 class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
                 value={triggerNodeId() ?? ''}
@@ -152,7 +152,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
               >
                 <option value="">Select source</option>
                 {props.nodes
-                  .filter((node) => node.type === 'income')
+                  .filter((node) => node.kind === 'income')
                   .map((node) => (
                     <option value={node.id}>{node.label}</option>
                   ))}
@@ -172,7 +172,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                 {(allocation) => (
                   <div class="rounded-2xl border border-slate-200 px-4 py-4">
                     <div class="flex items-center justify-between">
-                      <p class="text-sm font-semibold text-slate-700">Transfer percentage of incoming funds</p>
+                      <p class="text-sm font-semibold text-slate-700">Move this percent onward</p>
                       <button
                         class="text-xs text-slate-400 hover:text-slate-600"
                         onClick={() => removeAllocation(allocation.id)}
