@@ -239,7 +239,8 @@ const getDefaultReturnRate = (node: { kind: CanvasNode['kind']; category?: Canva
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 0,
+  minimumFractionDigits: 0,
 });
 
 const formatMonths = (value: number | null) => {
@@ -1484,17 +1485,65 @@ const CanvasPage: Component = () => {
       y: (rect.height / 2 - translate.y) / scale,
     };
 
-    const index = placementIndex();
-    const columns = 2;
-    const col = index % columns;
-    const row = Math.floor(index / columns);
-    const spacingX = NODE_CARD_WIDTH + GRID_SIZE * 2;
-    const spacingY = NODE_CARD_HEIGHT + GRID_SIZE * 2;
-
-    let position = {
-      x: snapToGrid(worldCenter.x - NODE_CARD_WIDTH / 2 + col * spacingX),
-      y: snapToGrid(worldCenter.y - NODE_CARD_HEIGHT / 2 + row * spacingY),
+    const placementCursor = placementIndex();
+    const worldOrigin = {
+      x: (-translate.x) / scale,
+      y: (-translate.y) / scale,
     };
+    const worldSize = {
+      width: rect.width / scale,
+      height: rect.height / scale,
+    };
+    const worldCenterX = worldOrigin.x + worldSize.width / 2;
+    const margin = GRID_SIZE * 4;
+    const minX = worldOrigin.x + margin;
+    const maxX = worldOrigin.x + worldSize.width - margin - NODE_CARD_WIDTH;
+    const minY = worldOrigin.y + margin;
+    const maxY = worldOrigin.y + worldSize.height - margin - NODE_CARD_HEIGHT;
+    const clampPosition = (x: number, y: number) => ({
+      x: snapToGrid(Math.min(Math.max(x, minX), maxX)),
+      y: snapToGrid(Math.min(Math.max(y, minY), maxY)),
+    });
+
+    const existingIncomeCount = graph.nodes.filter((node) => node.kind === 'income').length;
+    const existingAccountCount = graph.nodes.filter(
+      (node) =>
+        (node.kind === 'account' && !node.parentId) ||
+        node.kind === 'goal' ||
+        node.kind === 'liability'
+    ).length;
+
+    let position = clampPosition(worldCenter.x - NODE_CARD_WIDTH / 2, worldCenter.y - NODE_CARD_HEIGHT / 2);
+
+    if (preset.kind === 'income') {
+      const indexForKind = existingIncomeCount;
+      const perRow = Math.max(1, Math.min(3, Math.floor(worldSize.width / (NODE_CARD_WIDTH + GRID_SIZE * 4)) || 1));
+      const col = indexForKind % perRow;
+      const row = Math.floor(indexForKind / perRow);
+      const spacingX = NODE_CARD_WIDTH + GRID_SIZE * 6;
+      const spacingY = NODE_CARD_HEIGHT + GRID_SIZE * 5;
+      const baseY = worldOrigin.y + worldSize.height * 0.18;
+      const desiredX =
+        worldCenterX + (col - (perRow - 1) / 2) * spacingX - NODE_CARD_WIDTH / 2;
+      const desiredY = baseY + row * spacingY;
+      position = clampPosition(desiredX, desiredY);
+    } else if (
+      preset.kind === 'account' ||
+      preset.kind === 'goal' ||
+      preset.kind === 'liability'
+    ) {
+      const indexForKind = existingAccountCount;
+      const perRow = Math.max(1, Math.min(4, Math.floor(worldSize.width / (NODE_CARD_WIDTH + GRID_SIZE * 3)) || 1));
+      const col = indexForKind % perRow;
+      const row = Math.floor(indexForKind / perRow);
+      const spacingX = NODE_CARD_WIDTH + GRID_SIZE * 4;
+      const spacingY = NODE_CARD_HEIGHT + GRID_SIZE * 4;
+      const baseY = worldOrigin.y + worldSize.height * 0.48;
+      const desiredX =
+        worldCenterX + (col - (perRow - 1) / 2) * spacingX - NODE_CARD_WIDTH / 2;
+      const desiredY = baseY + row * spacingY;
+      position = clampPosition(desiredX, desiredY);
+    }
 
     if (preset.kind === 'pod' && preset.parentId) {
       const parent = graph.nodes.find((node) => node.id === preset.parentId);
@@ -1504,15 +1553,49 @@ const CanvasPage: Component = () => {
         );
         const siblingCount = siblingPods.length;
         const podSpacingX = NODE_CARD_WIDTH + GRID_SIZE * 2;
+        const rowSpacing = NODE_CARD_HEIGHT + GRID_SIZE * 3;
         const offsetMultiplier = Math.floor((siblingCount + 1) / 2);
         const direction = siblingCount % 2 === 0 ? 1 : -1;
         const offsetX = direction * offsetMultiplier * podSpacingX;
-        const offsetY = NODE_CARD_HEIGHT + GRID_SIZE * 4;
-        position = {
-          x: snapToGrid(parent.position.x + offsetX),
-          y: snapToGrid(parent.position.y + offsetY),
-        };
+        const row = Math.floor(siblingCount / 2);
+        const offsetY = (NODE_CARD_HEIGHT + GRID_SIZE * 4) + row * rowSpacing;
+        const baseY = Math.max(
+          parent.position.y + offsetY,
+          worldOrigin.y + worldSize.height * 0.65
+        );
+        position = clampPosition(parent.position.x + offsetX, baseY);
+      } else {
+        const pods = graph.nodes.filter((node) => node.kind === 'pod');
+        const indexForKind = pods.length;
+        const perRow = Math.max(1, Math.min(4, Math.floor(worldSize.width / (NODE_CARD_WIDTH + GRID_SIZE * 3)) || 1));
+        const col = indexForKind % perRow;
+        const row = Math.floor(indexForKind / perRow);
+        const spacingX = NODE_CARD_WIDTH + GRID_SIZE * 3;
+        const spacingY = NODE_CARD_HEIGHT + GRID_SIZE * 3;
+        const baseY = worldOrigin.y + worldSize.height * 0.75;
+        const desiredX =
+          worldCenterX + (col - (perRow - 1) / 2) * spacingX - NODE_CARD_WIDTH / 2;
+        const desiredY = baseY + row * spacingY;
+        position = clampPosition(desiredX, desiredY);
       }
+    }
+
+    if (
+      preset.kind !== 'income' &&
+      preset.kind !== 'account' &&
+      preset.kind !== 'goal' &&
+      preset.kind !== 'liability' &&
+      !(preset.kind === 'pod' && preset.parentId)
+    ) {
+      const index = placementCursor;
+      const columns = 2;
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      const spacingX = NODE_CARD_WIDTH + GRID_SIZE * 2;
+      const spacingY = NODE_CARD_HEIGHT + GRID_SIZE * 2;
+      const fallbackX = worldCenter.x - NODE_CARD_WIDTH / 2 + col * spacingX;
+      const fallbackY = worldCenter.y - NODE_CARD_HEIGHT / 2 + row * spacingY;
+      position = clampPosition(fallbackX, fallbackY);
     }
 
     const newNodeId = `node-${createId()}`;
@@ -1547,7 +1630,7 @@ const CanvasPage: Component = () => {
     setGraph('nodes', (nodes) => [...nodes, newNode]);
     setSelectedIds([newNode.id]);
     setShowHero(false);
-    setPlacementIndex(index + 1);
+    setPlacementIndex(placementCursor + 1);
     pushHistory();
     return newNodeId;
   };
@@ -1813,6 +1896,7 @@ const CanvasPage: Component = () => {
   };
 
   const drawerOpen = createMemo(() => Boolean(drawerNode()));
+  const simulationPanelOpen = createMemo(() => Boolean(simulationResult()));
 
   const handleSave = async () => {
     const slug = workspaceSlug();
@@ -1889,7 +1973,10 @@ const CanvasPage: Component = () => {
   };
 
   return (
-    <div class="relative h-full w-full" classList={{ 'pr-[360px]': drawerOpen() }}>
+    <div
+      class="relative h-full w-full"
+      classList={{ 'pr-[360px]': drawerOpen(), 'pl-[360px]': simulationPanelOpen() }}
+    >
       <div class="pointer-events-none absolute left-6 top-6 z-40 flex items-center gap-2">
         <Show
           when={!initializingWorkspace()}
@@ -1901,22 +1988,20 @@ const CanvasPage: Component = () => {
         >
           <div class="pointer-events-auto flex items-center gap-2">
             <DropdownMenu open={workspaceMenuOpen()} onOpenChange={setWorkspaceMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  class="h-8 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
-                  disabled={workspaces().length === 0}
-                  title={currentWorkspace()?.name ?? 'Select workspace'}
-                >
-                  <span aria-hidden="true" class="text-[10px]">
-                    📁
-                  </span>
-                  <span class="max-w-[120px] truncate">
-                    {currentWorkspace()?.name ?? 'Workspace'}
-                  </span>
-                  <ChevronDownIcon />
-                </Button>
+              <DropdownMenuTrigger
+                as="button"
+                type="button"
+                class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
+                disabled={workspaces().length === 0}
+                title={currentWorkspace()?.name ?? 'Select workspace'}
+              >
+                <span aria-hidden="true" class="text-[10px]">
+                  📁
+                </span>
+                <span class="max-w-[120px] truncate">
+                  {currentWorkspace()?.name ?? 'Workspace'}
+                </span>
+                <ChevronDownIcon />
               </DropdownMenuTrigger>
               <DropdownMenuContent class="w-64">
                 <div class="max-h-64 overflow-y-auto py-1">
@@ -2018,17 +2103,15 @@ const CanvasPage: Component = () => {
             )}
           </Show>
           <DropdownMenu open={simulationMenuOpen()} onOpenChange={setSimulationMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="secondary"
-                class="h-8 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
-              >
-                ▶ Simulate
-                <ChevronDownIcon />
-              </Button>
+            <DropdownMenuTrigger
+              as="button"
+              type="button"
+              class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
+            >
+              ▶ Simulate
+              <ChevronDownIcon />
             </DropdownMenuTrigger>
-            <DropdownMenuContent class="w-56" align="end">
+            <DropdownMenuContent class="w-56">
               <div class="py-1">
                 <For each={[5, 10, 20, 30]}>
                   {(years) => (
@@ -2044,24 +2127,21 @@ const CanvasPage: Component = () => {
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu open={actionsMenuOpen()} onOpenChange={setActionsMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="secondary"
-                class="h-8 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
-              >
-                Actions
-                <ChevronDownIcon />
-              </Button>
+            <DropdownMenuTrigger
+              as="button"
+              type="button"
+              class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
+            >
+              Actions
+              <ChevronDownIcon />
             </DropdownMenuTrigger>
-            <DropdownMenuContent class="w-60" align="end">
+            <DropdownMenuContent class="w-60">
               <DropdownMenuLabel>Workspace actions</DropdownMenuLabel>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
                 disabled={!canSave()}
-                onSelect={(event) => {
+                onSelect={() => {
                   if (!canSave()) {
-                    event.preventDefault();
                     return;
                   }
                   setActionsMenuOpen(false);
@@ -2074,9 +2154,8 @@ const CanvasPage: Component = () => {
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
                 disabled={duplicating() || !workspaceSlug()}
-                onSelect={(event) => {
+                onSelect={() => {
                   if (duplicating() || !workspaceSlug()) {
-                    event.preventDefault();
                     return;
                   }
                   setActionsMenuOpen(false);
@@ -2089,10 +2168,9 @@ const CanvasPage: Component = () => {
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
                 disabled={!workspaceSlug()}
-                onSelect={(event) => {
+                onSelect={() => {
                   const workspace = currentWorkspace();
                   if (!workspace || !workspaceSlug()) {
-                    event.preventDefault();
                     setActionsMenuOpen(false);
                     openCreateWorkspace();
                     return;
@@ -2109,9 +2187,8 @@ const CanvasPage: Component = () => {
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
                 disabled={!workspaceSlug()}
-                onSelect={(event) => {
+                onSelect={() => {
                   if (!workspaceSlug()) {
-                    event.preventDefault();
                     setActionsMenuOpen(false);
                     openCreateWorkspace();
                     return;
@@ -2126,10 +2203,9 @@ const CanvasPage: Component = () => {
               <DropdownMenuItem
                 class="mt-1 px-3 py-2 text-sm font-semibold text-rose-600 focus:bg-rose-100 focus:text-rose-700"
                 disabled={!currentWorkspace()}
-                onSelect={(event) => {
+                onSelect={() => {
                   const workspace = currentWorkspace();
                   if (!workspace) {
-                    event.preventDefault();
                     return;
                   }
                   setActionsMenuOpen(false);
@@ -2315,138 +2391,151 @@ const CanvasPage: Component = () => {
         onZoomOut={() => viewportControls?.zoomOut()}
         onReset={() => viewportControls?.reset()}
       />
-      <Show when={simulationResult()}>
-        {(sim) => {
-          const settings = simulationSettings();
-          const result = sim();
-          const horizonYears = settings.horizonYears;
-          const lookup = nodeLookup();
-          const sortedBalances = Object.entries(result.finalBalances)
-            .map(([id, value]) => ({ id, value, label: lookup.get(id)?.label ?? 'Unknown node' }))
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 5);
+      <div
+        class="absolute left-0 top-0 z-40 h-full w-[360px]"
+        classList={{ 'pointer-events-none': !simulationPanelOpen() }}
+      >
+        <Motion.div
+          class="flex h-full flex-col border-r border-slate-200/70 bg-white shadow-xl"
+          initial={{ x: -360, opacity: 0 }}
+          animate={{ x: simulationPanelOpen() ? 0 : -360, opacity: simulationPanelOpen() ? 1 : 0.4 }}
+          transition={{ duration: 0.2, easing: [0.16, 1, 0.3, 1] }}
+        >
+          <Show when={simulationResult()}>
+            {(sim) => {
+              const settings = simulationSettings();
+              const result = sim();
+              const horizonYears = settings.horizonYears;
+              const lookup = nodeLookup();
+              const sortedBalances = Object.entries(result.finalBalances)
+                .map(([id, value]) => ({ id, value, label: lookup.get(id)?.label ?? 'Unknown node' }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 5);
 
-          return (
-            <div class="pointer-events-none absolute left-6 bottom-6 z-40 w-[380px]">
-              <div class="pointer-events-auto space-y-4 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-floating backdrop-blur-sm">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="flex-1 space-y-1">
-                    <h2 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Projection
-                    </h2>
-                    <p class="text-2xl font-bold text-slate-900 tracking-tight">
-                      {currencyFormatter.format(result.finalTotal)}
-                    </p>
-                    <p class="text-xs text-slate-500">Total Portfolio Value</p>
+              return (
+                <aside class="flex h-full flex-col">
+                  <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                    <div class="space-y-1">
+                      <h2 class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Projection</h2>
+                      <p class="text-2xl font-bold text-slate-900 tracking-tight">
+                        {currencyFormatter.format(result.finalTotal)}
+                      </p>
+                      <p class="text-xs text-slate-500">Total Portfolio Value</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="xs"
+                      class="rounded-lg uppercase tracking-[0.18em]"
+                      onClick={() => setSimulationResult(null)}
+                    >
+                      Close
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="xs"
-                    class="rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:border-slate-300 hover:text-slate-700"
-                    onClick={() => setSimulationResult(null)}
-                  >
-                    ✕
-                  </Button>
-                </div>
+                  <div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+                    <section class="space-y-3">
+                      <div class="flex items-center justify-between">
+                        <label class="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
+                          Horizon
+                        </label>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="xs"
+                          class="rounded-lg border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
+                          onClick={() => runSimulation(horizonYears)}
+                        >
+                          ↻ Re-run
+                        </Button>
+                      </div>
+                      <Select
+                        options={simulationHorizonOptions}
+                        optionValue="value"
+                        optionTextValue="label"
+                        value={
+                          simulationHorizonOptions.find((option) => Number(option.value) === horizonYears) ??
+                          simulationHorizonOptions[1]
+                        }
+                        onChange={(option) => runSimulation(Number(option?.value ?? horizonYears))}
+                        placeholder={<span class="truncate text-slate-400">Select horizon</span>}
+                        itemComponent={(itemProps) => <SelectItem {...itemProps} />}
+                      >
+                        <SelectTrigger
+                          class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
+                          aria-label="Simulation horizon"
+                        >
+                          <SelectValue<SelectOption>>
+                            {(state) => <span>{state.selectedOption()?.label ?? `${horizonYears} Years`}</span>}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent />
+                        <SelectHiddenSelect name="simulation-horizon" />
+                      </Select>
+                    </section>
 
-                <div class="flex items-center gap-2">
-                  <label class="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                    Horizon:
-                  <Select
-                    options={simulationHorizonOptions}
-                    optionValue="value"
-                    optionTextValue="label"
-                    value={simulationHorizonOptions.find((option) => Number(option.value) === horizonYears) ?? simulationHorizonOptions[1]}
-                    onChange={(option) => runSimulation(Number(option?.value ?? horizonYears))}
-                    placeholder={<span class="truncate text-slate-400">Select horizon</span>}
-                    itemComponent={(itemProps) => <SelectItem {...itemProps} />}
-                  >
-                    <SelectTrigger class="rounded-lg border px-2 py-1.5 text-xs font-semibold" aria-label="Simulation horizon">
-                      <SelectValue>
-                        {(state) => <span>{state.selectedOption()?.label ?? `${horizonYears} Years`}</span>}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent />
-                    <SelectHiddenSelect name="simulation-horizon" />
-                  </Select>
-                  </label>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="xs"
-                    class="ml-auto rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-                    onClick={() => runSimulation(horizonYears)}
-                  >
-                    ↻ Re-run
-                  </Button>
-                </div>
-                
-                <div class="space-y-2">
-                  <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Wealth Ladder
-                  </h3>
-                  <div class="space-y-2">
-                    {result.milestones.map((milestone) => {
-                      const reached = milestone.reachedAtMonth !== null;
-                      const progress = reached
-                        ? 100
-                        : Math.max(0, Math.min(100, (result.finalTotal / milestone.threshold) * 100));
-                      const statusLabel = reached ? formatMonths(milestone.reachedAtMonth) : 'Not yet';
-                      const progressTone = reached ? 'bg-emerald-500' : 'bg-slate-400';
-                      return (
-                        <div class="space-y-2 rounded-lg border border-slate-200/70 bg-slate-50/80 px-3 py-2.5">
-                          <div class="flex items-center justify-between text-sm font-semibold text-slate-700">
-                            <span>{milestone.label}</span>
-                            <span class="text-xs font-medium text-slate-500">{statusLabel}</span>
-                          </div>
-                          <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                            <div
-                              class={`h-full rounded-full transition-all duration-300 ${progressTone}`}
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                          <p class="text-[11px] font-medium text-slate-500">
-                            {progress >= 100
-                              ? `Reached ${currencyFormatter.format(milestone.threshold)}`
-                              : `${progress.toFixed(0)}% of ${currencyFormatter.format(milestone.threshold)}`}
-                          </p>
-                        </div>
-                      );
-                    })}
+                    <section class="space-y-2">
+                      <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Wealth Ladder</h3>
+                      <div class="space-y-2">
+                        {result.milestones.map((milestone) => {
+                          const reached = milestone.reachedAtMonth !== null;
+                          const progress = reached
+                            ? 100
+                            : Math.max(0, Math.min(100, (result.finalTotal / milestone.threshold) * 100));
+                          const statusLabel = reached ? formatMonths(milestone.reachedAtMonth) : 'Not yet';
+                          const progressTone = reached ? 'bg-emerald-500' : 'bg-slate-400';
+                          return (
+                            <div class="space-y-2 rounded-xl border border-slate-200/70 bg-slate-50/80 px-4 py-3">
+                              <div class="flex items-center justify-between text-sm font-semibold text-slate-700">
+                                <span>{milestone.label}</span>
+                                <span class="text-xs font-medium text-slate-500">{statusLabel}</span>
+                              </div>
+                              <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  class={`h-full rounded-full transition-all duration-300 ${progressTone}`}
+                                  style={{ width: `${progress}%` }}
+                                />
+                              </div>
+                              <p class="text-[11px] font-medium text-slate-500">
+                                {progress >= 100
+                                  ? `Reached ${currencyFormatter.format(milestone.threshold)}`
+                                  : `${progress.toFixed(0)}% of ${currencyFormatter.format(milestone.threshold)}`}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+
+                    <section class="space-y-2">
+                      <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Balances</h3>
+                      <div class="space-y-2">
+                        {sortedBalances.map((entry) => {
+                          const maxValue = sortedBalances[0]?.value ?? 1;
+                          const percentage = (entry.value / maxValue) * 100;
+                          return (
+                            <div class="space-y-1.5">
+                              <div class="flex items-center justify-between text-sm font-semibold text-slate-700">
+                                <span class="truncate">{entry.label}</span>
+                                <span class="text-xs font-semibold text-slate-500">{currencyFormatter.format(entry.value)}</span>
+                              </div>
+                              <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  class="h-full rounded-full bg-slate-500"
+                                  style={{ width: `${Math.max(6, percentage)}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
                   </div>
-                </div>
-                
-                <div class="space-y-2">
-                  <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Top Account Balances
-                  </h3>
-                  <div class="space-y-2">
-                    {sortedBalances.map((entry) => {
-                      const maxValue = sortedBalances[0].value;
-                      const percentage = (entry.value / maxValue) * 100;
-                      return (
-                        <div class="space-y-1">
-                          <div class="flex items-center justify-between">
-                            <span class="text-sm font-medium text-slate-700">{entry.label}</span>
-                            <span class="text-xs font-semibold text-slate-500">{currencyFormatter.format(entry.value)}</span>
-                          </div>
-                          <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                            <div
-                              class="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 transition-all duration-300"
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        }}
-      </Show>
+                </aside>
+              );
+            }}
+          </Show>
+        </Motion.div>
+      </div>
       <IncomeSourceModal
         open={createModal() === 'income'}
         onClose={() => setCreateModal(null)}

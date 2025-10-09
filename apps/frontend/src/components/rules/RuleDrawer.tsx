@@ -197,7 +197,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                 itemComponent={(itemProps) => <SelectItem {...itemProps} />}
               >
                 <SelectTrigger class="mt-2" aria-label="Source account">
-                  <SelectValue>
+                  <SelectValue<SelectOption>>
                     {(state) => <span class="truncate">{state.selectedOption()?.label ?? 'Select source'}</span>}
                   </SelectValue>
                 </SelectTrigger>
@@ -263,7 +263,7 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                         itemComponent={(itemProps) => <SelectItem {...itemProps} />}
                       >
                         <SelectTrigger class="flex-1" aria-label="Allocation target">
-                          <SelectValue>
+                          <SelectValue<SelectOption>>
                             {(state) => <span class="truncate">{state.selectedOption()?.label ?? 'Select account'}</span>}
                           </SelectValue>
                         </SelectTrigger>

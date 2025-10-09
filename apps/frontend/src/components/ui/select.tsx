@@ -1,7 +1,7 @@
 import type { Component, JSX, ValidComponent } from 'solid-js';
 import { Show, splitProps } from 'solid-js';
 import * as SelectPrimitive from '@kobalte/core/select';
-import type { PolymorphicProps, SelectRootItemComponentProps } from '@kobalte/core/select';
+import type { SelectRootItemComponentProps } from '@kobalte/core/select';
 import { cva } from 'class-variance-authority';
 import { cn } from '~/lib/utils';
 
@@ -24,7 +24,7 @@ type SelectTriggerProps<T extends ValidComponent = 'button'> =
     children?: JSX.Element;
   };
 
-const SelectTrigger = <T extends ValidComponent = 'button'>(props: PolymorphicProps<T, SelectTriggerProps<T>>) => {
+const SelectTrigger = <T extends ValidComponent = 'button'>(props: SelectTriggerProps<T>) => {
   const [local, others] = splitProps(props as SelectTriggerProps, ['class', 'children']);
   return (
     <SelectPrimitive.Trigger
@@ -58,7 +58,7 @@ type SelectContentProps<T extends ValidComponent = 'div'> = SelectPrimitive.Sele
   class?: string;
 };
 
-const SelectContent = <T extends ValidComponent = 'div'>(props: PolymorphicProps<T, SelectContentProps<T>>) => {
+const SelectContent = <T extends ValidComponent = 'div'>(props: SelectContentProps<T>) => {
   const [local, others] = splitProps(props as SelectContentProps, ['class']);
   return (
     <SelectPrimitive.Portal>
@@ -81,12 +81,13 @@ const SelectItem: Component<SelectItemComponentProps> = (props) => {
   const option = () => props.item.rawValue as SelectOption;
   const icon = () => option().icon;
   const description = () => option().description ?? option().hint;
+  const isDisabled = () => option().disabled ?? false;
 
   return (
     <SelectPrimitive.Item
       item={props.item}
-      disabled={option().disabled}
       class="relative flex cursor-default select-none items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none transition focus:bg-slate-100 focus:text-slate-900 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+      classList={{ 'pointer-events-none opacity-50': isDisabled() }}
     >
       <SelectPrimitive.ItemIndicator class="absolute right-3 flex size-4 items-center justify-center text-slate-600">
         <svg
@@ -138,7 +139,7 @@ type SelectLabelProps<T extends ValidComponent = 'label'> = SelectPrimitive.Sele
   class?: string;
 };
 
-const SelectLabel = <T extends ValidComponent = 'label'>(props: PolymorphicProps<T, SelectLabelProps<T>>) => {
+const SelectLabel = <T extends ValidComponent = 'label'>(props: SelectLabelProps<T>) => {
   const [local, others] = splitProps(props as SelectLabelProps, ['class']);
   return <SelectPrimitive.Label class={cn(labelVariants(), local.class)} {...others} />;
 };
@@ -148,7 +149,7 @@ type SelectDescriptionProps<T extends ValidComponent = 'div'> =
     class?: string;
   };
 
-const SelectDescription = <T extends ValidComponent = 'div'>(props: PolymorphicProps<T, SelectDescriptionProps<T>>) => {
+const SelectDescription = <T extends ValidComponent = 'div'>(props: SelectDescriptionProps<T>) => {
   const [local, others] = splitProps(props as SelectDescriptionProps, ['class']);
   return (
     <SelectPrimitive.Description class={cn(labelVariants({ tone: 'description' }), local.class)} {...others} />
@@ -161,7 +162,7 @@ type SelectErrorMessageProps<T extends ValidComponent = 'div'> =
   };
 
 const SelectErrorMessage = <T extends ValidComponent = 'div'>(
-  props: PolymorphicProps<T, SelectErrorMessageProps<T>>
+  props: SelectErrorMessageProps<T>
 ) => {
   const [local, others] = splitProps(props as SelectErrorMessageProps, ['class']);
   return (

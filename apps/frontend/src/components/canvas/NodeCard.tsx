@@ -20,10 +20,17 @@ export type IncomingAllocationInfo = {
 const GRID_CLASS =
   'absolute select-none rounded-2xl border border-slate-200/60 bg-white p-4 shadow-card cursor-grab';
 
-const formatter = new Intl.NumberFormat('en-US', {
+const preciseCurrencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
   maximumFractionDigits: 2,
+});
+
+const wholeDollarFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
 });
 
 type NodeCardProps = {
@@ -92,7 +99,20 @@ const NodeCard: Component<NodeCardProps> = (props) => {
     const info = node().inflow;
     if (!info || node().kind !== 'income') return null;
     const cadenceLabel = info.cadence === 'monthly' ? 'mo' : info.cadence === 'weekly' ? 'wk' : 'day';
-    return `${formatter.format(info.amount)}/${cadenceLabel}`;
+    return `${wholeDollarFormatter.format(info.amount)}/${cadenceLabel}`;
+  });
+  const balanceTextClass = createMemo(() =>
+    node().kind === 'account' || node().kind === 'pod'
+      ? 'text-2xl font-bold text-slate-900 tracking-tight'
+      : 'text-3xl font-bold text-slate-900 tracking-tight'
+  );
+  const formattedBalance = createMemo(() => {
+    if (node().balance === undefined) return null;
+    const current = node();
+    const amount = current.balance ?? 0;
+    const useWholeDollars = current.kind === 'account' || current.kind === 'pod';
+    const activeFormatter = useWholeDollars ? wholeDollarFormatter : preciseCurrencyFormatter;
+    return activeFormatter.format(amount);
   });
 
   const showInfoIcon = createMemo(() => {
@@ -307,8 +327,8 @@ const NodeCard: Component<NodeCardProps> = (props) => {
             fallback={
               <>
                 {node().balance !== undefined ? (
-                  <p class="text-3xl font-bold text-slate-900 tracking-tight">
-                    {formatter.format(node().balance ?? 0)}
+                  <p class={balanceTextClass()}>
+                    {formattedBalance()}
                   </p>
                 ) : (
                   <p class="text-sm font-medium text-slate-400">Balance not set</p>
@@ -318,7 +338,7 @@ const NodeCard: Component<NodeCardProps> = (props) => {
           >
             <Show when={inflowSummary()} fallback={<p class="text-sm font-medium text-slate-400">Set income amount</p>}>
               {(summary) => (
-                <p class="text-3xl font-bold text-slate-900 tracking-tight">{summary()}</p>
+                <p class="text-2xl font-bold text-slate-900 tracking-tight">{summary()}</p>
               )}
             </Show>
           </Show>

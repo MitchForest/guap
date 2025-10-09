@@ -18,10 +18,10 @@ import {
 } from '~/components/ui/select';
 import type { CanvasPodType, CanvasNode } from '../../types/graph';
 
-type SubAccountOption = {
+export type SubAccountOption = {
   id: string;
   label: string;
-  category: NonNullable<CanvasNode['category']>;
+  category?: CanvasNode['category'];
 };
 
 type PodModalProps = {
@@ -151,7 +151,7 @@ const PodModal: Component<PodModalProps> = (props) => {
             itemComponent={(itemProps) => <SelectItem {...itemProps} />}
           >
             <SelectTrigger class="mt-1" aria-label="Parent account">
-              <SelectValue>
+              <SelectValue<SelectOption>>
                 {(state) => (
                   <span class="truncate">{state.selectedOption()?.label ?? (props.accounts.length === 0 ? 'Add an account first' : 'Choose account')}</span>
                 )}

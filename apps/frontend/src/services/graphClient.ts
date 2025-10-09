@@ -17,6 +17,7 @@ type GraphPublishPayload = {
     icon?: string;
     accent?: string;
     balance?: number;
+    inflow?: { amount: number; cadence: 'monthly' | 'weekly' | 'daily' } | null;
     position: { x: number; y: number };
     metadata?: Record<string, unknown> | null;
   }>;

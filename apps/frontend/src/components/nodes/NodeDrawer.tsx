@@ -116,6 +116,14 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
   const [incomeError, setIncomeError] = createSignal<string | null>(null);
   const [returnRateInput, setReturnRateInput] = createSignal('');
   const [returnRateError, setReturnRateError] = createSignal<string | null>(null);
+  const [balanceDirty, setBalanceDirty] = createSignal(false);
+  const [lastSyncedBalance, setLastSyncedBalance] = createSignal('');
+  const [incomeDirty, setIncomeDirty] = createSignal(false);
+  const [lastSyncedIncomeAmount, setLastSyncedIncomeAmount] = createSignal('');
+  const [lastSyncedIncomeCadence, setLastSyncedIncomeCadence] =
+    createSignal<CanvasInflowCadence>('monthly');
+  const [returnRateDirty, setReturnRateDirty] = createSignal(false);
+  const [lastSyncedReturnRate, setLastSyncedReturnRate] = createSignal('');
 
   const cadenceOptions: SelectOption[] = [
     { value: 'monthly', label: 'Monthly' },
@@ -130,6 +138,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
   const [allocationError, setAllocationError] = createSignal<string | null>(null);
   const [initializedNodeId, setInitializedNodeId] = createSignal<string | null>(null);
   const [seededRuleSignature, setSeededRuleSignature] = createSignal<string>('');
+  const [lastCommittedAllocationSignature, setLastCommittedAllocationSignature] = createSignal<string>('');
 
   const outboundTargets = createMemo(() => {
     const seen = new Set<string>();
@@ -149,6 +158,18 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
       .sort()
       .join(';');
     return `${rule.id ?? 'draft'}|${rule.trigger}|${rule.triggerNodeId ?? 'self'}|${allocParts}`;
+  };
+
+  const computeDraftSignature = (
+    drafts: AllocationDraft[],
+    triggerValue: 'incoming' | 'scheduled',
+    triggerNode: string | null
+  ) => {
+    const allocParts = [...drafts]
+      .map((alloc) => `${alloc.id}:${alloc.targetNodeId ?? 'none'}:${alloc.percentage}`)
+      .sort()
+      .join(';');
+    return `${triggerValue}|${triggerNode ?? 'self'}|${allocParts}`;
   };
 
   const seedAllocations = (rule: RuleDraft | null) => {
@@ -193,65 +214,241 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
     setAllocationDrafts(seeded);
   };
 
+  const commitBalance = () => {
+    const current = node();
+    if (!current || !props.onUpdateBalance) return;
+    const raw = balanceInput().trim();
+    if (!raw.length) {
+      setBalanceError(null);
+      if (current.balance !== null && current.balance !== undefined) {
+        props.onUpdateBalance(current.id, null);
+      }
+      setBalanceDirty(false);
+      setLastSyncedBalance('');
+      setBalanceInput('');
+      return;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      setBalanceError('Enter a valid number.');
+      return;
+    }
+    setBalanceError(null);
+    const normalized = String(parsed);
+    if (typeof current.balance === 'number' && Math.abs(current.balance - parsed) < 0.0001) {
+      setBalanceDirty(false);
+      setLastSyncedBalance(normalized);
+      setBalanceInput(normalized);
+      return;
+    }
+    props.onUpdateBalance(current.id, parsed);
+    setBalanceDirty(false);
+    setLastSyncedBalance(normalized);
+    setBalanceInput(normalized);
+  };
+
+  const commitInflow = () => {
+    const current = node();
+    if (!current || current.kind !== 'income' || !props.onUpdateInflow) return;
+    const raw = incomeAmountInput().trim();
+    if (!raw.length) {
+      setIncomeError(null);
+      if (current.inflow) {
+        props.onUpdateInflow(current.id, null);
+      }
+      setIncomeDirty(false);
+      setLastSyncedIncomeAmount('');
+      setIncomeAmountInput('');
+      return;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setIncomeError('Enter a positive amount.');
+      return;
+    }
+    setIncomeError(null);
+    const cadence = incomeCadence();
+    const normalized = String(parsed);
+    const sameExisting =
+      current.inflow &&
+      Math.abs(current.inflow.amount - parsed) < 0.0001 &&
+      current.inflow.cadence === cadence;
+    if (sameExisting) {
+      setIncomeDirty(false);
+      setLastSyncedIncomeAmount(normalized);
+      setLastSyncedIncomeCadence(cadence);
+      setIncomeAmountInput(normalized);
+      return;
+    }
+    props.onUpdateInflow(current.id, { amount: parsed, cadence });
+    setIncomeDirty(false);
+    setLastSyncedIncomeAmount(normalized);
+    setLastSyncedIncomeCadence(cadence);
+    setIncomeAmountInput(normalized);
+  };
+
+  const commitReturnRate = () => {
+    const current = node();
+    if (!current || !props.onUpdateReturnRate) return;
+    const raw = returnRateInput().trim();
+    if (!raw.length) {
+      setReturnRateError(null);
+      if (typeof current.returnRate === 'number') {
+        props.onUpdateReturnRate(current.id, null);
+      }
+      setReturnRateDirty(false);
+      setLastSyncedReturnRate('');
+      setReturnRateInput('');
+      return;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      setReturnRateError('Enter a valid percentage.');
+      return;
+    }
+    const normalized = parsed / 100;
+    if (normalized < 0) {
+      setReturnRateError('Return rate cannot be negative.');
+      return;
+    }
+    setReturnRateError(null);
+    const percentString = String(parsed);
+    const existing = typeof current.returnRate === 'number' ? current.returnRate : null;
+    if (existing !== null && Math.abs(existing - normalized) < 0.0001) {
+      setReturnRateDirty(false);
+      setLastSyncedReturnRate(percentString);
+      setReturnRateInput(percentString);
+      return;
+    }
+    props.onUpdateReturnRate(current.id, normalized);
+    setReturnRateDirty(false);
+    setLastSyncedReturnRate(percentString);
+    setReturnRateInput(percentString);
+  };
+
   createEffect(() => {
     const isOpen = props.open;
     const current = node();
+    if (!isOpen && initializedNodeId()) {
+      if (current && current.id === initializedNodeId()) {
+        commitBalance();
+        commitReturnRate();
+        commitInflow();
+      }
+    }
+
     if (!isOpen || !current) {
       setInitializedNodeId(null);
       setSeededRuleSignature('');
       setAllocationDrafts([]);
       setAllocationError(null);
+      setBalanceInput('');
+      setBalanceDirty(false);
+      setLastSyncedBalance('');
+      setIncomeAmountInput('');
+      setIncomeDirty(false);
+      setLastSyncedIncomeAmount('');
+      setIncomeCadence('monthly');
+      setLastSyncedIncomeCadence('monthly');
+      setIncomeError(null);
+      setReturnRateInput('');
+      setReturnRateDirty(false);
+      setLastSyncedReturnRate('');
+      setReturnRateError(null);
+      setLastCommittedAllocationSignature('');
       return;
     }
 
+    const nodeId = current.id;
     const rule = current.kind === 'income' ? props.initialRule ?? null : null;
     const signature = computeRuleSignature(rule);
-    const nodeId = current.id;
 
-    const normalizedBalance = typeof current.balance === 'number' ? String(current.balance) : '';
-    if (balanceInput() !== normalizedBalance) {
-      setBalanceInput(normalizedBalance);
-    }
-
+    const normalizedBalance =
+      typeof current.balance === 'number' && Number.isFinite(current.balance)
+        ? String(current.balance)
+        : '';
     const inflow = current.inflow ?? null;
     const normalizedIncomeAmount =
-      inflow && typeof inflow.amount === 'number' ? String(inflow.amount) : '';
-    if (incomeAmountInput() !== normalizedIncomeAmount) {
-      setIncomeAmountInput(normalizedIncomeAmount);
-    }
-
+      inflow && typeof inflow.amount === 'number' && Number.isFinite(inflow.amount)
+        ? String(inflow.amount)
+        : '';
     const cadence = inflow?.cadence ?? 'monthly';
-    if (incomeCadence() !== cadence) {
-      setIncomeCadence(cadence);
-    }
-
     const normalizedReturnRate =
       typeof current.returnRate === 'number' && Number.isFinite(current.returnRate)
         ? String(current.returnRate * 100)
         : '';
-    if (returnRateInput() !== normalizedReturnRate) {
-      setReturnRateInput(normalizedReturnRate);
-    }
 
-    if (initializedNodeId() === nodeId && seededRuleSignature() === signature) {
+    const isNewNode = initializedNodeId() !== nodeId;
+
+    if (isNewNode) {
+      setInitializedNodeId(nodeId);
+      setBalanceError(null);
+      setIncomeError(null);
+      setReturnRateError(null);
+
+      setBalanceInput(normalizedBalance);
+      setLastSyncedBalance(normalizedBalance);
+      setBalanceDirty(false);
+
+      setIncomeAmountInput(normalizedIncomeAmount);
+      setLastSyncedIncomeAmount(normalizedIncomeAmount);
+      setIncomeCadence(cadence);
+      setLastSyncedIncomeCadence(cadence);
+      setIncomeDirty(false);
+
+      setReturnRateInput(normalizedReturnRate);
+      setLastSyncedReturnRate(normalizedReturnRate);
+      setReturnRateDirty(false);
+
+      setSeededRuleSignature(signature);
+      setLastCommittedAllocationSignature(signature);
+      if (current.kind === 'income') {
+        setTrigger(rule?.trigger ?? 'incoming');
+        setTriggerNodeId(rule?.triggerNodeId ?? current.id);
+        seedAllocations(rule);
+        setAllocationError(null);
+      } else {
+        setTrigger('incoming');
+        setTriggerNodeId(current.id);
+        setAllocationDrafts([]);
+        setAllocationError(null);
+      }
       return;
     }
 
-    setInitializedNodeId(nodeId);
-    setSeededRuleSignature(signature);
-    setBalanceError(null);
-    setIncomeError(null);
-    setReturnRateError(null);
+    if (!balanceDirty() && normalizedBalance !== lastSyncedBalance()) {
+      setBalanceInput(normalizedBalance);
+      setLastSyncedBalance(normalizedBalance);
+    }
 
-    if (current.kind === 'income') {
-      setTrigger(rule?.trigger ?? 'incoming');
-      setTriggerNodeId(rule?.triggerNodeId ?? current.id);
-      seedAllocations(rule);
-      setAllocationError(null);
-    } else {
-      setTrigger('incoming');
-      setTriggerNodeId(current.id);
-      setAllocationDrafts([]);
+    if (!incomeDirty() && normalizedIncomeAmount !== lastSyncedIncomeAmount()) {
+      setIncomeAmountInput(normalizedIncomeAmount);
+      setLastSyncedIncomeAmount(normalizedIncomeAmount);
+    }
+
+    if (!incomeDirty() && cadence !== lastSyncedIncomeCadence()) {
+      setIncomeCadence(cadence);
+      setLastSyncedIncomeCadence(cadence);
+    }
+
+    if (!returnRateDirty() && normalizedReturnRate !== lastSyncedReturnRate()) {
+      setReturnRateInput(normalizedReturnRate);
+      setLastSyncedReturnRate(normalizedReturnRate);
+    }
+
+    if (seededRuleSignature() !== signature) {
+      setSeededRuleSignature(signature);
+      const matchesCommitted = signature === lastCommittedAllocationSignature();
+      if (matchesCommitted) return;
+
+      setLastCommittedAllocationSignature(signature);
+      if (current.kind === 'income') {
+        setTrigger(rule?.trigger ?? 'incoming');
+        setTriggerNodeId(rule?.triggerNodeId ?? current.id);
+        seedAllocations(rule);
+      } else {
+        setAllocationDrafts([]);
+      }
       setAllocationError(null);
     }
   });
@@ -300,73 +497,58 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
     });
   });
 
-  const commitBalance = () => {
+  createEffect(() => {
+    if (!props.open) return;
     const current = node();
-    if (!current || !props.onUpdateBalance) return;
-    const raw = balanceInput().trim();
-    if (!raw.length) {
-      setBalanceError(null);
-      props.onUpdateBalance(current.id, null);
-      return;
-    }
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) {
-      setBalanceError('Enter a valid number.');
-      return;
-    }
-    setBalanceError(null);
-    if (typeof current.balance === 'number' && Math.abs(current.balance - parsed) < 0.0001) return;
-    props.onUpdateBalance(current.id, parsed);
-  };
+    if (!current || current.kind !== 'income' || !props.onSaveRule) return;
 
-  const commitInflow = () => {
-    const current = node();
-    if (!current || current.kind !== 'income' || !props.onUpdateInflow) return;
-    const raw = incomeAmountInput().trim();
-    if (!raw.length) {
-      setIncomeError(null);
-      props.onUpdateInflow(current.id, null);
+    const drafts = allocationDrafts();
+    if (!drafts.length) {
+      setAllocationError(null);
       return;
     }
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      setIncomeError('Enter a positive amount.');
-      return;
-    }
-    setIncomeError(null);
-    const cadence = incomeCadence();
-    const sameExisting =
-      current.inflow &&
-      Math.abs(current.inflow.amount - parsed) < 0.0001 &&
-      current.inflow.cadence === cadence;
-    if (sameExisting) return;
-    props.onUpdateInflow(current.id, { amount: parsed, cadence });
-  };
 
-  const commitReturnRate = () => {
-    const current = node();
-    if (!current || !props.onUpdateReturnRate) return;
-    const raw = returnRateInput().trim();
-    if (!raw.length) {
-      setReturnRateError(null);
-      props.onUpdateReturnRate(current.id, null);
+    const remaining = remainingPercent();
+    const missingTarget = drafts.some((alloc) => !alloc.targetNodeId);
+    const hasNonZero = drafts.some((alloc) => alloc.percentage > 0);
+
+    if (missingTarget && hasNonZero) {
+      setAllocationError('Choose a target for every allocation.');
       return;
     }
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) {
-      setReturnRateError('Enter a valid percentage.');
+
+    if (Math.abs(remaining) > ALLOCATION_TOLERANCE) {
+      setAllocationError('Allocation must total 100%.');
       return;
     }
-    const normalized = parsed / 100;
-    if (normalized < 0) {
-      setReturnRateError('Return rate cannot be negative.');
+
+    if (missingTarget) {
+      setAllocationError(null);
       return;
     }
-    setReturnRateError(null);
-    const existing = typeof current.returnRate === 'number' ? current.returnRate : null;
-    if (existing !== null && Math.abs(existing - normalized) < 0.0001) return;
-    props.onUpdateReturnRate(current.id, normalized);
-  };
+
+    setAllocationError(null);
+
+    const triggerValue = trigger();
+    const triggerNode = triggerNodeId();
+    const signature = computeDraftSignature(drafts, triggerValue, triggerNode);
+    if (signature === lastCommittedAllocationSignature()) return;
+
+    const sanitizedAllocations = drafts.map((allocation) => ({
+      id: allocation.id,
+      percentage: allocation.percentage,
+      targetNodeId: allocation.targetNodeId!,
+    }));
+
+    props.onSaveRule({
+      id: props.initialRule?.id,
+      sourceNodeId: current.id,
+      trigger: triggerValue,
+      triggerNodeId: triggerNode,
+      allocations: sanitizedAllocations,
+    });
+    setLastCommittedAllocationSignature(signature);
+  });
 
   const availableTargets = createMemo(() => props.nodes.filter((n) => n.id !== node()?.id));
   const targetOptions = createMemo<SelectOption[]>(() =>
@@ -400,36 +582,6 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
   const removeAllocationDraft = (id: string) => {
     if (allocationDrafts().length <= 1) return;
     setAllocationDrafts((list) => list.filter((item) => item.id !== id));
-  };
-
-  const handleSaveAllocations = () => {
-    const current = node();
-    if (!current || current.kind !== 'income' || !props.onSaveRule) return;
-    
-    const remaining = remainingPercent();
-    if (Math.abs(remaining) > ALLOCATION_TOLERANCE) {
-      setAllocationError('Allocation must total 100%.');
-      return;
-    }
-    if (allocationDrafts().some((alloc) => !alloc.targetNodeId)) {
-      setAllocationError('Choose a target for every allocation.');
-      return;
-    }
-
-    const sanitizedAllocations = allocationDrafts().map((allocation) => ({
-      id: allocation.id,
-      percentage: allocation.percentage,
-      targetNodeId: allocation.targetNodeId!,
-    }));
-
-    props.onSaveRule({
-      id: props.initialRule?.id,
-      sourceNodeId: current.id,
-      trigger: trigger(),
-      triggerNodeId: triggerNodeId(),
-      allocations: sanitizedAllocations,
-    });
-    setAllocationError(null);
   };
 
   return (
@@ -470,6 +622,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                 value={balanceInput()}
                 onInput={(event) => {
                   setBalanceInput(event.currentTarget.value);
+                  setBalanceDirty(true);
                   setBalanceError(null);
                 }}
                 onBlur={commitBalance}
@@ -496,6 +649,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                   value={returnRateInput()}
                   onInput={(event) => {
                     setReturnRateInput(event.currentTarget.value);
+                    setReturnRateDirty(true);
                     setReturnRateError(null);
                   }}
                   onBlur={commitReturnRate}
@@ -531,6 +685,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                     value={incomeAmountInput()}
                     onInput={(event) => {
                       setIncomeAmountInput(event.currentTarget.value);
+                      setIncomeDirty(true);
                       setIncomeError(null);
                     }}
                     onBlur={commitInflow}
@@ -552,17 +707,18 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                   value={cadenceOptions.find((option) => option.value === incomeCadence()) ?? cadenceOptions[0]}
                   onChange={(option) => {
                     setIncomeCadence((option?.value as CanvasInflowCadence | undefined) ?? 'monthly');
+                    setIncomeDirty(true);
                     queueMicrotask(commitInflow);
                   }}
                   disabled={!props.onUpdateInflow}
                   placeholder={<span class="truncate text-slate-400">Monthly</span>}
                   itemComponent={(itemProps) => <SelectItem {...itemProps} />}
                 >
-                  <SelectTrigger
-                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-                    aria-label="Income cadence"
-                  >
-                    <SelectValue>
+                <SelectTrigger
+                  class="mt-1 flex h-[38px] w-full items-center justify-between rounded-xl border border-slate-200 px-3 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                  aria-label="Income cadence"
+                >
+                    <SelectValue<SelectOption>>
                       {(state) => <span class="truncate">{state.selectedOption()?.label ?? 'Monthly'}</span>}
                     </SelectValue>
                   </SelectTrigger>
@@ -638,7 +794,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
 
                     return (
                       <div class="rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-3 shadow-sm transition-shadow hover:shadow-md">
-                        <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex flex-row flex-wrap items-center gap-3">
                           <div class="min-w-[140px] flex-1">
                             <p class="text-sm font-semibold text-slate-800">{destinationLabel}</p>
                             <Show when={!flow}>
@@ -668,7 +824,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                               type="button"
                               variant="ghost"
                               size="xs"
-                              class="text-xs font-semibold text-slate-400 hover:text-rose-600"
+                              class="whitespace-nowrap text-xs font-semibold text-slate-400 hover:text-rose-600"
                               onClick={() => removeAllocationDraft(allocation.id)}
                             >
                               Remove
@@ -691,7 +847,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                               itemComponent={(itemProps) => <SelectItem {...itemProps} />}
                             >
                               <SelectTrigger class="h-9 w-full rounded-lg border border-slate-200 text-sm font-medium text-slate-700" aria-label="Allocation target">
-                                <SelectValue>
+                                <SelectValue<SelectOption>>
                                   {(state) => (
                                     <span class="truncate">{state.selectedOption()?.label ?? 'Select account'}</span>
                                   )}
@@ -710,10 +866,6 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                 <Show when={allocationError()}>
                   <p class="text-xs font-semibold text-rose-600">{allocationError()}</p>
                 </Show>
-
-                <Button type="button" class="w-full py-2.5 shadow-sm" onClick={handleSaveAllocations}>
-                  Save allocations
-                </Button>
               </div>
             </div>
           </section>
@@ -741,7 +893,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                   itemComponent={(itemProps) => <SelectItem {...itemProps} />}
                 >
                   <SelectTrigger class="mt-2" aria-label="Pod type">
-                    <SelectValue>
+                    <SelectValue<SelectOption>>
                       {(state) => <span class="truncate">{state.selectedOption()?.label ?? 'Select type'}</span>}
                     </SelectValue>
                   </SelectTrigger>
