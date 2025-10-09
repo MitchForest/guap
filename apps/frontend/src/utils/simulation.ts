@@ -135,7 +135,6 @@ export const simulateGraph = ({ nodes, rules, settings }: SimulationInput): Simu
 
       sourceState.balance += inflow;
 
-      let routed = 0;
       allocations.forEach((allocation) => {
         const targetState = state.get(allocation.targetId);
         if (!targetState) return;
@@ -143,7 +142,6 @@ export const simulateGraph = ({ nodes, rules, settings }: SimulationInput): Simu
         if (amount <= 0) return;
         sourceState.balance -= amount;
         targetState.balance += amount;
-        routed += amount;
       });
 
       // Any leftover remains with the source node

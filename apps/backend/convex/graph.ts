@@ -201,7 +201,6 @@ export const publish = mutation({
         sourceNodeId: sourceId,
         triggerType: rule.trigger,
         triggerNodeId,
-        schedule: null,
         createdAt: now(),
         updatedAt: now(),
       });

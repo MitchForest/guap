@@ -1,5 +1,12 @@
 import { Component } from 'solid-js';
-import Modal from '../ui/Modal';
+import { Button } from '~/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
 import type { CanvasNode } from '../../types/graph';
 
 export type AccountOption = {
@@ -31,41 +38,48 @@ const AccountTypeModal: Component<AccountTypeModalProps> = (props) => {
   };
 
   return (
-    <Modal open={props.open} onClose={props.onClose}>
-      <div class="flex flex-col gap-6">
-        <div class="text-center space-y-2">
-          <p class="text-5xl">🏦</p>
-          <h2 class="text-xl font-semibold text-slate-900">Add an account</h2>
-          <p class="text-sm text-subtle">Pick the type that matches where the money lives.</p>
-        </div>
-        <div class="grid grid-cols-1 gap-3">
-          {options.map((option) => (
-            <button
-              type="button"
-              class="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-slate-50"
-              onClick={() => handleSelect(option)}
-            >
-              <div class="flex items-center gap-3">
-                <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-xl">
-                  {option.icon}
+    <Dialog
+      open={props.open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) props.onClose();
+      }}
+    >
+      <DialogContent class="max-w-md">
+        <div class="flex flex-col gap-6">
+          <DialogHeader class="items-center gap-2 text-center">
+            <span class="text-5xl">🏦</span>
+            <DialogTitle>Add an account</DialogTitle>
+            <DialogDescription>
+              Pick the type that matches where the money lives.
+            </DialogDescription>
+          </DialogHeader>
+          <div class="grid grid-cols-1 gap-3">
+            {options.map((option) => (
+              <Button
+                type="button"
+                variant="outline"
+                class="w-full justify-between rounded-2xl border border-slate-200 px-4 py-4 text-left hover:border-slate-300 hover:bg-slate-50"
+                onClick={() => handleSelect(option)}
+              >
+                <div class="flex items-center gap-3">
+                  <div class="flex h-12 w-12 items-center justify-center text-xl">
+                    {option.icon}
+                  </div>
+                  <div class="text-left">
+                    <p class="text-sm font-semibold text-slate-900">{option.label}</p>
+                    <p class="text-xs text-subtle">Account</p>
+                  </div>
                 </div>
-                <div>
-                  <p class="text-sm font-semibold text-slate-900">{option.label}</p>
-                  <p class="text-xs text-subtle">Account</p>
-                </div>
-              </div>
-              <span class="text-base text-slate-400">›</span>
-            </button>
-          ))}
+                <span class="text-base text-slate-400">›</span>
+              </Button>
+            ))}
+          </div>
+          <Button variant="secondary" class="w-full" onClick={props.onClose}>
+            Cancel
+          </Button>
         </div>
-        <button
-          class="w-full rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-          onClick={props.onClose}
-        >
-          Cancel
-        </button>
-      </div>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 };
 

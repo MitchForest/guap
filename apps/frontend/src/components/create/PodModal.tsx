@@ -1,10 +1,27 @@
 import { Component, Show, createEffect, createSignal } from 'solid-js';
-import Modal from '../ui/Modal';
-import type { CanvasPodType } from '../../types/graph';
+import { Button } from '~/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
+import type { SelectOption } from '~/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectHiddenSelect,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
+import type { CanvasPodType, CanvasNode } from '../../types/graph';
 
 type SubAccountOption = {
   id: string;
   label: string;
+  category: NonNullable<CanvasNode['category']>;
 };
 
 type PodModalProps = {
@@ -36,9 +53,20 @@ const PodModal: Component<PodModalProps> = (props) => {
       setError(null);
       return;
     }
-    const defaultId = props.defaultAccountId ?? props.accounts[0]?.id ?? '';
+    const accounts = props.accounts;
+    const fallbackId = accounts[0]?.id ?? '';
+    const defaultId = accounts.find((account) => account.id === props.defaultAccountId)?.id ?? fallbackId;
     setParentId(defaultId);
     setError(null);
+  });
+
+  createEffect(() => {
+    const selected = props.accounts.find((account) => account.id === parentId());
+    if (!selected) {
+      setPodType('goal');
+      return;
+    }
+    setPodType(selected.category === 'savings' ? 'goal' : 'category');
   });
 
   const handleSubmit = async (event: Event) => {
@@ -64,99 +92,113 @@ const PodModal: Component<PodModalProps> = (props) => {
 
   const disableForm = () => props.accounts.length === 0;
 
+  const accountOptions = () =>
+    props.accounts.map((account) => ({
+      value: account.id,
+      label: account.label,
+      icon: '🏦',
+    })) satisfies SelectOption[];
+
+  const selectedAccountOption = () => accountOptions().find((option) => option.value === parentId()) ?? null;
+  const podTypeLabel = () => (podType() === 'goal' ? 'Savings Goal' : 'Spend Category');
+
   return (
-    <Modal open={props.open} onClose={props.onClose}>
-      <form class="flex flex-col gap-5" onSubmit={handleSubmit}>
-        <div class="flex flex-col items-center gap-3 text-center">
-          <span class="text-5xl">💸</span>
-          <h2 class="text-xl font-semibold text-slate-900">Create a Pod</h2>
-          <p class="text-sm text-subtle">Group goals, spending, and categories under an account.</p>
-        </div>
-        <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Name
-          <input
-            class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-            placeholder="e.g. Rent, Travel, Emergency Fund"
-            value={name()}
-            onInput={(event) => {
-              setName(event.currentTarget.value);
-              setError(null);
-            }}
-            disabled={disableForm()}
-          />
-        </label>
-        <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-          Connect to account
-          <select
-            class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-            value={parentId()}
-            onChange={(event) => {
-              setParentId(event.currentTarget.value);
-              setError(null);
-            }}
-            disabled={disableForm()}
-          >
-            <option value="" disabled>
-              {props.accounts.length === 0 ? 'Add an account first' : 'Choose account'}
-            </option>
-            {props.accounts.map((account) => (
-              <option value={account.id}>{account.label}</option>
-            ))}
-          </select>
-        </label>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <Dialog
+      open={props.open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) props.onClose();
+      }}
+    >
+      <DialogContent>
+        <form class="flex flex-col gap-5" onSubmit={handleSubmit}>
+          <DialogHeader class="items-center gap-3 text-center">
+            <span class="text-5xl">💸</span>
+            <DialogTitle>Create a Pod</DialogTitle>
+            <DialogDescription>
+              Group goals, spending, and categories under an account.
+            </DialogDescription>
+          </DialogHeader>
           <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Pod type
-            <select
-              class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-              value={podType()}
-              onChange={(event) => setPodType(event.currentTarget.value as CanvasPodType)}
-              disabled={disableForm()}
-            >
-              <option value="goal">Goal</option>
-              <option value="category">Category</option>
-              <option value="envelope">Envelope</option>
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-          <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Starting balance
+            Name
             <input
-              type="number"
-              min="0"
-              step="0.01"
-              class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-              placeholder="0.00"
-              value={startingBalance()}
+              class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
+              placeholder="e.g. Rent, Travel, Emergency Fund"
+              value={name()}
               onInput={(event) => {
-                setStartingBalance(event.currentTarget.value);
+                setName(event.currentTarget.value);
                 setError(null);
               }}
               disabled={disableForm()}
             />
           </label>
-        </div>
-        <Show when={error()}>
-          {(message) => <p class="text-sm text-rose-500">{message()}</p>}
-        </Show>
-        <div class="flex flex-col gap-2">
-          <button
-            type="submit"
-            class="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-floating transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Connect to account
+          <Select
+            options={accountOptions()}
+            optionValue="value"
+            optionTextValue="label"
+            value={selectedAccountOption()}
+            onChange={(option) => {
+              setParentId(option?.value ?? '');
+              setError(null);
+            }}
             disabled={disableForm()}
+            placeholder={
+              <span class="truncate text-slate-400">
+                {props.accounts.length === 0 ? 'Add an account first' : 'Choose account'}
+              </span>
+            }
+            itemComponent={(itemProps) => <SelectItem {...itemProps} />}
           >
-            Create Pod
-          </button>
-          <button
-            type="button"
-            class="w-full rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-            onClick={props.onClose}
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </Modal>
+            <SelectTrigger class="mt-1" aria-label="Parent account">
+              <SelectValue>
+                {(state) => (
+                  <span class="truncate">{state.selectedOption()?.label ?? (props.accounts.length === 0 ? 'Add an account first' : 'Choose account')}</span>
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent />
+            <SelectHiddenSelect name="pod-parent-account" />
+          </Select>
+          </label>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Pod type
+              <div class="mt-2 w-full rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
+                {podTypeLabel()}
+              </div>
+            </label>
+            <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Starting balance
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
+                placeholder="0.00"
+                value={startingBalance()}
+                onInput={(event) => {
+                  setStartingBalance(event.currentTarget.value);
+                  setError(null);
+                }}
+                disabled={disableForm()}
+              />
+            </label>
+          </div>
+          <Show when={error()}>
+            {(message) => <p class="text-sm font-semibold text-rose-600">{message()}</p>}
+          </Show>
+          <div class="flex flex-col gap-2">
+            <Button type="submit" class="w-full shadow-floating" disabled={disableForm()}>
+              Create Pod
+            </Button>
+            <Button type="button" variant="secondary" class="w-full" onClick={props.onClose}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 };
 

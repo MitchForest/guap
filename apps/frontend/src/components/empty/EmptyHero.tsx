@@ -1,4 +1,5 @@
 import { Component } from 'solid-js';
+import { Button } from '~/components/ui/button';
 
 const EmptyHero: Component<{ onCreate: () => void }> = (props) => {
   return (
@@ -14,12 +15,12 @@ const EmptyHero: Component<{ onCreate: () => void }> = (props) => {
             nodes to automate your money map.
           </p>
         </div>
-        <button
-          class="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-floating transition hover:bg-slate-800"
+        <Button
+          class="rounded-full px-6 py-3 text-sm font-semibold uppercase tracking-[0.18em] shadow-floating"
           onClick={props.onCreate}
         >
           Start building
-        </button>
+        </Button>
       </div>
     </div>
   );

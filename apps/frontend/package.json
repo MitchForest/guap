@@ -31,10 +31,13 @@
     "@tanstack/solid-form": "^1.23.5",
     "@tanstack/solid-router": "^1.132.41",
     "@tanstack/solid-table": "^8.21.3",
+    "@kobalte/core": "^0.13.6",
+    "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "convex": "catalog:",
     "solid-js": "^1.9.9",
     "solid-motionone": "^1.0.4",
-    "solid-ui": "^2.6.1"
+    "solid-ui": "^2.6.1",
+    "tailwind-merge": "^2.5.3"
   }
 }

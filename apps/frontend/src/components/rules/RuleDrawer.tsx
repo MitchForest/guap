@@ -1,4 +1,14 @@
 import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
+import { Button } from '~/components/ui/button';
+import type { SelectOption } from '~/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectHiddenSelect,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
 import { CanvasNode } from '../../types/graph';
 
 export type AllocationDraft = {
@@ -32,6 +42,20 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
   const [allocations, setAllocations] = createSignal<AllocationDraft[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [initialized, setInitialized] = createSignal(false);
+
+  const incomeNodes = createMemo(() => props.nodes.filter((node) => node.kind === 'income'));
+  const triggerOptions = createMemo<SelectOption[]>(() =>
+    incomeNodes().map((node) => ({
+      value: node.id,
+      label: node.label,
+    }))
+  );
+  const allocationOptions = createMemo<SelectOption[]>(() =>
+    availableTargets().map((node) => ({
+      value: node.id,
+      label: node.label,
+    }))
+  );
 
   createEffect(() => {
     // Only initialize when drawer opens (transitions from false to true)
@@ -130,61 +154,65 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
             <h2 class="text-lg font-semibold text-slate-900">Set up an auto flow</h2>
             <p class="text-sm text-subtle">Route money automatically when cash hits an account.</p>
           </div>
-          <button
-            class="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+          <Button
+            type="button"
+            variant="secondary"
+            size="xs"
+            class="rounded-lg uppercase tracking-[0.18em]"
             onClick={props.onClose}
           >
             Close
-          </button>
+          </Button>
         </div>
         <div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
           <section class="space-y-3">
             <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">When should it run?</h3>
             <div class="flex gap-2">
-              <button
-                class="flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition"
-                classList={{
-                  'border-slate-900 bg-slate-900 text-white': trigger() === 'incoming',
-                  'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800': trigger() !== 'incoming',
-                }}
+              <Button
+                type="button"
+                variant={trigger() === 'incoming' ? 'primary' : 'outline'}
+                class="flex-1 h-auto justify-center rounded-xl px-4 py-3 text-sm font-semibold"
                 onClick={() => setTrigger('incoming')}
               >
                 Whenever money arrives
-              </button>
-              <button
-                class="flex-1 rounded-xl border px-4 py-3 text-sm font-semibold transition"
-                classList={{
-                  'border-slate-900 bg-slate-900 text-white': trigger() === 'scheduled',
-                  'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800': trigger() !== 'scheduled',
-                }}
+              </Button>
+              <Button
+                type="button"
+                variant={trigger() === 'scheduled' ? 'primary' : 'outline'}
+                class="flex-1 h-auto justify-center rounded-xl px-4 py-3 text-sm font-semibold"
                 onClick={() => setTrigger('scheduled')}
               >
                 On a schedule
-              </button>
+              </Button>
             </div>
             <div class="rounded-2xl border border-slate-200 px-4 py-4">
               <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Watch this account</p>
-              <select
-                class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-                value={triggerNodeId() ?? ''}
-                onChange={(event) => setTriggerNodeId(event.currentTarget.value || null)}
+              <Select
+                options={triggerOptions()}
+                optionValue="value"
+                optionTextValue="label"
+                value={triggerOptions().find((option) => option.value === triggerNodeId()) ?? null}
+                onChange={(option) => setTriggerNodeId(option?.value ?? null)}
+                placeholder={<span class="truncate text-slate-400">Select source</span>}
+                itemComponent={(itemProps) => <SelectItem {...itemProps} />}
               >
-                <option value="">Select source</option>
-                {props.nodes
-                  .filter((node) => node.kind === 'income')
-                  .map((node) => (
-                    <option value={node.id}>{node.label}</option>
-                  ))}
-              </select>
+                <SelectTrigger class="mt-2" aria-label="Source account">
+                  <SelectValue>
+                    {(state) => <span class="truncate">{state.selectedOption()?.label ?? 'Select source'}</span>}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent />
+                <SelectHiddenSelect name="rule-trigger" />
+              </Select>
             </div>
           </section>
 
           <section class="space-y-3">
             <div class="flex items-center justify-between">
               <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Action</h3>
-              <button class="text-xs font-semibold text-slate-600 hover:text-slate-900" onClick={addAllocation}>
+              <Button type="button" variant="ghost" size="xs" class="text-xs font-semibold uppercase tracking-[0.18em]" onClick={addAllocation}>
                 + Add account
-              </button>
+              </Button>
             </div>
             <div class="space-y-3">
               <For each={allocations()}>
@@ -192,12 +220,15 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                   <div class="rounded-2xl border border-slate-200 px-4 py-4">
                     <div class="flex items-center justify-between">
                       <p class="text-sm font-semibold text-slate-700">Move this percent onward</p>
-                      <button
-                        class="text-xs text-slate-400 hover:text-slate-600"
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        class="text-xs font-semibold text-slate-400 hover:text-slate-600"
                         onClick={() => removeAllocation(allocation.id)}
                       >
                         Remove
-                      </button>
+                      </Button>
                     </div>
                     <div class="mt-3 flex items-center gap-3">
                       <div class="flex items-center gap-2">
@@ -218,20 +249,27 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                         />
                       </div>
                       <span class="text-sm text-slate-500">To</span>
-                      <select
-                        class="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-                        value={allocation.targetNodeId ?? ''}
-                        onChange={(event) =>
+                      <Select
+                        options={allocationOptions()}
+                        optionValue="value"
+                        optionTextValue="label"
+                        value={allocationOptions().find((option) => option.value === allocation.targetNodeId) ?? null}
+                        onChange={(option) =>
                           updateAllocation(allocation.id, {
-                            targetNodeId: event.currentTarget.value || null,
+                            targetNodeId: option?.value ?? null,
                           })
                         }
+                        placeholder={<span class="truncate text-slate-400">Select account</span>}
+                        itemComponent={(itemProps) => <SelectItem {...itemProps} />}
                       >
-                        <option value="">Select account</option>
-                        {availableTargets().map((node) => (
-                          <option value={node.id}>{node.label}</option>
-                        ))}
-                      </select>
+                        <SelectTrigger class="flex-1" aria-label="Allocation target">
+                          <SelectValue>
+                            {(state) => <span class="truncate">{state.selectedOption()?.label ?? 'Select account'}</span>}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent />
+                        <SelectHiddenSelect name={`rule-target-${allocation.id}`} />
+                      </Select>
                     </div>
                   </div>
                 )}
@@ -252,18 +290,12 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
           </section>
         </div>
         <div class="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
-          <button
-            class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-            onClick={props.onClose}
-          >
+          <Button type="button" variant="secondary" onClick={props.onClose}>
             Cancel
-          </button>
-          <button
-            class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-floating transition hover:bg-slate-800"
-            onClick={handleSave}
-          >
+          </Button>
+          <Button type="button" onClick={handleSave} class="shadow-floating">
             Save rule
-          </button>
+          </Button>
         </div>
       </aside>
     </Show>

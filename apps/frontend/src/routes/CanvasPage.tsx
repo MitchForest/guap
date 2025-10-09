@@ -1,4 +1,4 @@
-import { Component, For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, on } from 'solid-js';
+import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, on } from 'solid-js';
 import { Motion } from 'solid-motionone';
 import { createStore } from 'solid-js/store';
 import CanvasViewport, { DragPayload, ViewportControls } from '../components/canvas/CanvasViewport';
@@ -15,7 +15,30 @@ import NodeDrawer from '../components/nodes/NodeDrawer';
 import IncomeSourceModal from '../components/create/IncomeSourceModal';
 import PodModal from '../components/create/PodModal';
 import AccountTypeModal, { AccountOption } from '../components/create/AccountTypeModal';
-import Modal from '../components/ui/Modal';
+import { Button } from '~/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu';
+import type { SelectOption } from '~/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectHiddenSelect,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
 import {
   ensureWorkspace,
   fetchGraph,
@@ -107,6 +130,55 @@ const SaveIcon = () => (
   </svg>
 );
 
+const DuplicateIcon = () => (
+  <svg
+    class="h-4 w-4"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="9" y="9" width="13" height="13" rx="2" />
+    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+  </svg>
+);
+
+const ShareIcon = () => (
+  <svg
+    class="h-4 w-4"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7" />
+    <path d="M16 6l-4-4-4 4" />
+    <path d="M12 2v14" />
+  </svg>
+);
+
+const RenameIcon = () => (
+  <svg
+    class="h-4 w-4"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 21h18" />
+    <path d="M12.5 5.5l2-2a2.121 2.121 0 113 3l-8.5 8.5L6 16l1-3.5 5.5-5.5z" />
+  </svg>
+);
+
 const createId = () =>
   typeof globalThis.crypto !== 'undefined' && 'randomUUID' in globalThis.crypto
     ? globalThis.crypto.randomUUID()
@@ -183,14 +255,14 @@ const formatMonths = (value: number | null) => {
 const CanvasPage: Component = () => {
   const [workspaces, setWorkspaces] = createSignal<WorkspaceRecord[]>([]);
   const [workspaceSlug, setWorkspaceSlug] = createSignal<string | null>(null);
-  const [workspaceModal, setWorkspaceModal] = createSignal<'create' | 'delete' | null>(null);
+  const [workspaceModal, setWorkspaceModal] = createSignal<'create' | 'delete' | 'rename' | null>(null);
   const [workspaceDraftName, setWorkspaceDraftName] = createSignal('');
   const [workspaceToDelete, setWorkspaceToDelete] = createSignal<WorkspaceRecord | null>(null);
+  const [workspaceToRename, setWorkspaceToRename] = createSignal<WorkspaceRecord | null>(null);
   const [initializingWorkspace, setInitializingWorkspace] = createSignal(true);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = createSignal(false);
-  let workspaceMenuRef: HTMLDivElement | undefined;
-let workspaceMenuButtonRef: HTMLButtonElement | undefined;
-let drawerContainerRef: HTMLDivElement | undefined;
+  let drawerContainerRef: HTMLDivElement | undefined;
+  let shareStatusTimeout: number | undefined;
 
   const [graph, setGraph] = createStore<{ nodes: CanvasNode[]; flows: CanvasFlow[] }>({
     nodes: [],
@@ -217,11 +289,18 @@ let drawerContainerRef: HTMLDivElement | undefined;
   const [history, setHistory] = createSignal<Snapshot[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(-1);
   const [simulationSettings, setSimulationSettings] = createSignal({ horizonYears: 10 });
+  const simulationHorizonOptions: SelectOption[] = [
+    { value: '5', label: '5 Years' },
+    { value: '10', label: '10 Years' },
+    { value: '20', label: '20 Years' },
+    { value: '30', label: '30 Years' },
+  ];
   const [simulationResult, setSimulationResult] = createSignal<SimulationResult | null>(null);
   const [simulationError, setSimulationError] = createSignal<string | null>(null);
   const [simulationMenuOpen, setSimulationMenuOpen] = createSignal(false);
-  let simulationMenuRef: HTMLDivElement | undefined;
-  let simulationButtonRef: HTMLButtonElement | undefined;
+  const [actionsMenuOpen, setActionsMenuOpen] = createSignal(false);
+  const [duplicating, setDuplicating] = createSignal(false);
+  const [shareStatus, setShareStatus] = createSignal<'copied' | 'error' | null>(null);
   const [marquee, setMarquee] = createSignal<
     | null
     | {
@@ -262,6 +341,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
   const openCreateWorkspace = () => {
     setWorkspaceDraftName('');
     setWorkspaceMenuOpen(false);
+    setWorkspaceToRename(null);
     setWorkspaceModal('create');
   };
 
@@ -291,6 +371,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
     }
 
     setWorkspaceToDelete(null);
+    setWorkspaceToRename(null);
     setWorkspaceModal(null);
 
     if (list.length === 0) {
@@ -299,6 +380,96 @@ let drawerContainerRef: HTMLDivElement | undefined;
 
     setWorkspaceMenuOpen(false);
   };
+
+  const showShareStatus = (status: 'copied' | 'error') => {
+    setShareStatus(status);
+    if (typeof window !== 'undefined') {
+      if (shareStatusTimeout) window.clearTimeout(shareStatusTimeout);
+      shareStatusTimeout = window.setTimeout(() => setShareStatus(null), 2400);
+    }
+  };
+
+  const handleShareWorkspace = async () => {
+    const slug = workspaceSlug();
+    if (!slug) {
+      openCreateWorkspace();
+      return;
+    }
+    if (typeof window === 'undefined') return;
+
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('workspace', slug);
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(url.toString());
+        showShareStatus('copied');
+      } else {
+        showShareStatus('error');
+      }
+    } catch (error) {
+      console.error('Failed to copy workspace link', error);
+      showShareStatus('error');
+    }
+  };
+
+  const handleWorkspaceRename = async (event: Event) => {
+    event.preventDefault();
+    const workspace = workspaceToRename();
+    const slug = workspaceSlug();
+    if (!workspace || !slug) {
+      openCreateWorkspace();
+      return;
+    }
+
+    const name = workspaceDraftName().trim() || workspace.name;
+    try {
+      await ensureWorkspace(slug, name);
+      await loadWorkspaces();
+      setWorkspaceSlug(slug);
+      setWorkspaceModal(null);
+      setWorkspaceToRename(null);
+      setWorkspaceDraftName('');
+      setWorkspaceMenuOpen(false);
+    } catch (error) {
+      console.error('Failed to rename workspace', error);
+    }
+  };
+
+  const duplicateWorkspace = async () => {
+    const slug = workspaceSlug();
+    const workspace = currentWorkspace();
+    if (!workspace || !slug) {
+      openCreateWorkspace();
+      return;
+    }
+    if (duplicating()) return;
+
+    setDuplicating(true);
+    try {
+      const baseName = workspace.name?.trim().length ? workspace.name : 'Workspace';
+      const duplicateName = `${baseName} Copy`;
+      const newSlug = `workspace-${createId()}`;
+
+      await ensureWorkspace(newSlug, duplicateName);
+      await publishGraph(newSlug, {
+        nodes: graph.nodes,
+        flows: graph.flows,
+        rules: rules(),
+      });
+      await loadWorkspaces();
+      setWorkspaceSlug(newSlug);
+    } catch (error) {
+      console.error('Failed to duplicate workspace', error);
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+  onCleanup(() => {
+    if (typeof window !== 'undefined' && shareStatusTimeout) {
+      window.clearTimeout(shareStatusTimeout);
+    }
+  });
 
   const cloneSnapshot = (snap: Snapshot): Snapshot => ({
     nodes: snap.nodes.map((node) => ({ ...node, position: { ...node.position } })),
@@ -499,23 +670,21 @@ let drawerContainerRef: HTMLDivElement | undefined;
       .filter((issue) => issue.state !== 'complete');
   });
 
-  const allocationIssueMessage = createMemo(() => {
-    const issues = allocationIssues();
-    if (issues.length === 0) return null;
-    if (issues.length === 1) {
-      const issue = issues[0];
-      const rounded = Math.round(issue.total * 10) / 10;
-      switch (issue.state) {
-        case 'missing':
-          return `${issue.label} needs an allocation rule before you can save.`;
-        case 'under':
-          return `${issue.label} is only ${rounded}% allocated. Allocations must total 100%.`;
-        case 'over':
-          return `${issue.label} exceeds 100% allocation (${rounded}%). Adjust the rule before saving.`;
-      }
+  const canSave = createMemo(
+    () =>
+      Boolean(workspaceSlug()) && hasChanges() && allocationIssues().length === 0 && !saving(),
+  );
+
+  const saveDisabledReason = createMemo(() => {
+    if (saving()) return null;
+    if (!workspaceSlug()) return 'Select or create a workspace to save.';
+    if (!hasChanges()) return 'No changes to save.';
+    if (allocationIssues().length > 0) {
+      return 'Complete allocation rules for all income sources to save.';
     }
-    return 'Complete allocations for every income source before saving.';
+    return null;
   });
+
   const describeFlow = (flow: CanvasFlow, source: CanvasNode, target: CanvasNode) => {
     const rule = flow.ruleId ? ruleById().get(flow.ruleId) : undefined;
     if (rule) {
@@ -592,8 +761,17 @@ let drawerContainerRef: HTMLDivElement | undefined;
         const list = await loadWorkspaces();
         const savedSlug =
           typeof window !== 'undefined' ? window.localStorage.getItem(WORKSPACE_STORAGE_KEY) : null;
+        const sharedSlug =
+          typeof window !== 'undefined'
+            ? new URL(window.location.href).searchParams.get('workspace')
+            : null;
+        const sharedExists = sharedSlug && list.some((workspace) => workspace.slug === sharedSlug);
         const hasSaved = savedSlug && list.some((workspace) => workspace.slug === savedSlug);
-        const initialSlug = hasSaved ? savedSlug : list[0]?.slug ?? null;
+        const initialSlug = sharedExists
+          ? sharedSlug
+          : hasSaved
+          ? savedSlug
+          : list[0]?.slug ?? null;
 
         if (initialSlug) {
           setWorkspaceSlug(initialSlug);
@@ -765,47 +943,50 @@ let drawerContainerRef: HTMLDivElement | undefined;
     if (typeof window === 'undefined') return;
     if (slug) {
       window.localStorage.setItem(WORKSPACE_STORAGE_KEY, slug);
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('workspace') !== slug) {
+        url.searchParams.set('workspace', slug);
+        window.history.replaceState(null, '', url.toString());
+      }
     } else {
       window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('workspace')) {
+        url.searchParams.delete('workspace');
+        window.history.replaceState(null, '', url.toString());
+      }
     }
   });
 
   createEffect(() => {
     if (!workspaceMenuOpen()) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (workspaceMenuRef?.contains(target) || workspaceMenuButtonRef?.contains(target as HTMLElement)) {
-        return;
-      }
-      setWorkspaceMenuOpen(false);
-    };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setWorkspaceMenuOpen(false);
     };
-    document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     onCleanup(() => {
-      document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     });
   });
 
   createEffect(() => {
     if (!simulationMenuOpen()) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (simulationMenuRef?.contains(target) || simulationButtonRef?.contains(target as HTMLElement)) {
-        return;
-      }
-      setSimulationMenuOpen(false);
-    };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setSimulationMenuOpen(false);
     };
-    document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
     onCleanup(() => {
-      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    });
+  });
+
+  createEffect(() => {
+    if (!actionsMenuOpen()) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActionsMenuOpen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    onCleanup(() => {
       document.removeEventListener('keydown', handleKeyDown);
     });
   });
@@ -848,8 +1029,15 @@ let drawerContainerRef: HTMLDivElement | undefined;
     });
     return overrides;
   });
-  const accountNodes = createMemo(() => graph.nodes.filter((node) => node.kind === 'account'));
-  const accountOptions = createMemo(() => accountNodes().map((node) => ({ id: node.id, label: node.label })));
+  const accountNodes = createMemo(() =>
+    graph.nodes.filter(
+      (node) =>
+        node.kind === 'account' && (node.category === 'checking' || node.category === 'savings')
+    )
+  );
+  const accountOptions = createMemo(() =>
+    accountNodes().map((node) => ({ id: node.id, label: node.label, category: node.category }))
+  );
   const flows = createMemo(() => graph.flows);
 
   const ensureSelection = (nodeId: string, additive: boolean) => {
@@ -1303,10 +1491,29 @@ let drawerContainerRef: HTMLDivElement | undefined;
     const spacingX = NODE_CARD_WIDTH + GRID_SIZE * 2;
     const spacingY = NODE_CARD_HEIGHT + GRID_SIZE * 2;
 
-    const position = {
+    let position = {
       x: snapToGrid(worldCenter.x - NODE_CARD_WIDTH / 2 + col * spacingX),
       y: snapToGrid(worldCenter.y - NODE_CARD_HEIGHT / 2 + row * spacingY),
     };
+
+    if (preset.kind === 'pod' && preset.parentId) {
+      const parent = graph.nodes.find((node) => node.id === preset.parentId);
+      if (parent) {
+        const siblingPods = graph.nodes.filter(
+          (node) => node.kind === 'pod' && node.parentId === parent.id
+        );
+        const siblingCount = siblingPods.length;
+        const podSpacingX = NODE_CARD_WIDTH + GRID_SIZE * 2;
+        const offsetMultiplier = Math.floor((siblingCount + 1) / 2);
+        const direction = siblingCount % 2 === 0 ? 1 : -1;
+        const offsetX = direction * offsetMultiplier * podSpacingX;
+        const offsetY = NODE_CARD_HEIGHT + GRID_SIZE * 4;
+        position = {
+          x: snapToGrid(parent.position.x + offsetX),
+          y: snapToGrid(parent.position.y + offsetY),
+        };
+      }
+    }
 
     const newNodeId = `node-${createId()}`;
     const defaultReturnRate = preset.returnRate ?? getDefaultReturnRate({
@@ -1493,10 +1700,13 @@ let drawerContainerRef: HTMLDivElement | undefined;
   };
 
   const runSimulation = (years?: number) => {
-    if (years) {
-      setSimulationSettings({ horizonYears: years });
+    const hasExplicitYears = typeof years === 'number' && Number.isFinite(years) && years > 0;
+    const nextHorizon = hasExplicitYears ? (years as number) : simulationSettings().horizonYears;
+
+    if (hasExplicitYears) {
+      setSimulationSettings({ horizonYears: nextHorizon });
     }
-    
+
     if (graph.nodes.length === 0) {
       setSimulationError('Add nodes before running a simulation.');
       setSimulationResult(null);
@@ -1508,7 +1718,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
       return;
     }
 
-    const settings = years ? { horizonYears: years } : simulationSettings();
+    const settings = { horizonYears: nextHorizon };
     
     const nodesForSimulation = graph.nodes.map((node) => ({
       id: node.id,
@@ -1690,60 +1900,59 @@ let drawerContainerRef: HTMLDivElement | undefined;
           }
         >
           <div class="pointer-events-auto flex items-center gap-2">
-            <div class="relative">
-              <button
-                ref={(el) => (workspaceMenuButtonRef = el)}
-                type="button"
-                class="flex h-8 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/70 px-3 text-xs font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20 disabled:cursor-not-allowed disabled:opacity-60 backdrop-blur-sm"
-                onClick={() => setWorkspaceMenuOpen((open) => !open)}
-                disabled={workspaces().length === 0}
-                title={currentWorkspace()?.name ?? 'Select workspace'}
-              >
-                <span class="text-[10px]">📁</span>
-                <span class="max-w-[120px] truncate">
-                  {currentWorkspace()?.name ?? 'Workspace'}
-                </span>
-                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </button>
-              <Show when={workspaceMenuOpen()}>
-                <div
-                  ref={(el) => (workspaceMenuRef = el)}
-                  class="absolute left-0 top-full z-50 mt-2 w-64 rounded-2xl border border-slate-200 bg-white shadow-floating"
+            <DropdownMenu open={workspaceMenuOpen()} onOpenChange={setWorkspaceMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  class="h-8 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
+                  disabled={workspaces().length === 0}
+                  title={currentWorkspace()?.name ?? 'Select workspace'}
                 >
-                  <div class="max-h-64 overflow-y-auto py-1">
-                    <Show when={workspaces().length > 0} fallback={<p class="px-4 py-3 text-xs text-subtle">No workspaces yet.</p>}>
-                      <For each={workspaces()}>
-                        {(workspace) => (
-                          <button
-                            type="button"
-                            class="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                            onClick={() => {
-                              setWorkspaceSlug(workspace.slug);
-                              setWorkspaceMenuOpen(false);
-                            }}
-                          >
-                            <span>{workspace.name}</span>
-                            <Show when={workspaceSlug() === workspace.slug}>
-                              <span class="text-xs text-slate-500">Selected</span>
-                            </Show>
-                          </button>
-                        )}
-                      </For>
-                    </Show>
-                  </div>
+                  <span aria-hidden="true" class="text-[10px]">
+                    📁
+                  </span>
+                  <span class="max-w-[120px] truncate">
+                    {currentWorkspace()?.name ?? 'Workspace'}
+                  </span>
+                  <ChevronDownIcon />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent class="w-64">
+                <div class="max-h-64 overflow-y-auto py-1">
+                  <Show
+                    when={workspaces().length > 0}
+                    fallback={<div class="px-4 py-3 text-xs text-subtle">No workspaces yet.</div>}
+                  >
+                    <For each={workspaces()}>
+                      {(workspace) => (
+                        <DropdownMenuItem
+                          class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700"
+                          onSelect={() => {
+                            setWorkspaceSlug(workspace.slug);
+                            setWorkspaceMenuOpen(false);
+                          }}
+                        >
+                          <span>{workspace.name}</span>
+                          <Show when={workspaceSlug() === workspace.slug}>
+                            <span class="text-xs text-slate-500">Selected</span>
+                          </Show>
+                        </DropdownMenuItem>
+                      )}
+                    </For>
+                  </Show>
                 </div>
-              </Show>
-            </div>
-            <button
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
               type="button"
-              class="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/60 bg-white/70 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20 backdrop-blur-sm"
+              variant="secondary"
+              class="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/60 bg-white/80 text-base font-semibold text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm"
               onClick={openCreateWorkspace}
               title="New workspace"
             >
               ＋
-            </button>
+            </Button>
           </div>
         </Show>
       </div>
@@ -1799,112 +2008,171 @@ let drawerContainerRef: HTMLDivElement | undefined;
           </div>
         </div>
       </Show>
-      <div class="pointer-events-none absolute right-6 top-6 z-10 flex items-center gap-2">
-        <button
-          type="button"
-          class="pointer-events-auto flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
-          onClick={handleExit}
-        >
-          <ExitIcon />
-          Exit
-        </button>
-        <button
-          type="button"
-          class="pointer-events-auto flex items-center gap-2 rounded-full border border-rose-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm transition hover:border-rose-300 hover:text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-200/40 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!currentWorkspace()}
-          onClick={() => {
-            const workspace = currentWorkspace();
-            if (!workspace) {
-              openCreateWorkspace();
-              return;
-            }
-            setWorkspaceToDelete(workspace);
-            setWorkspaceModal('delete');
-          }}
-        >
-          <DeleteIcon />
-          Delete
-        </button>
-        <Show when={simulationError()}>
+      <div class="pointer-events-none absolute right-6 top-6 z-10 flex flex-col items-end gap-1.5">
+        <div class="pointer-events-auto flex items-center gap-2">
+          <Show when={simulationError()}>
+            {(message) => (
+              <span class="pointer-events-auto rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm">
+                {message()}
+              </span>
+            )}
+          </Show>
+          <DropdownMenu open={simulationMenuOpen()} onOpenChange={setSimulationMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                class="h-8 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
+              >
+                ▶ Simulate
+                <ChevronDownIcon />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent class="w-56" align="end">
+              <div class="py-1">
+                <For each={[5, 10, 20, 30]}>
+                  {(years) => (
+                    <DropdownMenuItem
+                      class="px-4 py-3 text-sm font-semibold text-slate-700"
+                      onSelect={() => runSimulation(years)}
+                    >
+                      {years} Years
+                    </DropdownMenuItem>
+                  )}
+                </For>
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu open={actionsMenuOpen()} onOpenChange={setActionsMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                class="h-8 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
+              >
+                Actions
+                <ChevronDownIcon />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent class="w-60" align="end">
+              <DropdownMenuLabel>Workspace actions</DropdownMenuLabel>
+              <DropdownMenuItem
+                class="px-3 py-2 text-sm font-semibold text-slate-700"
+                disabled={!canSave()}
+                onSelect={(event) => {
+                  if (!canSave()) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setActionsMenuOpen(false);
+                  void handleSave();
+                }}
+              >
+                <SaveIcon />
+                <span>{saving() ? 'Saving…' : 'Save'}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                class="px-3 py-2 text-sm font-semibold text-slate-700"
+                disabled={duplicating() || !workspaceSlug()}
+                onSelect={(event) => {
+                  if (duplicating() || !workspaceSlug()) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setActionsMenuOpen(false);
+                  void duplicateWorkspace();
+                }}
+              >
+                <DuplicateIcon />
+                <span>{duplicating() ? 'Duplicating…' : 'Duplicate'}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                class="px-3 py-2 text-sm font-semibold text-slate-700"
+                disabled={!workspaceSlug()}
+                onSelect={(event) => {
+                  const workspace = currentWorkspace();
+                  if (!workspace || !workspaceSlug()) {
+                    event.preventDefault();
+                    setActionsMenuOpen(false);
+                    openCreateWorkspace();
+                    return;
+                  }
+                  setActionsMenuOpen(false);
+                  setWorkspaceToRename(workspace);
+                  setWorkspaceDraftName(workspace.name ?? '');
+                  setWorkspaceModal('rename');
+                }}
+              >
+                <RenameIcon />
+                <span>Rename</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                class="px-3 py-2 text-sm font-semibold text-slate-700"
+                disabled={!workspaceSlug()}
+                onSelect={(event) => {
+                  if (!workspaceSlug()) {
+                    event.preventDefault();
+                    setActionsMenuOpen(false);
+                    openCreateWorkspace();
+                    return;
+                  }
+                  setActionsMenuOpen(false);
+                  void handleShareWorkspace();
+                }}
+              >
+                <ShareIcon />
+                <span>Share</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                class="mt-1 px-3 py-2 text-sm font-semibold text-rose-600 focus:bg-rose-100 focus:text-rose-700"
+                disabled={!currentWorkspace()}
+                onSelect={(event) => {
+                  const workspace = currentWorkspace();
+                  if (!workspace) {
+                    event.preventDefault();
+                    return;
+                  }
+                  setActionsMenuOpen(false);
+                  setWorkspaceToDelete(workspace);
+                  setWorkspaceModal('delete');
+                }}
+              >
+                <DeleteIcon />
+                <span>Delete</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                class="px-3 py-2 text-sm font-semibold text-slate-700"
+                onSelect={() => {
+                  setActionsMenuOpen(false);
+                  handleExit();
+                }}
+              >
+                <ExitIcon />
+                <span>Exit</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <Show when={shareStatus()}>
+          {(status) => (
+            <span
+              class="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-floating"
+              classList={{
+                'bg-emerald-500': status() === 'copied',
+                'bg-rose-500': status() === 'error',
+              }}
+            >
+              {status() === 'copied' ? 'Link copied to clipboard' : 'Unable to copy link'}
+            </span>
+          )}
+        </Show>
+        <Show when={actionsMenuOpen() ? saveDisabledReason() : null}>
           {(message) => (
-            <span class="pointer-events-auto rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm">
+            <span class="max-w-xs rounded-xl border border-slate-200 bg-white/90 px-3 py-1.5 text-xs text-slate-600 shadow-floating">
               {message()}
             </span>
           )}
         </Show>
-        <div class="pointer-events-auto relative">
-          <button
-            ref={(el) => (simulationButtonRef = el)}
-            type="button"
-            class="flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
-            onClick={() => setSimulationMenuOpen((open) => !open)}
-          >
-            ▶ Simulate
-            <ChevronDownIcon />
-          </button>
-          <Show when={simulationMenuOpen()}>
-            <div
-              ref={(el) => (simulationMenuRef = el)}
-              class="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-floating"
-            >
-              <div class="py-1">
-                <button
-                  type="button"
-                  class="w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  onClick={() => runSimulation(5)}
-                >
-                  5 Years
-                </button>
-                <button
-                  type="button"
-                  class="w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  onClick={() => runSimulation(10)}
-                >
-                  10 Years
-                </button>
-                <button
-                  type="button"
-                  class="w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  onClick={() => runSimulation(20)}
-                >
-                  20 Years
-                </button>
-                <button
-                  type="button"
-                  class="w-full px-4 py-3 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  onClick={() => runSimulation(30)}
-                >
-                  30 Years
-                </button>
-              </div>
-            </div>
-          </Show>
-        </div>
-        <div class="pointer-events-auto relative group">
-          <button
-            type="button"
-            class="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white shadow-floating transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/40 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:opacity-70"
-            onClick={handleSave}
-            disabled={!workspaceSlug() || saving() || !hasChanges() || allocationIssues().length > 0}
-          >
-            <SaveIcon />
-            {saving() ? 'Saving…' : 'Save'}
-          </button>
-          <Show when={!saving() && (!hasChanges() || allocationIssues().length > 0)}>
-            <div class="pointer-events-none absolute bottom-full right-0 mb-2 w-64 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-lg opacity-0 transition-opacity group-hover:opacity-100">
-              <Show
-                when={!hasChanges()}
-                fallback={
-                  <p class="font-medium">
-                    Complete allocation rules for all income sources to save.
-                  </p>
-                }
-              >
-                <p class="font-medium text-slate-500">No changes to save</p>
-              </Show>
-            </div>
-          </Show>
-        </div>
       </div>
       <Show when={contextMenu()}>
         {(menu) => (
@@ -1935,20 +2203,22 @@ let drawerContainerRef: HTMLDivElement | undefined;
                 const lookup = nodeLookup();
                 const outbound = flows()
                   .filter((flow) => flow.sourceId === selected.id)
-                  .map((flow) => ({
-                    id: flow.id,
-                    partnerLabel: lookup.get(flow.targetId)?.label ?? 'Unknown',
-                    hasRule: Boolean(flow.ruleId),
-                    tag: flow.tag,
-                  }));
-                const inbound = flows()
-                  .filter((flow) => flow.targetId === selected.id)
-                  .map((flow) => ({
-                    id: flow.id,
-                    partnerLabel: lookup.get(flow.sourceId)?.label ?? 'Unknown',
-                    hasRule: Boolean(flow.ruleId),
-                    tag: flow.tag,
-                  }));
+          .map((flow) => ({
+            id: flow.id,
+            partnerNodeId: flow.targetId,
+            partnerLabel: lookup.get(flow.targetId)?.label ?? 'Unknown',
+            hasRule: Boolean(flow.ruleId),
+            tag: flow.tag,
+          }));
+                    const inbound = flows()
+                      .filter((flow) => flow.targetId === selected.id)
+                      .map((flow) => ({
+                        id: flow.id,
+                        partnerNodeId: flow.sourceId,
+                        partnerLabel: lookup.get(flow.sourceId)?.label ?? 'Unknown',
+                        hasRule: Boolean(flow.ruleId),
+                        tag: flow.tag,
+                      }));
                 const rule = rulesBySource().get(selected.id) ?? null;
                 const allocationDetails = rule
                   ? rule.allocations.map((alloc) => ({
@@ -1961,6 +2231,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
                 const allocationStatus = allocationStatuses().get(selected.id) ?? null;
                 return (
                   <NodeDrawer
+                    open={drawerOpen()}
                     node={node()}
                     nodes={graph.nodes}
                     onClose={() => setDrawerNodeId(null)}
@@ -2068,52 +2339,81 @@ let drawerContainerRef: HTMLDivElement | undefined;
                     </p>
                     <p class="text-xs text-slate-500">Total Portfolio Value</p>
                   </div>
-                  <button
+                  <Button
                     type="button"
-                    class="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                    variant="secondary"
+                    size="xs"
+                    class="rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 hover:border-slate-300 hover:text-slate-700"
                     onClick={() => setSimulationResult(null)}
                   >
                     ✕
-                  </button>
+                  </Button>
                 </div>
 
                 <div class="flex items-center gap-2">
                   <label class="flex items-center gap-2 text-xs font-semibold text-slate-600">
                     Horizon:
-                    <select
-                      class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-                      value={horizonYears}
-                      onChange={(event) => {
-                        const years = Number(event.currentTarget.value);
-                        runSimulation(years);
-                      }}
-                    >
-                      <option value={5}>5 Years</option>
-                      <option value={10}>10 Years</option>
-                      <option value={20}>20 Years</option>
-                      <option value={30}>30 Years</option>
-                    </select>
+                  <Select
+                    options={simulationHorizonOptions}
+                    optionValue="value"
+                    optionTextValue="label"
+                    value={simulationHorizonOptions.find((option) => Number(option.value) === horizonYears) ?? simulationHorizonOptions[1]}
+                    onChange={(option) => runSimulation(Number(option?.value ?? horizonYears))}
+                    placeholder={<span class="truncate text-slate-400">Select horizon</span>}
+                    itemComponent={(itemProps) => <SelectItem {...itemProps} />}
+                  >
+                    <SelectTrigger class="rounded-lg border px-2 py-1.5 text-xs font-semibold" aria-label="Simulation horizon">
+                      <SelectValue>
+                        {(state) => <span>{state.selectedOption()?.label ?? `${horizonYears} Years`}</span>}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent />
+                    <SelectHiddenSelect name="simulation-horizon" />
+                  </Select>
                   </label>
-                  <button
+                  <Button
                     type="button"
-                    class="ml-auto rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-                    onClick={() => runSimulation()}
+                    variant="secondary"
+                    size="xs"
+                    class="ml-auto rounded-lg border px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
+                    onClick={() => runSimulation(horizonYears)}
                   >
                     ↻ Re-run
-                  </button>
+                  </Button>
                 </div>
                 
                 <div class="space-y-2">
                   <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Financial Milestones
+                    Wealth Ladder
                   </h3>
-                  <div class="space-y-1.5">
-                    {result.milestones.map((milestone) => (
-                      <div class="flex items-center justify-between rounded-lg border border-slate-200/60 bg-slate-50 px-3 py-2">
-                        <span class="text-sm font-medium text-slate-700">{milestone.label}</span>
-                        <span class="text-xs font-semibold text-slate-500">{formatMonths(milestone.reachedAtMonth)}</span>
-                      </div>
-                    ))}
+                  <div class="space-y-2">
+                    {result.milestones.map((milestone) => {
+                      const reached = milestone.reachedAtMonth !== null;
+                      const progress = reached
+                        ? 100
+                        : Math.max(0, Math.min(100, (result.finalTotal / milestone.threshold) * 100));
+                      const statusLabel = reached ? formatMonths(milestone.reachedAtMonth) : 'Not yet';
+                      const progressTone = reached ? 'bg-emerald-500' : 'bg-slate-400';
+                      return (
+                        <div class="space-y-2 rounded-lg border border-slate-200/70 bg-slate-50/80 px-3 py-2.5">
+                          <div class="flex items-center justify-between text-sm font-semibold text-slate-700">
+                            <span>{milestone.label}</span>
+                            <span class="text-xs font-medium text-slate-500">{statusLabel}</span>
+                          </div>
+                          <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              class={`h-full rounded-full transition-all duration-300 ${progressTone}`}
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <p class="text-[11px] font-medium text-slate-500">
+                            {progress >= 100
+                              ? `Reached ${currencyFormatter.format(milestone.threshold)}`
+                              : `${progress.toFixed(0)}% of ${currencyFormatter.format(milestone.threshold)}`}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
                 
@@ -2122,7 +2422,7 @@ let drawerContainerRef: HTMLDivElement | undefined;
                     Top Account Balances
                   </h3>
                   <div class="space-y-2">
-                    {sortedBalances.map((entry, index) => {
+                    {sortedBalances.map((entry) => {
                       const maxValue = sortedBalances[0].value;
                       const percentage = (entry.value / maxValue) * 100;
                       return (
@@ -2200,89 +2500,139 @@ let drawerContainerRef: HTMLDivElement | undefined;
           if (id) setDrawerNodeId(id);
         }}
       />
-      <Modal
+      <Dialog
         open={workspaceModal() === 'create'}
-        onClose={() => {
-          setWorkspaceModal(null);
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setWorkspaceModal(null);
+          }
         }}
       >
-        <form
-          class="flex w-full flex-col gap-5"
-          onSubmit={handleWorkspaceCreate}
-        >
-          <div class="space-y-1 text-center">
-            <h2 class="text-xl font-semibold text-slate-900">Create workspace</h2>
-            <p class="text-sm text-subtle">Workspaces group your nodes, flows, and rules.</p>
-          </div>
-          <div class="flex flex-col gap-3 text-left">
-            <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Name
-              <input
-                class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-                placeholder="New workspace"
-                value={workspaceDraftName()}
-                onInput={(event) => {
-                  const value = event.currentTarget.value;
-                  setWorkspaceDraftName(value);
+        <DialogContent>
+          <form class="flex flex-col gap-5" onSubmit={handleWorkspaceCreate}>
+            <DialogHeader class="gap-2 text-center">
+              <DialogTitle>Create workspace</DialogTitle>
+              <DialogDescription>Workspaces group your nodes, flows, and rules.</DialogDescription>
+            </DialogHeader>
+            <div class="flex flex-col gap-3 text-left">
+              <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Name
+                <input
+                  class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
+                  placeholder="New workspace"
+                  value={workspaceDraftName()}
+                  onInput={(event) => {
+                    const value = event.currentTarget.value;
+                    setWorkspaceDraftName(value);
+                  }}
+                />
+              </label>
+            </div>
+            <div class="flex flex-col gap-2">
+              <Button type="submit" class="w-full shadow-floating">
+                Create workspace
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                class="w-full"
+                onClick={() => {
+                  setWorkspaceModal(null);
                 }}
-              />
-            </label>
-          </div>
-          <div class="flex flex-col gap-2">
-            <button
-              type="submit"
-              class="w-full rounded-xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-floating transition hover:bg-slate-800"
-            >
-              Create workspace
-            </button>
-            <button
-              type="button"
-              class="w-full rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-              onClick={() => {
-                setWorkspaceModal(null);
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </Modal>
-      <Modal
-        open={workspaceModal() === 'delete'}
-        onClose={() => {
-          setWorkspaceModal(null);
-          setWorkspaceToDelete(null);
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={workspaceModal() === 'rename'}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setWorkspaceModal(null);
+            setWorkspaceToRename(null);
+            setWorkspaceDraftName('');
+          }
         }}
       >
-        <div class="flex w-full flex-col gap-5">
-          <div class="space-y-1 text-left">
-            <h2 class="text-xl font-semibold text-slate-900">Delete workspace</h2>
-            <p class="text-sm text-subtle">
-              This removes <strong>{workspaceToDelete()?.name ?? ''}</strong> and all associated nodes, flows,
-              and rules. This action cannot be undone.
-            </p>
+        <DialogContent>
+          <form class="flex flex-col gap-5" onSubmit={handleWorkspaceRename}>
+            <DialogHeader class="gap-2 text-center">
+              <DialogTitle>Rename workspace</DialogTitle>
+              <DialogDescription>Update the title shown for this workspace.</DialogDescription>
+            </DialogHeader>
+            <div class="flex flex-col gap-3 text-left">
+              <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Name
+                <input
+                  class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
+                  placeholder="Workspace name"
+                  value={workspaceDraftName()}
+                  onInput={(event) => {
+                    const value = event.currentTarget.value;
+                    setWorkspaceDraftName(value);
+                  }}
+                />
+              </label>
+            </div>
+            <div class="flex flex-col gap-2">
+              <Button type="submit" class="w-full shadow-floating">
+                Save name
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                class="w-full"
+                onClick={() => {
+                  setWorkspaceModal(null);
+                  setWorkspaceToRename(null);
+                  setWorkspaceDraftName('');
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={workspaceModal() === 'delete'}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setWorkspaceModal(null);
+            setWorkspaceToDelete(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <div class="flex w-full flex-col gap-5">
+            <DialogHeader class="gap-2 text-left">
+              <DialogTitle>Delete workspace</DialogTitle>
+              <DialogDescription>
+                This removes <strong>{workspaceToDelete()?.name ?? ''}</strong> and all associated nodes, flows,
+                and rules. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div class="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                class="flex-1"
+                onClick={() => {
+                  setWorkspaceModal(null);
+                  setWorkspaceToDelete(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="button" variant="danger" class="flex-1 shadow-floating" onClick={handleWorkspaceDelete}>
+                Delete
+              </Button>
+            </div>
           </div>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-              onClick={() => {
-                setWorkspaceModal(null);
-                setWorkspaceToDelete(null);
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              class="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-semibold text-white shadow-floating transition hover:bg-rose-500"
-              onClick={handleWorkspaceDelete}
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </Modal>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

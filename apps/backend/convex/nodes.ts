@@ -103,7 +103,7 @@ export const remove = mutation({
 
     const incoming = await ctx.db
       .query('edges')
-      .withIndex('by_source_target', (q) => q.eq('targetNodeId', args.nodeId))
+      .filter((q) => q.eq(q.field('targetNodeId'), args.nodeId))
       .collect();
     for (const edge of incoming) {
       await ctx.db.delete(edge._id);

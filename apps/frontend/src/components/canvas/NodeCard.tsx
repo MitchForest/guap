@@ -1,4 +1,4 @@
-import { Component, JSX, Show, createMemo, createSignal } from 'solid-js';
+import { Component, For, JSX, Show, createMemo, createSignal } from 'solid-js';
 import { Motion } from 'solid-motionone';
 import { CanvasNode } from '../../types/graph';
 import { DragPayload } from './CanvasViewport';
