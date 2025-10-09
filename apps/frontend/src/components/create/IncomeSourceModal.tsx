@@ -157,7 +157,7 @@ const IncomeSourceModal: Component<IncomeSourceModalProps> = (props) => {
               placeholder={<span class="truncate text-slate-400">Choose cadence</span>}
               itemComponent={(itemProps) => <SelectItem {...itemProps} />}
             >
-              <SelectTrigger class="mt-1" aria-label="Cadence">
+              <SelectTrigger class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 shadow-sm" aria-label="Cadence">
                 <SelectValue<SelectOption>>
                   {(state) => <span class="truncate">{state.selectedOption()?.label ?? 'Choose cadence'}</span>}
                 </SelectValue>

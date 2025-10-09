@@ -295,6 +295,8 @@ const CanvasPage: Component = () => {
     { value: '10', label: '10 Years' },
     { value: '20', label: '20 Years' },
     { value: '30', label: '30 Years' },
+    { value: '40', label: '40 Years' },
+    { value: '50', label: '50 Years' },
   ];
   const [simulationResult, setSimulationResult] = createSignal<SimulationResult | null>(null);
   const [simulationError, setSimulationError] = createSignal<string | null>(null);
@@ -605,9 +607,11 @@ const CanvasPage: Component = () => {
 
   const allocationStatuses = createMemo<Map<string, NodeAllocationStatus>>(() => {
     const map = new Map<string, NodeAllocationStatus>();
-    const incomes = graph.nodes.filter((node) => node.kind === 'income');
+    const allocatableNodes = graph.nodes.filter(
+      (node) => node.kind === 'income' || node.kind === 'account' || node.kind === 'pod'
+    );
     const totals = new Map<string, { total: number; hasRule: boolean }>();
-    incomes.forEach((income) => totals.set(income.id, { total: 0, hasRule: false }));
+    allocatableNodes.forEach((node) => totals.set(node.id, { total: 0, hasRule: false }));
 
     rules().forEach((rule) => {
       const entry = totals.get(rule.sourceNodeId);
@@ -617,8 +621,8 @@ const CanvasPage: Component = () => {
       entry.total += sum;
     });
 
-    incomes.forEach((income) => {
-      const entry = totals.get(income.id) ?? { total: 0, hasRule: false };
+    allocatableNodes.forEach((node) => {
+      const entry = totals.get(node.id) ?? { total: 0, hasRule: false };
       let state: AllocationHealth = 'missing';
       if (!entry.hasRule) {
         state = 'missing';
@@ -629,7 +633,7 @@ const CanvasPage: Component = () => {
       } else {
         state = 'complete';
       }
-      map.set(income.id, { state, total: entry.total });
+      map.set(node.id, { state, total: entry.total });
     });
 
     return map;
@@ -2113,7 +2117,7 @@ const CanvasPage: Component = () => {
             </DropdownMenuTrigger>
             <DropdownMenuContent class="w-56">
               <div class="py-1">
-                <For each={[5, 10, 20, 30]}>
+                <For each={[5, 10, 20, 30, 40, 50]}>
                   {(years) => (
                     <DropdownMenuItem
                       class="px-4 py-3 text-sm font-semibold text-slate-700"
@@ -2403,14 +2407,15 @@ const CanvasPage: Component = () => {
         >
           <Show when={simulationResult()}>
             {(sim) => {
-              const settings = simulationSettings();
-              const result = sim();
-              const horizonYears = settings.horizonYears;
+              const result = createMemo(() => sim());
+              const horizonYears = createMemo(() => simulationSettings().horizonYears);
               const lookup = nodeLookup();
-              const sortedBalances = Object.entries(result.finalBalances)
-                .map(([id, value]) => ({ id, value, label: lookup.get(id)?.label ?? 'Unknown node' }))
-                .sort((a, b) => b.value - a.value)
-                .slice(0, 5);
+              const sortedBalances = createMemo(() => 
+                Object.entries(result().finalBalances)
+                  .map(([id, value]) => ({ id, value, label: lookup.get(id)?.label ?? 'Unknown node' }))
+                  .sort((a, b) => b.value - a.value)
+                  .slice(0, 5)
+              );
 
               return (
                 <aside class="flex h-full flex-col">
@@ -2418,7 +2423,7 @@ const CanvasPage: Component = () => {
                     <div class="space-y-1">
                       <h2 class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Projection</h2>
                       <p class="text-2xl font-bold text-slate-900 tracking-tight">
-                        {currencyFormatter.format(result.finalTotal)}
+                        {currencyFormatter.format(result().finalTotal)}
                       </p>
                       <p class="text-xs text-slate-500">Total Portfolio Value</p>
                     </div>
@@ -2443,7 +2448,7 @@ const CanvasPage: Component = () => {
                           variant="secondary"
                           size="xs"
                           class="rounded-lg border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-                          onClick={() => runSimulation(horizonYears)}
+                          onClick={() => runSimulation(horizonYears())}
                         >
                           ↻ Re-run
                         </Button>
@@ -2453,10 +2458,10 @@ const CanvasPage: Component = () => {
                         optionValue="value"
                         optionTextValue="label"
                         value={
-                          simulationHorizonOptions.find((option) => Number(option.value) === horizonYears) ??
+                          simulationHorizonOptions.find((option) => Number(option.value) === horizonYears()) ??
                           simulationHorizonOptions[1]
                         }
-                        onChange={(option) => runSimulation(Number(option?.value ?? horizonYears))}
+                        onChange={(option) => runSimulation(Number(option?.value ?? horizonYears()))}
                         placeholder={<span class="truncate text-slate-400">Select horizon</span>}
                         itemComponent={(itemProps) => <SelectItem {...itemProps} />}
                       >
@@ -2465,7 +2470,7 @@ const CanvasPage: Component = () => {
                           aria-label="Simulation horizon"
                         >
                           <SelectValue<SelectOption>>
-                            {(state) => <span>{state.selectedOption()?.label ?? `${horizonYears} Years`}</span>}
+                            {(state) => <span>{state.selectedOption()?.label ?? `${horizonYears()} Years`}</span>}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent />
@@ -2476,11 +2481,11 @@ const CanvasPage: Component = () => {
                     <section class="space-y-2">
                       <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Wealth Ladder</h3>
                       <div class="space-y-2">
-                        {result.milestones.map((milestone) => {
+                        {result().milestones.map((milestone) => {
                           const reached = milestone.reachedAtMonth !== null;
                           const progress = reached
                             ? 100
-                            : Math.max(0, Math.min(100, (result.finalTotal / milestone.threshold) * 100));
+                            : Math.max(0, Math.min(100, (result().finalTotal / milestone.threshold) * 100));
                           const statusLabel = reached ? formatMonths(milestone.reachedAtMonth) : 'Not yet';
                           const progressTone = reached ? 'bg-emerald-500' : 'bg-slate-400';
                           return (
@@ -2509,8 +2514,8 @@ const CanvasPage: Component = () => {
                     <section class="space-y-2">
                       <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Balances</h3>
                       <div class="space-y-2">
-                        {sortedBalances.map((entry) => {
-                          const maxValue = sortedBalances[0]?.value ?? 1;
+                        {sortedBalances().map((entry) => {
+                          const maxValue = sortedBalances()[0]?.value ?? 1;
                           const percentage = (entry.value / maxValue) * 100;
                           return (
                             <div class="space-y-1.5">

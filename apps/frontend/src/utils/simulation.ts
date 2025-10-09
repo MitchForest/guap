@@ -119,37 +119,90 @@ export const simulateGraph = ({ nodes, rules, settings }: SimulationInput): Simu
   points.push({ month: 0, total: computeTotal(), balances: captureBalances() });
 
   for (let month = 1; month <= months; month += 1) {
-    // Apply return rates
+    // Apply return rates with monthly compounding
+    // returnRate is treated as APY (Annual Percentage Yield)
+    // Convert to equivalent monthly rate: (1 + annual)^(1/12) - 1
     state.forEach((value) => {
       if (value.returnRate === 0) return;
-      const monthlyRate = value.returnRate / 12;
+      const monthlyRate = Math.pow(1 + value.returnRate, 1 / 12) - 1;
       value.balance *= 1 + monthlyRate;
     });
 
-    // Add inflows and distribute according to rules
-    allocationMap.forEach((allocations, sourceId) => {
-      const sourceState = state.get(sourceId);
-      if (!sourceState) return;
-      const inflow = sourceState.inflowMonthly;
-      if (inflow <= 0) return;
-
-      sourceState.balance += inflow;
-
-      allocations.forEach((allocation) => {
-        const targetState = state.get(allocation.targetId);
-        if (!targetState) return;
-        const amount = inflow * allocation.weight;
-        if (amount <= 0) return;
-        sourceState.balance -= amount;
-        targetState.balance += amount;
-      });
-
-      // Any leftover remains with the source node
-      if (sourceState.balance < 0) {
-        // Prevent numerical drift from pushing income negative
-        sourceState.balance = Math.max(0, sourceState.balance);
+    // Track incoming flows this month for cascading allocations
+    const monthlyInflows = new Map<string, number>();
+    
+    // Step 1: Add all income source inflows to their balances
+    state.forEach((value, id) => {
+      if (value.inflowMonthly > 0) {
+        value.balance += value.inflowMonthly;
+        monthlyInflows.set(id, value.inflowMonthly);
       }
     });
+
+    // Step 2: Process allocations in cascading order
+    // Income nodes allocate their monthly inflow
+    // Accounts/pods allocate whatever they just received
+    const processed = new Set<string>();
+    const maxIterations = allocationMap.size * 2; // Allow for deep chains
+    let iteration = 0;
+    
+    while (processed.size < allocationMap.size && iteration < maxIterations) {
+      iteration++;
+      let madeProgress = false;
+      
+      allocationMap.forEach((allocations, sourceId) => {
+        if (processed.has(sourceId)) return;
+        
+        const sourceState = state.get(sourceId);
+        if (!sourceState) {
+          processed.add(sourceId);
+          return;
+        }
+        
+        // Determine what amount to allocate:
+        // - Income: allocate the monthly inflow
+        // - Accounts/Pods: allocate what they received this month (cascading)
+        let amountToAllocate = 0;
+        if (sourceState.kind === 'income') {
+          amountToAllocate = sourceState.inflowMonthly;
+        } else {
+          amountToAllocate = monthlyInflows.get(sourceId) ?? 0;
+        }
+        
+        if (amountToAllocate <= 0) {
+          processed.add(sourceId);
+          madeProgress = true;
+          return;
+        }
+        
+        // Distribute to targets
+        allocations.forEach((allocation) => {
+          const targetState = state.get(allocation.targetId);
+          if (!targetState) return;
+          
+          // Prevent self-allocation
+          if (allocation.targetId === sourceId) return;
+          
+          const amount = amountToAllocate * allocation.weight;
+          if (amount <= 0) return;
+          
+          sourceState.balance -= amount;
+          targetState.balance += amount;
+          
+          // Track that target received this amount (for cascading)
+          monthlyInflows.set(allocation.targetId, (monthlyInflows.get(allocation.targetId) ?? 0) + amount);
+        });
+        
+        processed.add(sourceId);
+        madeProgress = true;
+      });
+      
+      if (!madeProgress) {
+        // Circular dependency detected - break to prevent infinite loop
+        console.warn('Circular dependency detected in allocation rules. Iteration stopped.');
+        break;
+      }
+    }
 
     points.push({ month, total: computeTotal(), balances: captureBalances() });
   }

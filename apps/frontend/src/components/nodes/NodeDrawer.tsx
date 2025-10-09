@@ -1,4 +1,5 @@
 import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
+import { createStore, produce } from 'solid-js/store';
 import { Button } from '~/components/ui/button';
 import type { SelectOption } from '~/components/ui/select';
 import {
@@ -72,40 +73,69 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
     return current.category ? current.category.replace(/-/g, ' ') : 'account';
   });
   const allocationStatus = createMemo<NodeAllocationStatus | null>(() => props.allocationStatus ?? null);
-  const automationSummary = createMemo(() => {
+  const automationSummary = createMemo<{
+    message: string;
+    tone: 'success' | 'warning' | 'danger' | 'info';
+    className: string;
+  }>(() => {
+    const current = node();
+    const isIncome = current?.kind === 'income';
     const status = allocationStatus();
+    
     if (!status) {
+      if (isIncome) {
+        return {
+          message: 'Define how this income flows onward.',
+          tone: 'warning',
+          className: 'border-amber-200 bg-amber-50',
+        };
+      }
       return {
-        message: 'Define how this income flows onward.',
-        tone: 'warning' as const,
-        className: 'border-amber-200 bg-amber-50',
+        message: 'Optionally set up automatic forwarding rules.',
+        tone: 'info',
+        className: 'border-slate-200 bg-slate-50',
       };
     }
+    
     const rounded = Math.round(status.total * 10) / 10;
     switch (status.state) {
       case 'complete':
         return {
           message: '100% allocated across destinations.',
-          tone: 'success' as const,
+          tone: 'success',
           className: 'border-emerald-200 bg-emerald-50',
         };
       case 'under':
+        if (isIncome) {
+          return {
+            message: `Only ${rounded}% allocated. Allocate the remaining funds.`,
+            tone: 'warning',
+            className: 'border-amber-200 bg-amber-50',
+          };
+        }
         return {
-          message: `Only ${rounded}% allocated. Allocate the remaining funds.`,
-          tone: 'warning' as const,
-          className: 'border-amber-200 bg-amber-50',
+          message: `${rounded}% allocated. ${(100 - rounded).toFixed(1)}% stays here.`,
+          tone: 'info',
+          className: 'border-sky-200 bg-sky-50',
         };
       case 'over':
         return {
-          message: `${rounded}% allocated. Reduce allocations to 100%.`,
-          tone: 'danger' as const,
+          message: `${rounded}% allocated. Reduce to 100%.`,
+          tone: 'danger',
           className: 'border-rose-200 bg-rose-50',
         };
       default:
+        if (isIncome) {
+          return {
+            message: 'No allocations yet. Create a rule to route this income.',
+            tone: 'warning',
+            className: 'border-amber-200 bg-amber-50',
+          };
+        }
         return {
-          message: 'No allocations yet. Create a rule to route this income.',
-          tone: 'warning' as const,
-          className: 'border-amber-200 bg-amber-50',
+          message: 'No forwarding rules set. Money stays here.',
+          tone: 'info',
+          className: 'border-slate-200 bg-slate-50',
         };
     }
   });
@@ -134,7 +164,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
   // Allocation editing state
   const [trigger, setTrigger] = createSignal<'incoming' | 'scheduled'>('incoming');
   const [triggerNodeId, setTriggerNodeId] = createSignal<string | null>(null);
-  const [allocationDrafts, setAllocationDrafts] = createSignal<AllocationDraft[]>([]);
+  const [allocationDrafts, setAllocationDrafts] = createStore<AllocationDraft[]>([]);
   const [allocationError, setAllocationError] = createSignal<string | null>(null);
   const [initializedNodeId, setInitializedNodeId] = createSignal<string | null>(null);
   const [seededRuleSignature, setSeededRuleSignature] = createSignal<string>('');
@@ -360,7 +390,8 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
     }
 
     const nodeId = current.id;
-    const rule = current.kind === 'income' ? props.initialRule ?? null : null;
+    const canHaveAllocations = current.kind === 'income' || current.kind === 'account' || current.kind === 'pod';
+    const rule = canHaveAllocations ? props.initialRule ?? null : null;
     const signature = computeRuleSignature(rule);
 
     const normalizedBalance =
@@ -402,7 +433,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
 
       setSeededRuleSignature(signature);
       setLastCommittedAllocationSignature(signature);
-      if (current.kind === 'income') {
+      if (canHaveAllocations) {
         setTrigger(rule?.trigger ?? 'incoming');
         setTriggerNodeId(rule?.triggerNodeId ?? current.id);
         seedAllocations(rule);
@@ -442,7 +473,7 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
       if (matchesCommitted) return;
 
       setLastCommittedAllocationSignature(signature);
-      if (current.kind === 'income') {
+      if (canHaveAllocations) {
         setTrigger(rule?.trigger ?? 'incoming');
         setTriggerNodeId(rule?.triggerNodeId ?? current.id);
         seedAllocations(rule);
@@ -456,53 +487,66 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
   createEffect(() => {
     if (!props.open) return;
     const current = node();
-    if (!current || current.kind !== 'income') return;
+    if (!current) return;
+    const canHaveAllocations = current.kind === 'income' || current.kind === 'account' || current.kind === 'pod';
+    if (!canHaveAllocations) return;
 
     const targets = outboundTargets();
     const targetSet = new Set(targets.map((target) => target.targetNodeId));
     const ruleTargets = new Set((props.initialRule?.allocations ?? []).map((alloc) => alloc.targetNodeId));
 
-    setAllocationDrafts((drafts) => {
-      let changed = false;
-      const next = drafts.slice();
-      const existingByTarget = new Map(
-        drafts
-          .filter((draft) => draft.targetNodeId)
-          .map((draft) => [draft.targetNodeId as string, draft]),
-      );
+    const existingByTarget = new Map(
+      allocationDrafts
+        .filter((draft) => draft.targetNodeId)
+        .map((draft) => [draft.targetNodeId as string, draft]),
+    );
 
-      targets.forEach(({ targetNodeId }) => {
-        if (!existingByTarget.has(targetNodeId)) {
-          next.push({
-            id: createAllocationId(),
-            percentage: 0,
-            targetNodeId,
-          });
-          changed = true;
-        }
-      });
-
-      const filtered = next.filter((draft) => {
-        if (!draft.targetNodeId) return true;
-        if (targetSet.has(draft.targetNodeId)) return true;
-        return ruleTargets.has(draft.targetNodeId);
-      });
-
-      if (filtered.length !== next.length) {
-        changed = true;
+    // Check if we need to add new allocations
+    const toAdd: AllocationDraft[] = [];
+    targets.forEach(({ targetNodeId }) => {
+      if (!existingByTarget.has(targetNodeId)) {
+        toAdd.push({
+          id: createAllocationId(),
+          percentage: 0,
+          targetNodeId,
+        });
       }
-
-      if (!changed) return drafts;
-      return filtered;
     });
+
+    // Check if we need to remove allocations
+    const toRemoveIndices: number[] = [];
+    allocationDrafts.forEach((draft, index) => {
+      if (!draft.targetNodeId) return;
+      if (targetSet.has(draft.targetNodeId)) return;
+      if (ruleTargets.has(draft.targetNodeId)) return;
+      toRemoveIndices.push(index);
+    });
+
+    // Apply changes if needed
+    if (toAdd.length > 0 || toRemoveIndices.length > 0) {
+      setAllocationDrafts(
+        produce((drafts) => {
+          // Remove items (in reverse order to maintain indices)
+          toRemoveIndices.reverse().forEach(index => {
+            drafts.splice(index, 1);
+          });
+          // Add new items
+          toAdd.forEach(item => {
+            drafts.push(item);
+          });
+        })
+      );
+    }
   });
 
   createEffect(() => {
     if (!props.open) return;
     const current = node();
-    if (!current || current.kind !== 'income' || !props.onSaveRule) return;
+    if (!current || !props.onSaveRule) return;
+    const canHaveAllocations = current.kind === 'income' || current.kind === 'account' || current.kind === 'pod';
+    if (!canHaveAllocations) return;
 
-    const drafts = allocationDrafts();
+    const drafts = allocationDrafts;
     if (!drafts.length) {
       setAllocationError(null);
       return;
@@ -511,14 +555,23 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
     const remaining = remainingPercent();
     const missingTarget = drafts.some((alloc) => !alloc.targetNodeId);
     const hasNonZero = drafts.some((alloc) => alloc.percentage > 0);
+    const isIncome = current.kind === 'income';
 
     if (missingTarget && hasNonZero) {
       setAllocationError('Choose a target for every allocation.');
       return;
     }
 
-    if (Math.abs(remaining) > ALLOCATION_TOLERANCE) {
-      setAllocationError('Allocation must total 100%.');
+    // Over-allocation is always an error (can't allocate more than 100%)
+    if (remaining < -ALLOCATION_TOLERANCE) {
+      setAllocationError('Allocation cannot exceed 100%.');
+      return;
+    }
+
+    // Under-allocation is only an error for income sources (must be 100%)
+    // For accounts/pods, under-allocation means the remainder stays in that account
+    if (isIncome && Math.abs(remaining) > ALLOCATION_TOLERANCE) {
+      setAllocationError('Income must allocate exactly 100%.');
       return;
     }
 
@@ -550,7 +603,24 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
     setLastCommittedAllocationSignature(signature);
   });
 
-  const availableTargets = createMemo(() => props.nodes.filter((n) => n.id !== node()?.id));
+  const availableTargets = createMemo(() => {
+    const current = node();
+    if (!current) return [];
+    
+    return props.nodes.filter((n) => {
+      // Exclude self - prevent direct self-allocation
+      if (n.id === current.id) return false;
+      
+      // Prevent pod from allocating back to its parent account
+      if (current.kind === 'pod' && n.id === current.parentId) return false;
+      
+      // Prevent child pods from being allocation targets of their parent
+      if (n.kind === 'pod' && n.parentId === current.id) return false;
+      
+      return true;
+    });
+  });
+  
   const targetOptions = createMemo<SelectOption[]>(() =>
     availableTargets().map((option) => ({
       value: option.id,
@@ -565,23 +635,35 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
   ];
   
   const remainingPercent = createMemo(() => {
-    const total = allocationDrafts().reduce((sum, alloc) => sum + alloc.percentage, 0);
+    const total = allocationDrafts.reduce((sum, alloc) => sum + alloc.percentage, 0);
     return 100 - total;
   });
 
-  const multipleAllocations = createMemo(() => allocationDrafts().length > 1);
+  const multipleAllocations = createMemo(() => allocationDrafts.length > 1);
 
   const targetLabelLookup = createMemo(() => new Map(props.nodes.map((n) => [n.id, n.label])));
 
   const updateAllocationDraft = (id: string, partial: Partial<AllocationDraft>) => {
-    setAllocationDrafts((list) =>
-      list.map((item) => (item.id === id ? { ...item, ...partial } : item)),
+    setAllocationDrafts(
+      produce((drafts) => {
+        const index = drafts.findIndex((item) => item.id === id);
+        if (index !== -1) {
+          Object.assign(drafts[index], partial);
+        }
+      })
     );
   };
 
   const removeAllocationDraft = (id: string) => {
-    if (allocationDrafts().length <= 1) return;
-    setAllocationDrafts((list) => list.filter((item) => item.id !== id));
+    if (allocationDrafts.length <= 1) return;
+    setAllocationDrafts(
+      produce((drafts) => {
+        const index = drafts.findIndex((item) => item.id === id);
+        if (index !== -1) {
+          drafts.splice(index, 1);
+        }
+      })
+    );
   };
 
   return (
@@ -732,9 +814,11 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
               </Show>
             </div>
           </section>
+        </Show>
 
+        <Show when={node() && (node()!.kind === 'income' || node()!.kind === 'account' || node()!.kind === 'pod')}>
           <section class="space-y-2.5">
-            <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Outgoing Allocations</h3>
+            <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Outgoing Flows</h3>
             <div class={`space-y-3 rounded-2xl border px-4 py-3.5 ${automationSummary().className}`}>
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
@@ -780,8 +864,8 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                 <p class="text-xs text-slate-600">{automationSummary().message}</p>
               </div>
 
-              <div class="space-y-2.5">
-                <For each={allocationDrafts()}>
+              <div class="space-y-2">
+                <For each={allocationDrafts}>
                   {(allocation) => {
                     const flow =
                       props.outbound.find((item) => item.partnerNodeId === allocation.targetNodeId) ?? null;
@@ -793,19 +877,47 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                     const showRemove = !flow && multipleAllocations();
 
                     return (
-                      <div class="rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-3 shadow-sm transition-shadow hover:shadow-md">
-                        <div class="flex flex-row flex-wrap items-center gap-3">
-                          <div class="min-w-[140px] flex-1">
-                            <p class="text-sm font-semibold text-slate-800">{destinationLabel}</p>
-                            <Show when={!flow}>
-                              <p class="text-[11px] font-medium uppercase tracking-[0.24em] text-slate-400">Destination</p>
-                            </Show>
-                          </div>
-                          <div class="flex items-center gap-1.5">
+                      <div class="rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2 shadow-sm">
+                        <div class="flex flex-row items-center gap-2">
+                          <Show
+                            when={flow}
+                            fallback={
+                              <div class="min-w-0 flex-1">
+                                <Select
+                                  options={targetOptions()}
+                                  optionValue="value"
+                                  optionTextValue="label"
+                                  value={targetOptions().find((option) => option.value === allocation.targetNodeId) ?? null}
+                                  onChange={(option) =>
+                                    updateAllocationDraft(allocation.id, {
+                                      targetNodeId: option?.value ?? null,
+                                    })
+                                  }
+                                  placeholder={<span class="truncate text-slate-400">Select account</span>}
+                                  itemComponent={(itemProps) => <SelectItem {...itemProps} />}
+                                >
+                                  <SelectTrigger class="h-8 w-full rounded-lg border border-slate-200 text-sm font-medium text-slate-700" aria-label="Allocation target">
+                                    <SelectValue<SelectOption>>
+                                      {(state) => (
+                                        <span class="truncate">{state.selectedOption()?.label ?? 'Select account'}</span>
+                                      )}
+                                    </SelectValue>
+                                  </SelectTrigger>
+                                  <SelectContent />
+                                  <SelectHiddenSelect name={`allocation-target-${allocation.id}`} />
+                                </Select>
+                              </div>
+                            }
+                          >
+                            <div class="min-w-0 flex-1">
+                              <p class="text-sm font-semibold text-slate-800 truncate">{destinationLabel}</p>
+                            </div>
+                          </Show>
+                          <div class="flex items-center gap-1">
                             <input
                               type="number"
                               inputMode="decimal"
-                              class="h-9 w-20 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                              class="h-8 w-16 rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-900/30"
                               value={allocation.percentage}
                               min={0}
                               max={100}
@@ -817,47 +929,20 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                                 });
                               }}
                             />
-                            <span class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">%</span>
+                            <span class="text-xs font-semibold text-slate-500">%</span>
                           </div>
                           <Show when={showRemove}>
                             <Button
                               type="button"
                               variant="ghost"
                               size="xs"
-                              class="whitespace-nowrap text-xs font-semibold text-slate-400 hover:text-rose-600"
+                              class="h-8 px-2 text-xs font-semibold text-slate-400 hover:text-rose-600"
                               onClick={() => removeAllocationDraft(allocation.id)}
                             >
                               Remove
                             </Button>
                           </Show>
                         </div>
-                        <Show when={!flow}>
-                          <div class="mt-3">
-                            <Select
-                              options={targetOptions()}
-                              optionValue="value"
-                              optionTextValue="label"
-                              value={targetOptions().find((option) => option.value === allocation.targetNodeId) ?? null}
-                              onChange={(option) =>
-                                updateAllocationDraft(allocation.id, {
-                                  targetNodeId: option?.value ?? null,
-                                })
-                              }
-                              placeholder={<span class="truncate text-slate-400">Select account</span>}
-                              itemComponent={(itemProps) => <SelectItem {...itemProps} />}
-                            >
-                              <SelectTrigger class="h-9 w-full rounded-lg border border-slate-200 text-sm font-medium text-slate-700" aria-label="Allocation target">
-                                <SelectValue<SelectOption>>
-                                  {(state) => (
-                                    <span class="truncate">{state.selectedOption()?.label ?? 'Select account'}</span>
-                                  )}
-                                </SelectValue>
-                              </SelectTrigger>
-                              <SelectContent />
-                              <SelectHiddenSelect name={`allocation-target-${allocation.id}`} />
-                            </Select>
-                          </div>
-                        </Show>
                       </div>
                     );
                   }}
