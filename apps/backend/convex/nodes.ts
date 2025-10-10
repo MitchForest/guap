@@ -1,4 +1,4 @@
-import { mutation, query } from './_generated/server';
+import { mutation, query } from '@guap/api/codegen/server';
 import { v } from 'convex/values';
 
 const now = () => Date.now();
@@ -27,6 +27,7 @@ export const create = mutation({
     icon: v.optional(v.string()),
     accent: v.optional(v.string()),
     balanceCents: v.optional(v.number()),
+    parentId: v.optional(v.union(v.id('nodes'), v.null())),
     position: v.object({ x: v.number(), y: v.number() }),
     metadata: v.optional(v.record(v.string(), v.any())),
   },
@@ -38,6 +39,7 @@ export const create = mutation({
       icon: args.icon,
       accent: args.accent,
       balanceCents: args.balanceCents,
+      parentId: args.parentId ?? undefined,
       position: args.position,
       metadata: args.metadata,
       createdAt: now(),
@@ -54,6 +56,7 @@ export const update = mutation({
     icon: v.optional(v.string()),
     accent: v.optional(v.string()),
     position: v.optional(v.object({ x: v.number(), y: v.number() })),
+    parentId: v.optional(v.union(v.id('nodes'), v.null())),
     metadata: v.optional(v.record(v.string(), v.any())),
   },
   handler: async (ctx, args) => {
@@ -67,6 +70,7 @@ export const update = mutation({
       accent: args.accent ?? existing.accent,
       position: args.position ?? existing.position,
       metadata: args.metadata ?? existing.metadata,
+      parentId: args.parentId !== undefined ? args.parentId ?? undefined : existing.parentId,
       updatedAt: now(),
     });
   },

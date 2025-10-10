@@ -2,6 +2,7 @@
 import './globals.css';
 import { render } from 'solid-js/web';
 import 'solid-devtools';
+import { AppProviders } from './AppProviders';
 import { AppRouter } from './router';
 
 const root = document.getElementById('root');
@@ -12,4 +13,11 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   );
 }
 
-render(() => <AppRouter />, root!);
+render(
+  () => (
+    <AppProviders>
+      <AppRouter />
+    </AppProviders>
+  ),
+  root!
+);

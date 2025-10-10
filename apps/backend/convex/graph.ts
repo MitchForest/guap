@@ -1,6 +1,6 @@
-import { mutation, query } from './_generated/server';
+import { mutation, query } from '@guap/api/codegen/server';
 import { v } from 'convex/values';
-import { Id } from './_generated/dataModel';
+import { Id } from '@guap/api/codegen/dataModel';
 import { nodePosition } from './schema';
 
 const now = () => Date.now();
@@ -95,6 +95,8 @@ export const publish = mutation({
         accent: v.optional(v.string()),
         balanceCents: v.optional(v.number()),
         position: nodePosition,
+        parentClientId: v.optional(v.string()),
+        metadata: v.optional(v.record(v.string(), v.any())),
       })
     ),
     edges: v.array(
@@ -174,6 +176,7 @@ export const publish = mutation({
     }
 
     const nodeIdMap = new Map<string, Id<'nodes'>>();
+    const pendingParentLinks: Array<{ nodeId: Id<'nodes'>; parentClientId: string }> = [];
     for (const node of args.nodes) {
       const id = await ctx.db.insert('nodes', {
         workspaceId,
@@ -183,10 +186,23 @@ export const publish = mutation({
         accent: node.accent,
         balanceCents: node.balanceCents,
         position: node.position,
+        metadata: node.metadata,
         createdAt: now(),
         updatedAt: now(),
       });
       nodeIdMap.set(node.clientId, id);
+      if (node.parentClientId) {
+        pendingParentLinks.push({ nodeId: id, parentClientId: node.parentClientId });
+      }
+    }
+
+    for (const link of pendingParentLinks) {
+      const parentNodeId = nodeIdMap.get(link.parentClientId);
+      if (!parentNodeId) continue;
+      await ctx.db.patch(link.nodeId, {
+        parentId: parentNodeId,
+        updatedAt: now(),
+      });
     }
 
     const ruleIdMap = new Map<string, Id<'rules'>>();
@@ -238,6 +254,12 @@ export const publish = mutation({
       });
       edgeIdMap.set(edge.clientId, edgeId);
     }
+
+    const workspaceUpdatedAt = now();
+    await ctx.db.patch(workspaceId, {
+      updatedAt: workspaceUpdatedAt,
+      ...(workspace.variant === 'live' ? { lastAppliedAt: workspaceUpdatedAt } : {}),
+    });
 
     return {
       nodes: Object.fromEntries(nodeIdMap.entries()),

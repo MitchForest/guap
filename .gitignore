@@ -22,3 +22,4 @@ pnpm-debug.log*
 
 # Documentation screenshots
 .docs/get-sequence-screenshots/
+.env.local

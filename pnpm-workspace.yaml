@@ -16,5 +16,6 @@ catalog:
   eslint: ^9.37.0
   eslint-plugin-solid: ^0.14.5
   solid-motionone: ^1.0.4
+  solid-sonner: ^0.2.8
   solid-ui: ^2.6.1
   typescript-eslint: ^8.46.0

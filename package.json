@@ -6,7 +6,14 @@
     "dev": "pnpm --filter @guap/backend dev & pnpm --filter @guap/frontend dev",
     "dev:frontend": "pnpm --filter @guap/frontend dev",
     "dev:backend": "pnpm --filter @guap/backend dev",
+    "build:shared": "pnpm --filter @guap/types build && pnpm --filter @guap/api build && pnpm --filter @guap/providers build",
+    "build": "pnpm run build:shared && pnpm --filter @guap/backend run build && pnpm --filter @guap/frontend run build",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "lint": "pnpm -r --if-present run lint",
     "build:frontend": "pnpm --filter @guap/frontend build",
-    "serve:frontend": "pnpm --filter @guap/frontend serve"
+    "serve:frontend": "pnpm --filter @guap/frontend serve",
+    "smoke:auth-workspace": "node ./scripts/smoke-auth-workspace.mjs",
+    "smoke:provider": "node ./scripts/smoke-provider-sync.mjs",
+    "codegen:sync": "node ./scripts/sync-convex-codegen.mjs"
   }
 }

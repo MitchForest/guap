@@ -4,11 +4,11 @@ import { createStore } from 'solid-js/store';
 import CanvasViewport, { DragPayload, ViewportControls } from '../components/canvas/CanvasViewport';
 import type { NodeAllocationStatus, IncomingAllocationInfo } from '../components/canvas/NodeCard';
 import { CanvasFlow, CanvasNode, CanvasInflow, CanvasInflowCadence, CanvasPodType } from '../types/graph';
-import { simulateGraph, type SimulationResult } from '../utils/simulation';
 import BottomDock from '../components/layout/BottomDock';
 import ZoomPad from '../components/layout/ZoomPad';
 import { AnchorType, NODE_CARD_HEIGHT, NODE_CARD_WIDTH } from '../components/canvas/NodeCard';
 import { buildEdgePath, getAnchorPoint } from '../components/canvas/EdgeLayer';
+import { clsx } from 'clsx';
 import EmptyHero from '../components/empty/EmptyHero';
 import NodeContextMenu from '../components/nodes/NodeContextMenu';
 import NodeDrawer from '../components/nodes/NodeDrawer';
@@ -16,6 +16,10 @@ import IncomeSourceModal from '../components/create/IncomeSourceModal';
 import PodModal from '../components/create/PodModal';
 import AccountTypeModal, { AccountOption } from '../components/create/AccountTypeModal';
 import { Button } from '~/components/ui/button';
+import { createHistory } from '~/domains/canvas/history';
+import { useCanvasSimulation, simulationHorizonOptions } from '~/domains/canvas/useCanvasSimulation';
+import { SimulationPanel } from '~/components/canvas/SimulationPanel';
+import { useFlowComposer } from '~/domains/canvas/useFlowComposer';
 import {
   Dialog,
   DialogContent,
@@ -30,23 +34,17 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
-import type { SelectOption } from '~/components/ui/select';
+import { useAppData } from '~/contexts/AppDataContext';
+import { useAuth } from '~/contexts/AuthContext';
 import {
-  Select,
-  SelectContent,
-  SelectHiddenSelect,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/select';
-import {
-  ensureWorkspace,
+  applySandbox as applySandboxMutation,
   fetchGraph,
   publishGraph,
-  listWorkspaces,
-  deleteWorkspace,
-  type WorkspaceRecord,
-} from '../services/graphClient';
+  resetSandbox as resetSandboxMutation,
+} from '~/domains/workspaces/api/client';
+import { useWorkspaceVariants } from '~/domains/workspaces/state/useWorkspaceVariants';
+import { useShell } from '../contexts/ShellContext';
+import { toast } from 'solid-sonner';
 
 const GRID_SIZE = 28;
 const snapToGrid = (value: number) => Math.round(value / GRID_SIZE) * GRID_SIZE;
@@ -59,8 +57,6 @@ type Snapshot = {
 };
 
 const HISTORY_CAP = 50;
-
-const WORKSPACE_STORAGE_KEY = 'guap:workspace-slug';
 
 const ChevronDownIcon = () => (
   <svg
@@ -163,22 +159,6 @@ const ShareIcon = () => (
   </svg>
 );
 
-const RenameIcon = () => (
-  <svg
-    class="h-4 w-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M3 21h18" />
-    <path d="M12.5 5.5l2-2a2.121 2.121 0 113 3l-8.5 8.5L6 16l1-3.5 5.5-5.5z" />
-  </svg>
-);
-
 const createId = () =>
   typeof globalThis.crypto !== 'undefined' && 'randomUUID' in globalThis.crypto
     ? globalThis.crypto.randomUUID()
@@ -204,16 +184,6 @@ type RuleRecord = {
   allocations: RuleAllocationRecord[];
 };
 
-type FlowComposerState =
-  | { stage: 'idle' }
-  | { stage: 'pickSource' }
-  | {
-      stage: 'pickTarget';
-      sourceNodeId: string;
-      sourcePoint: { x: number; y: number };
-      cursorPoint: { x: number; y: number };
-    };
-
 type AllocationHealth = 'missing' | 'under' | 'over' | 'complete';
 
 type AllocationIssue = {
@@ -236,32 +206,35 @@ const getDefaultReturnRate = (node: { kind: CanvasNode['kind']; category?: Canva
   return 0;
 };
 
-const currencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-  minimumFractionDigits: 0,
-});
-
-const formatMonths = (value: number | null) => {
-  if (value === null) return 'Not reached';
-  if (value === 0) return 'Now';
-  const years = Math.floor(value / 12);
-  const months = value % 12;
-  const yearSegment = years > 0 ? `${years} yr${years === 1 ? '' : 's'}` : '';
-  const monthSegment = months > 0 ? `${months} mo${months === 1 ? '' : 's'}` : '';
-  return [yearSegment, monthSegment].filter(Boolean).join(' ').trim();
-};
-
 const CanvasPage: Component = () => {
-  const [workspaces, setWorkspaces] = createSignal<WorkspaceRecord[]>([]);
-  const [workspaceSlug, setWorkspaceSlug] = createSignal<string | null>(null);
-  const [workspaceModal, setWorkspaceModal] = createSignal<'create' | 'delete' | 'rename' | null>(null);
-  const [workspaceDraftName, setWorkspaceDraftName] = createSignal('');
-  const [workspaceToDelete, setWorkspaceToDelete] = createSignal<WorkspaceRecord | null>(null);
-  const [workspaceToRename, setWorkspaceToRename] = createSignal<WorkspaceRecord | null>(null);
-  const [initializingWorkspace, setInitializingWorkspace] = createSignal(true);
-  const [workspaceMenuOpen, setWorkspaceMenuOpen] = createSignal(false);
+  const { setFullScreen } = useShell();
+  const { activeHousehold } = useAppData();
+  const { user, isAuthenticated } = useAuth();
+  onMount(() => setFullScreen(true));
+  onCleanup(() => setFullScreen(false));
+
+  const {
+    workspacePair,
+    workspaceSlug,
+    activeVariant,
+    currentWorkspace,
+    sandboxStatus,
+    editingLocked,
+    canApplySandbox,
+    canResetSandbox,
+    sandboxStatusLabel,
+    sandboxStatusClass,
+    refreshWorkspaces,
+    initializingWorkspace,
+  } = useWorkspaceVariants({
+    activeHousehold,
+    isAuthenticated,
+  });
+  const [resetConfirmOpen, setResetConfirmOpen] = createSignal(false);
+  const [applyConfirmOpen, setApplyConfirmOpen] = createSignal(false);
+  const [approvalConfirmOpen, setApprovalConfirmOpen] = createSignal(false);
+  const [resetting, setResetting] = createSignal(false);
+  const [applying, setApplying] = createSignal(false);
   let drawerContainerRef: HTMLDivElement | undefined;
   let shareStatusTimeout: number | undefined;
 
@@ -273,10 +246,6 @@ const CanvasPage: Component = () => {
   const [scalePercent, setScalePercent] = createSignal(100);
   const [dragState, setDragState] = createSignal<DragState | null>(null);
   const [viewportState, setViewportState] = createSignal({ scale: 1, translate: { x: 0, y: 0 } });
-  const [flowComposer, setFlowComposer] = createSignal<FlowComposerState>({ stage: 'idle' });
-  const [hoveredAnchor, setHoveredAnchor] = createSignal<{ nodeId: string; anchor: AnchorType } | null>(
-    null
-  );
   const [drawerNodeId, setDrawerNodeId] = createSignal<string | null>(null);
   const [contextMenu, setContextMenu] = createSignal<{ nodeId: string; x: number; y: number } | null>(
     null
@@ -287,22 +256,7 @@ const CanvasPage: Component = () => {
   const [showHero, setShowHero] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
-  const [history, setHistory] = createSignal<Snapshot[]>([]);
-  const [historyIndex, setHistoryIndex] = createSignal(-1);
-  const [simulationSettings, setSimulationSettings] = createSignal({ horizonYears: 10 });
-  const simulationHorizonOptions: SelectOption[] = [
-    { value: '5', label: '5 Years' },
-    { value: '10', label: '10 Years' },
-    { value: '20', label: '20 Years' },
-    { value: '30', label: '30 Years' },
-    { value: '40', label: '40 Years' },
-    { value: '50', label: '50 Years' },
-  ];
-  const [simulationResult, setSimulationResult] = createSignal<SimulationResult | null>(null);
-  const [simulationError, setSimulationError] = createSignal<string | null>(null);
-  const [simulationMenuOpen, setSimulationMenuOpen] = createSignal(false);
   const [actionsMenuOpen, setActionsMenuOpen] = createSignal(false);
-  const [duplicating, setDuplicating] = createSignal(false);
   const [shareStatus, setShareStatus] = createSignal<'copied' | 'error' | null>(null);
   const [marquee, setMarquee] = createSignal<
     | null
@@ -314,74 +268,15 @@ const CanvasPage: Component = () => {
       }
   >(null);
   const [placementIndex, setPlacementIndex] = createSignal(0);
-  const [hasChanges, setHasChanges] = createSignal(false);
-  const currentWorkspace = createMemo(() => {
-    const slug = workspaceSlug();
-    return workspaces().find((item) => item.slug === slug) ?? null;
-  });
 
-  const resetWorkspaceState = () => {
-    setGraph('nodes', () => []);
-    setGraph('flows', () => []);
-    setRules([]);
-    setSelectedIds([]);
-    setDrawerNodeId(null);
-    setMarquee(null);
-    exitFlowMode();
-    setPlacementIndex(0);
-    setHistory([]);
-    setHistoryIndex(-1);
-    setHasChanges(false);
-    setShowHero(true);
-  };
-
-  const loadWorkspaces = async () => {
-    const list = await listWorkspaces();
-    setWorkspaces(list);
-    return list;
-  };
-
-  const openCreateWorkspace = () => {
-    setWorkspaceDraftName('');
-    setWorkspaceMenuOpen(false);
-    setWorkspaceToRename(null);
-    setWorkspaceModal('create');
-  };
-
-  const handleWorkspaceCreate = async (event: Event) => {
-    event.preventDefault();
-    const name = workspaceDraftName().trim() || 'Untitled Workspace';
-    const slug = `workspace-${createId()}`;
-
-    await ensureWorkspace(slug, name);
-    await loadWorkspaces();
-    setWorkspaceSlug(slug);
-    setWorkspaceModal(null);
-    setWorkspaceDraftName('');
-    setWorkspaceMenuOpen(false);
-  };
-
-  const handleWorkspaceDelete = async () => {
-    const workspace = workspaceToDelete();
-    if (!workspace) return;
-
-    await deleteWorkspace(workspace._id);
-    const list = await loadWorkspaces();
-    const currentSlugValue = workspaceSlug();
-    if (currentSlugValue === workspace.slug) {
-      const nextSlug = list[0]?.slug ?? null;
-      setWorkspaceSlug(nextSlug);
+  const refreshWorkspacePair = async () => {
+    setLoading(true);
+    try {
+      await refreshWorkspaces();
+      return workspacePair();
+    } finally {
+      setLoading(false);
     }
-
-    setWorkspaceToDelete(null);
-    setWorkspaceToRename(null);
-    setWorkspaceModal(null);
-
-    if (list.length === 0) {
-      openCreateWorkspace();
-    }
-
-    setWorkspaceMenuOpen(false);
   };
 
   const showShareStatus = (status: 'copied' | 'error') => {
@@ -394,10 +289,7 @@ const CanvasPage: Component = () => {
 
   const handleShareWorkspace = async () => {
     const slug = workspaceSlug();
-    if (!slug) {
-      openCreateWorkspace();
-      return;
-    }
+    if (!slug) return;
     if (typeof window === 'undefined') return;
 
     try {
@@ -415,56 +307,92 @@ const CanvasPage: Component = () => {
     }
   };
 
-  const handleWorkspaceRename = async (event: Event) => {
-    event.preventDefault();
-    const workspace = workspaceToRename();
-    const slug = workspaceSlug();
-    if (!workspace || !slug) {
-      openCreateWorkspace();
-      return;
-    }
+  const loadGraphForSlug = async (slug: string, options: { primeHistory?: boolean } = {}) => {
+    const slugSnapshot = slug;
 
-    const name = workspaceDraftName().trim() || workspace.name;
+    resetWorkspaceState();
+    setLoading(true);
+
     try {
-      await ensureWorkspace(slug, name);
-      await loadWorkspaces();
-      setWorkspaceSlug(slug);
-      setWorkspaceModal(null);
-      setWorkspaceToRename(null);
-      setWorkspaceDraftName('');
-      setWorkspaceMenuOpen(false);
+      const data = await fetchGraph(slugSnapshot);
+      if (workspaceSlug() !== slugSnapshot) return;
+
+      if (data && data.nodes?.length) {
+        hydrateGraph(data, { primeHistory: options.primeHistory });
+        setHasChanges(false);
+      } else {
+        resetWorkspaceState();
+      }
     } catch (error) {
-      console.error('Failed to rename workspace', error);
+      if (workspaceSlug() === slugSnapshot) {
+        console.error('Failed to load workspace graph', error);
+        resetWorkspaceState();
+      }
+    } finally {
+      if (workspaceSlug() === slugSnapshot) {
+        setLoading(false);
+      }
     }
   };
 
-  const duplicateWorkspace = async () => {
-    const slug = workspaceSlug();
-    const workspace = currentWorkspace();
-    if (!workspace || !slug) {
-      openCreateWorkspace();
+  const handleResetSandbox = async () => {
+    if (activeVariant() !== 'sandbox' || resetting()) return;
+    const sandbox = workspacePair().sandbox;
+    const actorId = user()?.profileId;
+    if (!sandbox || !actorId) {
+      setResetConfirmOpen(false);
       return;
     }
-    if (duplicating()) return;
 
-    setDuplicating(true);
+    setResetting(true);
     try {
-      const baseName = workspace.name?.trim().length ? workspace.name : 'Workspace';
-      const duplicateName = `${baseName} Copy`;
-      const newSlug = `workspace-${createId()}`;
-
-      await ensureWorkspace(newSlug, duplicateName);
-      await publishGraph(newSlug, {
-        nodes: graph.nodes,
-        flows: graph.flows,
-        rules: rules(),
+      await resetSandboxMutation({
+        householdId: sandbox.householdId,
+        actorUserId: actorId,
       });
-      await loadWorkspaces();
-      setWorkspaceSlug(newSlug);
+      await refreshWorkspacePair();
+      if (workspaceSlug() === sandbox.slug) {
+        await loadGraphForSlug(sandbox.slug, { primeHistory: true });
+      }
+      toast.success('Sandbox reset to match your Money Map.');
     } catch (error) {
-      console.error('Failed to duplicate workspace', error);
+      console.error('Failed to reset sandbox', error);
+      toast.error('Unable to reset the sandbox. Please try again.');
     } finally {
-      setDuplicating(false);
+      setResetting(false);
+      setResetConfirmOpen(false);
+    }
+  };
+
+  const handleApplySandbox = async () => {
+    if (activeVariant() !== 'sandbox' || applying()) return;
+    const sandbox = workspacePair().sandbox;
+    const actorId = user()?.profileId;
+    if (!sandbox || !actorId) {
+      setApplyConfirmOpen(false);
+      return;
+    }
+
+    setApplying(true);
+    try {
+      const result = await applySandboxMutation({
+        householdId: sandbox.householdId,
+        actorUserId: actorId,
+      });
+      await refreshWorkspacePair();
+      await loadGraphForSlug(sandbox.slug, { primeHistory: true });
+      if (result.requiresApproval) {
+        setApprovalConfirmOpen(true);
+        toast.message('Sandbox submitted for approval.');
+      } else {
+        toast.success('Sandbox applied to your Money Map.');
+      }
+    } catch (error) {
+      console.error('Failed to apply sandbox to live', error);
+      toast.error('Apply failed. Check the console for details.');
+    } finally {
+      setApplying(false);
+      setApplyConfirmOpen(false);
     }
   };
 
@@ -492,27 +420,6 @@ const CanvasPage: Component = () => {
       selectedIds: selectedIds(),
     });
 
-  const replaceHistory = (snap: Snapshot) => {
-    const clone = cloneSnapshot(snap);
-    setHistory([clone]);
-    setHistoryIndex(0);
-    setHasChanges(false);
-  };
-
-  const pushHistory = (snap?: Snapshot) => {
-    const snapshot = snap ? cloneSnapshot(snap) : snapshotGraph();
-    setHistory((current) => {
-      const currentIndex = historyIndex();
-      const trimmed = current.slice(0, currentIndex + 1);
-      const updated = [...trimmed, snapshot];
-      const limited =
-        updated.length > HISTORY_CAP ? updated.slice(updated.length - HISTORY_CAP) : updated;
-      setHistoryIndex(limited.length - 1);
-      return limited;
-    });
-    setHasChanges(true);
-  };
-
   const applySnapshot = (snap: Snapshot) => {
     const clone = cloneSnapshot(snap);
     setGraph('nodes', () => clone.nodes);
@@ -525,23 +432,34 @@ const CanvasPage: Component = () => {
     setHoveredAnchor(null);
   };
 
-  const undo = () => {
-    const currentHistory = history();
-    const index = historyIndex();
-    if (index <= 0 || currentHistory.length === 0) return;
-    const newIndex = index - 1;
-    setHistoryIndex(newIndex);
-    applySnapshot(currentHistory[newIndex]);
-  };
+  const {
+    historyIndex,
+    hasChanges,
+    setHasChanges,
+    pushHistory,
+    replaceHistory,
+    undo,
+    redo,
+    resetHistory,
+  } = createHistory<Snapshot>({
+    snapshotSource: snapshotGraph,
+    applySnapshot,
+    cloneSnapshot,
+    cap: HISTORY_CAP,
+  });
 
-  const redo = () => {
-    const currentHistory = history();
-    const index = historyIndex();
-    if (index >= currentHistory.length - 1) return;
-    const newIndex = index + 1;
-    setHistoryIndex(newIndex);
-    applySnapshot(currentHistory[newIndex]);
-  };
+  function resetWorkspaceState() {
+    setGraph('nodes', () => []);
+    setGraph('flows', () => []);
+    setRules([]);
+    setSelectedIds([]);
+    setDrawerNodeId(null);
+    setMarquee(null);
+    exitFlowMode();
+    setPlacementIndex(0);
+    resetHistory();
+    setShowHero(true);
+  }
 
   createEffect(() => {
     if (historyIndex() === -1) {
@@ -675,13 +593,48 @@ const CanvasPage: Component = () => {
       .filter((issue) => issue.state !== 'complete');
   });
 
+  const {
+    simulationSettings,
+    simulationResult,
+    simulationError,
+    simulationMenuOpen,
+    setSimulationMenuOpen,
+    runSimulation,
+    clearSimulation,
+  } = useCanvasSimulation({
+    collectNodes: () =>
+      graph.nodes.map((node) => ({
+        id: node.id,
+        kind: node.kind,
+        category: node.category,
+        balance: typeof node.balance === 'number' ? node.balance : 0,
+        inflow: node.inflow ?? null,
+        returnRate: node.returnRate ?? getDefaultReturnRate(node),
+      })),
+    collectRules: () =>
+      rules().map((rule) => ({
+        sourceNodeId: rule.sourceNodeId,
+        allocations: rule.allocations.map((alloc) => ({
+          targetNodeId: alloc.targetNodeId,
+          percentage: alloc.percentage,
+        })),
+      })),
+    hasNodes: () => graph.nodes.length > 0,
+    hasAllocationIssues: () => allocationIssues().length > 0,
+  });
+
   const canSave = createMemo(
     () =>
-      Boolean(workspaceSlug()) && hasChanges() && allocationIssues().length === 0 && !saving(),
+      activeVariant() === 'sandbox' &&
+      Boolean(workspaceSlug()) &&
+      hasChanges() &&
+      allocationIssues().length === 0 &&
+      !saving(),
   );
 
   const saveDisabledReason = createMemo(() => {
     if (saving()) return null;
+    if (activeVariant() !== 'sandbox') return 'Switch to the Sandbox to save changes.';
     if (!workspaceSlug()) return 'Select or create a workspace to save.';
     if (!hasChanges()) return 'No changes to save.';
     if (allocationIssues().length > 0) {
@@ -716,6 +669,7 @@ const CanvasPage: Component = () => {
       if (isTypingTarget(event.target)) return;
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+        if (editingLocked()) return;
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
@@ -723,6 +677,7 @@ const CanvasPage: Component = () => {
       }
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') {
+        if (editingLocked()) return;
         event.preventDefault();
         redo();
         return;
@@ -747,12 +702,14 @@ const CanvasPage: Component = () => {
       }
 
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedIds().length) {
+        if (editingLocked()) return;
         event.preventDefault();
         deleteSelectedNodes();
         return;
       }
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
+        if (editingLocked()) return;
         event.preventDefault();
         setCreateModal('income');
         return;
@@ -760,38 +717,7 @@ const CanvasPage: Component = () => {
     };
 
     window.addEventListener('keydown', handleKeyDown);
-
-    (async () => {
-      try {
-        const list = await loadWorkspaces();
-        const savedSlug =
-          typeof window !== 'undefined' ? window.localStorage.getItem(WORKSPACE_STORAGE_KEY) : null;
-        const sharedSlug =
-          typeof window !== 'undefined'
-            ? new URL(window.location.href).searchParams.get('workspace')
-            : null;
-        const sharedExists = sharedSlug && list.some((workspace) => workspace.slug === sharedSlug);
-        const hasSaved = savedSlug && list.some((workspace) => workspace.slug === savedSlug);
-        const initialSlug = sharedExists
-          ? sharedSlug
-          : hasSaved
-          ? savedSlug
-          : list[0]?.slug ?? null;
-
-        if (initialSlug) {
-          setWorkspaceSlug(initialSlug);
-        } else {
-          setLoading(false);
-          setWorkspaceModal('create');
-        }
-      } catch (error) {
-        console.error('Failed to load workspaces', error);
-        setWorkspaceModal('create');
-        setLoading(false);
-      } finally {
-        setInitializingWorkspace(false);
-      }
-    })();
+    void refreshWorkspacePair();
 
     onCleanup(() => {
       window.removeEventListener('keydown', handleKeyDown);
@@ -901,8 +827,6 @@ const CanvasPage: Component = () => {
     on(
       () => workspaceSlug(),
       (slug) => {
-        if (initializingWorkspace()) return;
-
         if (!slug) {
           resetWorkspaceState();
           setLoading(false);
@@ -910,34 +834,28 @@ const CanvasPage: Component = () => {
         }
 
         const slugSnapshot = slug;
-        const workspaceName = currentWorkspace()?.name ?? slugSnapshot;
-
-        resetWorkspaceState();
-        setLoading(true);
-
         (async () => {
-          try {
-            await ensureWorkspace(slugSnapshot, workspaceName);
-            const data = await fetchGraph(slugSnapshot);
+          if (!currentWorkspace() || currentWorkspace()?.slug !== slugSnapshot) {
+            await refreshWorkspacePair();
             if (workspaceSlug() !== slugSnapshot) return;
-
-        if (data && data.nodes?.length) {
-          hydrateGraph(data, { primeHistory: true });
-          setHasChanges(false);
-        } else {
-          resetWorkspaceState();
-        }
-          } catch (error) {
-            if (workspaceSlug() === slugSnapshot) {
-              console.error('Failed to load workspace graph', error);
-              resetWorkspaceState();
-            }
-          } finally {
-            if (workspaceSlug() === slugSnapshot) {
-              setLoading(false);
-            }
           }
-        })();
+          await loadGraphForSlug(slugSnapshot, { primeHistory: true });
+        })().catch((error) => {
+          if (workspaceSlug() === slugSnapshot) {
+            console.error('Failed to load workspace graph', error);
+            setLoading(false);
+          }
+        });
+      },
+      { defer: true },
+    ),
+  );
+
+  createEffect(
+    on(
+      () => activeHousehold()?._id,
+      () => {
+        void refreshWorkspacePair();
       },
       { defer: true },
     ),
@@ -946,32 +864,16 @@ const CanvasPage: Component = () => {
   createEffect(() => {
     const slug = workspaceSlug();
     if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
     if (slug) {
-      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, slug);
-      const url = new URL(window.location.href);
       if (url.searchParams.get('workspace') !== slug) {
         url.searchParams.set('workspace', slug);
         window.history.replaceState(null, '', url.toString());
       }
-    } else {
-      window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
-      const url = new URL(window.location.href);
-      if (url.searchParams.has('workspace')) {
-        url.searchParams.delete('workspace');
-        window.history.replaceState(null, '', url.toString());
-      }
+    } else if (url.searchParams.has('workspace')) {
+      url.searchParams.delete('workspace');
+      window.history.replaceState(null, '', url.toString());
     }
-  });
-
-  createEffect(() => {
-    if (!workspaceMenuOpen()) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setWorkspaceMenuOpen(false);
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    onCleanup(() => {
-      document.removeEventListener('keydown', handleKeyDown);
-    });
   });
 
   createEffect(() => {
@@ -1474,8 +1376,7 @@ const CanvasPage: Component = () => {
     metadata?: CanvasNode['metadata'];
   }): Promise<string | undefined> => {
     const slug = workspaceSlug();
-    if (!slug) {
-      openCreateWorkspace();
+    if (!slug || editingLocked()) {
       return undefined;
     }
     if (!viewportElement) return undefined;
@@ -1640,28 +1541,19 @@ const CanvasPage: Component = () => {
   };
 
   const handleAddIncome = () => {
-    if (!workspaceSlug()) {
-      openCreateWorkspace();
-      return;
-    }
+    if (!workspaceSlug() || editingLocked()) return;
     setShowHero(false);
     setCreateModal('income');
   };
 
   const handleAddAccount = () => {
-    if (!workspaceSlug()) {
-      openCreateWorkspace();
-      return;
-    }
+    if (!workspaceSlug() || editingLocked()) return;
     setShowHero(false);
     setCreateModal('account');
   };
 
   const handleAddPod = () => {
-    if (!workspaceSlug()) {
-      openCreateWorkspace();
-      return;
-    }
+    if (!workspaceSlug() || editingLocked()) return;
     const available = accountNodes();
     if (available.length === 0) {
       handleAddAccount();
@@ -1675,10 +1567,7 @@ const CanvasPage: Component = () => {
   };
 
   const handleStartFlow = () => {
-    if (!workspaceSlug()) {
-      openCreateWorkspace();
-      return;
-    }
+    if (!workspaceSlug() || editingLocked()) return;
     const stage = flowComposer().stage;
     if (stage === 'pickSource') {
       exitFlowMode();
@@ -1691,6 +1580,7 @@ const CanvasPage: Component = () => {
   };
 
   const duplicateNode = (nodeId: string) => {
+    if (editingLocked()) return;
     const original = graph.nodes.find((node) => node.id === nodeId);
     if (!original) return;
     const position = {
@@ -1786,61 +1676,8 @@ const CanvasPage: Component = () => {
     pushHistory();
   };
 
-  const runSimulation = (years?: number) => {
-    const hasExplicitYears = typeof years === 'number' && Number.isFinite(years) && years > 0;
-    const nextHorizon = hasExplicitYears ? (years as number) : simulationSettings().horizonYears;
-
-    if (hasExplicitYears) {
-      setSimulationSettings({ horizonYears: nextHorizon });
-    }
-
-    if (graph.nodes.length === 0) {
-      setSimulationError('Add nodes before running a simulation.');
-      setSimulationResult(null);
-      return;
-    }
-    if (allocationIssues().length > 0) {
-      setSimulationError('Resolve allocation coverage for every income source before simulating.');
-      setSimulationResult(null);
-      return;
-    }
-
-    const settings = { horizonYears: nextHorizon };
-    
-    const nodesForSimulation = graph.nodes.map((node) => ({
-      id: node.id,
-      kind: node.kind,
-      category: node.category,
-      balance: typeof node.balance === 'number' ? node.balance : 0,
-      inflow: node.inflow ?? null,
-      returnRate: node.returnRate ?? getDefaultReturnRate(node),
-    }));
-
-    const rulesForSimulation = rules().map((rule) => ({
-      sourceNodeId: rule.sourceNodeId,
-      allocations: rule.allocations.map((alloc) => ({
-        targetNodeId: alloc.targetNodeId,
-        percentage: alloc.percentage,
-      })),
-    }));
-
-    try {
-      const result = simulateGraph({
-        nodes: nodesForSimulation,
-        rules: rulesForSimulation,
-        settings,
-      });
-      setSimulationResult(result);
-      setSimulationError(null);
-      setSimulationMenuOpen(false);
-    } catch (error) {
-      console.error('Simulation failed', error);
-      setSimulationError('Simulation failed. Check console for details.');
-      setSimulationResult(null);
-    }
-  };
-
   const deleteNode = (nodeId: string, options: { skipHistory?: boolean } = {}) => {
+    if (editingLocked()) return;
     setGraph('nodes', (nodes) => {
       const filtered = nodes.filter((node) => node.id !== nodeId);
       if (filtered.length === 0) setShowHero(true);
@@ -1880,6 +1717,7 @@ const CanvasPage: Component = () => {
   const handleContextMenuAction = (action: 'details' | 'duplicate' | 'delete') => {
     const menu = contextMenu();
     if (!menu) return;
+    if (editingLocked() && action !== 'details') return;
     if (action === 'details') {
       handleNodeOpenDrawer(menu.nodeId);
     } else if (action === 'duplicate') {
@@ -1891,6 +1729,7 @@ const CanvasPage: Component = () => {
   };
 
   const deleteSelectedNodes = () => {
+    if (editingLocked()) return;
     const ids = selectedIds();
     if (!ids.length) return;
     ids.forEach((id) => deleteNode(id, { skipHistory: true }));
@@ -1905,6 +1744,14 @@ const CanvasPage: Component = () => {
   const handleSave = async () => {
     const slug = workspaceSlug();
     if (!slug || saving() || !hasChanges()) return;
+    if (activeVariant() !== 'sandbox') {
+      console.warn('Cannot save changes while viewing Money Map.');
+      return;
+    }
+    if (editingLocked()) {
+      console.warn('Sandbox is currently locked.');
+      return;
+    }
     if (allocationIssues().length > 0) {
       console.warn('Cannot save until all income allocations total 100%.');
       return;
@@ -1919,7 +1766,7 @@ const CanvasPage: Component = () => {
 
       const nodeMap = new Map<string, string>(Object.entries(result.nodes ?? {}));
       const ruleMap = new Map<string, string>(Object.entries(result.rules ?? {}));
-      const flowMap = new Map<string, string>(Object.entries(result.flows ?? result.edges ?? {}));
+      const edgeMap = new Map<string, string>(Object.entries(result.edges ?? {}));
 
       setGraph('nodes', (nodes) =>
         nodes.map((node) => {
@@ -1930,7 +1777,7 @@ const CanvasPage: Component = () => {
 
       setGraph('flows', (flows) =>
         flows.map((flow) => {
-          const newId = flowMap.get(flow.id);
+          const newId = edgeMap.get(flow.id);
           return {
             ...flow,
             id: newId ?? flow.id,
@@ -1961,8 +1808,11 @@ const CanvasPage: Component = () => {
       setPlacementIndex(graph.nodes.length);
       setShowHero(graph.nodes.length === 0);
       replaceHistory(snapshotGraph());
+      await refreshWorkspacePair();
+      toast.success('Sandbox changes saved.');
     } catch (error) {
       console.error('Failed to save graph', error);
+      toast.error('Unable to save the sandbox.');
     } finally {
       setSaving(false);
     }
@@ -1990,58 +1840,57 @@ const CanvasPage: Component = () => {
             </span>
           }
         >
-          <div class="pointer-events-auto flex items-center gap-2">
-            <DropdownMenu open={workspaceMenuOpen()} onOpenChange={setWorkspaceMenuOpen}>
-              <DropdownMenuTrigger
-                as="button"
-                type="button"
-                class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
-                disabled={workspaces().length === 0}
-                title={currentWorkspace()?.name ?? 'Select workspace'}
-              >
-                <span aria-hidden="true" class="text-[10px]">
-                  📁
+          <div class="pointer-events-auto flex flex-wrap items-center gap-3 rounded-full border border-slate-200/70 bg-white/85 px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur">
+            <span class="flex items-center gap-2 text-sm text-slate-800">
+              {currentWorkspace()?.name ?? 'Workspace'}
+              <Show when={activeVariant() === 'sandbox'}>
+                <span
+                  class={clsx(
+                    sandboxStatusClass(),
+                    'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]'
+                  )}
+                >
+                  {sandboxStatusLabel()}
                 </span>
-                <span class="max-w-[120px] truncate">
-                  {currentWorkspace()?.name ?? 'Workspace'}
+              </Show>
+              <Show when={activeVariant() === 'live'}>
+                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  View Only
                 </span>
-                <ChevronDownIcon />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent class="w-64">
-                <div class="max-h-64 overflow-y-auto py-1">
-                  <Show
-                    when={workspaces().length > 0}
-                    fallback={<div class="px-4 py-3 text-xs text-subtle">No workspaces yet.</div>}
-                  >
-                    <For each={workspaces()}>
-                      {(workspace) => (
-                        <DropdownMenuItem
-                          class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700"
-                          onSelect={() => {
-                            setWorkspaceSlug(workspace.slug);
-                            setWorkspaceMenuOpen(false);
-                          }}
-                        >
-                          <span>{workspace.name}</span>
-                          <Show when={workspaceSlug() === workspace.slug}>
-                            <span class="text-xs text-slate-500">Selected</span>
-                          </Show>
-                        </DropdownMenuItem>
-                      )}
-                    </For>
-                  </Show>
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              type="button"
-              variant="secondary"
-              class="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/60 bg-white/80 text-base font-semibold text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm"
-              onClick={openCreateWorkspace}
-              title="New workspace"
-            >
-              ＋
-            </Button>
+              </Show>
+            </span>
+            <div class="flex items-center gap-2">
+              <Button type="button" variant="secondary" size="xs" onClick={handleShareWorkspace}>
+                Share
+              </Button>
+              <Show when={activeVariant() === 'sandbox'}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="xs"
+                  class="rounded-full"
+                  disabled={!canResetSandbox() || saving() || resetting()}
+                  onClick={() => setResetConfirmOpen(true)}
+                >
+                  Reset
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="xs"
+                  class="rounded-full"
+                  disabled={!canApplySandbox() || saving() || applying()}
+                  onClick={() => setApplyConfirmOpen(true)}
+                >
+                  {applying() ? 'Applying…' : 'Apply'}
+                </Button>
+              </Show>
+            </div>
+            <Show when={activeVariant() === 'sandbox' && sandboxStatus() === 'stale'}>
+              <span class="w-full text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-600">
+                Money Map changed since last reset
+              </span>
+            </Show>
           </div>
         </Show>
       </div>
@@ -2081,15 +1930,25 @@ const CanvasPage: Component = () => {
       >
         {connectingPreview()}
       </CanvasViewport>
+      <Show when={editingLocked()}>
+        <div class="pointer-events-none absolute inset-0 z-30 bg-white/30 backdrop-blur-sm">
+          <div class="pointer-events-auto absolute left-1/2 top-8 w-max -translate-x-1/2 rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-slate-700 shadow">
+            {activeVariant() === 'live'
+              ? 'Money Map is view-only. Switch to Sandbox to make changes.'
+              : 'Sandbox changes are pending approval.'}
+          </div>
+        </div>
+      </Show>
       <Show when={!loading() && showHero() && !hasNodes()}>
         <div class="absolute inset-0 pointer-events-none">
           <div class="pointer-events-auto h-full w-full">
             <EmptyHero
               onCreate={() => {
                 if (!workspaceSlug()) {
-                  openCreateWorkspace();
+                  void refreshWorkspacePair();
                   return;
                 }
+                if (editingLocked()) return;
                 setShowHero(false);
                 setCreateModal('income');
               }}
@@ -2140,85 +1999,52 @@ const CanvasPage: Component = () => {
               <ChevronDownIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent class="w-60">
-              <DropdownMenuLabel>Workspace actions</DropdownMenuLabel>
+              <DropdownMenuLabel>Sandbox</DropdownMenuLabel>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={!canSave()}
+                disabled={activeVariant() !== 'sandbox' || !canSave()}
                 onSelect={() => {
-                  if (!canSave()) {
-                    return;
-                  }
+                  if (activeVariant() !== 'sandbox' || !canSave()) return;
                   setActionsMenuOpen(false);
                   void handleSave();
                 }}
               >
                 <SaveIcon />
-                <span>{saving() ? 'Saving…' : 'Save'}</span>
+                <span>{saving() ? 'Saving…' : 'Save Sandbox'}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={duplicating() || !workspaceSlug()}
+                disabled={activeVariant() !== 'sandbox' || !canApplySandbox() || applying()}
                 onSelect={() => {
-                  if (duplicating() || !workspaceSlug()) {
-                    return;
-                  }
+                  if (activeVariant() !== 'sandbox' || !canApplySandbox() || applying()) return;
                   setActionsMenuOpen(false);
-                  void duplicateWorkspace();
+                  setApplyConfirmOpen(true);
                 }}
               >
                 <DuplicateIcon />
-                <span>{duplicating() ? 'Duplicating…' : 'Duplicate'}</span>
+                <span>{applying() ? 'Applying…' : 'Apply to Money Map'}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={!workspaceSlug()}
+                disabled={activeVariant() !== 'sandbox' || !canResetSandbox() || resetting()}
                 onSelect={() => {
-                  const workspace = currentWorkspace();
-                  if (!workspace || !workspaceSlug()) {
-                    setActionsMenuOpen(false);
-                    openCreateWorkspace();
-                    return;
-                  }
+                  if (activeVariant() !== 'sandbox' || !canResetSandbox() || resetting()) return;
                   setActionsMenuOpen(false);
-                  setWorkspaceToRename(workspace);
-                  setWorkspaceDraftName(workspace.name ?? '');
-                  setWorkspaceModal('rename');
+                  setResetConfirmOpen(true);
                 }}
               >
-                <RenameIcon />
-                <span>Rename</span>
+                <DeleteIcon />
+                <span>{resetting() ? 'Resetting…' : 'Reset Sandbox'}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={!workspaceSlug()}
                 onSelect={() => {
-                  if (!workspaceSlug()) {
-                    setActionsMenuOpen(false);
-                    openCreateWorkspace();
-                    return;
-                  }
                   setActionsMenuOpen(false);
                   void handleShareWorkspace();
                 }}
               >
                 <ShareIcon />
                 <span>Share</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                class="mt-1 px-3 py-2 text-sm font-semibold text-rose-600 focus:bg-rose-100 focus:text-rose-700"
-                disabled={!currentWorkspace()}
-                onSelect={() => {
-                  const workspace = currentWorkspace();
-                  if (!workspace) {
-                    return;
-                  }
-                  setActionsMenuOpen(false);
-                  setWorkspaceToDelete(workspace);
-                  setWorkspaceModal('delete');
-                }}
-              >
-                <DeleteIcon />
-                <span>Delete</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
@@ -2395,152 +2221,15 @@ const CanvasPage: Component = () => {
         onZoomOut={() => viewportControls?.zoomOut()}
         onReset={() => viewportControls?.reset()}
       />
-      <div
-        class="absolute left-0 top-0 z-40 h-full w-[360px]"
-        classList={{ 'pointer-events-none': !simulationPanelOpen() }}
-      >
-        <Motion.div
-          class="flex h-full flex-col border-r border-slate-200/70 bg-white shadow-xl"
-          initial={{ x: -360, opacity: 0 }}
-          animate={{ x: simulationPanelOpen() ? 0 : -360, opacity: simulationPanelOpen() ? 1 : 0.4 }}
-          transition={{ duration: 0.2, easing: [0.16, 1, 0.3, 1] }}
-        >
-          <Show when={simulationResult()}>
-            {(sim) => {
-              const result = createMemo(() => sim());
-              const horizonYears = createMemo(() => simulationSettings().horizonYears);
-              const lookup = nodeLookup();
-              const sortedBalances = createMemo(() => 
-                Object.entries(result().finalBalances)
-                  .map(([id, value]) => ({ id, value, label: lookup.get(id)?.label ?? 'Unknown node' }))
-                  .sort((a, b) => b.value - a.value)
-                  .slice(0, 5)
-              );
-
-              return (
-                <aside class="flex h-full flex-col">
-                  <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                    <div class="space-y-1">
-                      <h2 class="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Projection</h2>
-                      <p class="text-2xl font-bold text-slate-900 tracking-tight">
-                        {currencyFormatter.format(result().finalTotal)}
-                      </p>
-                      <p class="text-xs text-slate-500">Total Portfolio Value</p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="xs"
-                      class="rounded-lg uppercase tracking-[0.18em]"
-                      onClick={() => setSimulationResult(null)}
-                    >
-                      Close
-                    </Button>
-                  </div>
-                  <div class="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-                    <section class="space-y-3">
-                      <div class="flex items-center justify-between">
-                        <label class="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
-                          Horizon
-                        </label>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="xs"
-                          class="rounded-lg border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-                          onClick={() => runSimulation(horizonYears())}
-                        >
-                          ↻ Re-run
-                        </Button>
-                      </div>
-                      <Select
-                        options={simulationHorizonOptions}
-                        optionValue="value"
-                        optionTextValue="label"
-                        value={
-                          simulationHorizonOptions.find((option) => Number(option.value) === horizonYears()) ??
-                          simulationHorizonOptions[1]
-                        }
-                        onChange={(option) => runSimulation(Number(option?.value ?? horizonYears()))}
-                        placeholder={<span class="truncate text-slate-400">Select horizon</span>}
-                        itemComponent={(itemProps) => <SelectItem {...itemProps} />}
-                      >
-                        <SelectTrigger
-                          class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
-                          aria-label="Simulation horizon"
-                        >
-                          <SelectValue<SelectOption>>
-                            {(state) => <span>{state.selectedOption()?.label ?? `${horizonYears()} Years`}</span>}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent />
-                        <SelectHiddenSelect name="simulation-horizon" />
-                      </Select>
-                    </section>
-
-                    <section class="space-y-2">
-                      <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Wealth Ladder</h3>
-                      <div class="space-y-2">
-                        {result().milestones.map((milestone) => {
-                          const reached = milestone.reachedAtMonth !== null;
-                          const progress = reached
-                            ? 100
-                            : Math.max(0, Math.min(100, (result().finalTotal / milestone.threshold) * 100));
-                          const statusLabel = reached ? formatMonths(milestone.reachedAtMonth) : 'Not yet';
-                          const progressTone = reached ? 'bg-emerald-500' : 'bg-slate-400';
-                          return (
-                            <div class="space-y-2 rounded-xl border border-slate-200/70 bg-slate-50/80 px-4 py-3">
-                              <div class="flex items-center justify-between text-sm font-semibold text-slate-700">
-                                <span>{milestone.label}</span>
-                                <span class="text-xs font-medium text-slate-500">{statusLabel}</span>
-                              </div>
-                              <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                  class={`h-full rounded-full transition-all duration-300 ${progressTone}`}
-                                  style={{ width: `${progress}%` }}
-                                />
-                              </div>
-                              <p class="text-[11px] font-medium text-slate-500">
-                                {progress >= 100
-                                  ? `Reached ${currencyFormatter.format(milestone.threshold)}`
-                                  : `${progress.toFixed(0)}% of ${currencyFormatter.format(milestone.threshold)}`}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-
-                    <section class="space-y-2">
-                      <h3 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Top Balances</h3>
-                      <div class="space-y-2">
-                        {sortedBalances().map((entry) => {
-                          const maxValue = sortedBalances()[0]?.value ?? 1;
-                          const percentage = (entry.value / maxValue) * 100;
-                          return (
-                            <div class="space-y-1.5">
-                              <div class="flex items-center justify-between text-sm font-semibold text-slate-700">
-                                <span class="truncate">{entry.label}</span>
-                                <span class="text-xs font-semibold text-slate-500">{currencyFormatter.format(entry.value)}</span>
-                              </div>
-                              <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                  class="h-full rounded-full bg-slate-500"
-                                  style={{ width: `${Math.max(6, percentage)}%` }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  </div>
-                </aside>
-              );
-            }}
-          </Show>
-        </Motion.div>
-      </div>
+      <SimulationPanel
+        open={simulationPanelOpen}
+        result={simulationResult}
+        settings={simulationSettings}
+        horizonOptions={simulationHorizonOptions}
+        onRun={runSimulation}
+        onClose={clearSimulation}
+        getNodeLabel={(id) => nodeLookup().get(id)?.label ?? 'Unknown node'}
+      />
       <IncomeSourceModal
         open={createModal() === 'income'}
         onClose={() => setCreateModal(null)}
@@ -2594,136 +2283,73 @@ const CanvasPage: Component = () => {
           if (id) setDrawerNodeId(id);
         }}
       />
-      <Dialog
-        open={workspaceModal() === 'create'}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            setWorkspaceModal(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <form class="flex flex-col gap-5" onSubmit={handleWorkspaceCreate}>
-            <DialogHeader class="gap-2 text-center">
-              <DialogTitle>Create workspace</DialogTitle>
-              <DialogDescription>Workspaces group your nodes, flows, and rules.</DialogDescription>
-            </DialogHeader>
-            <div class="flex flex-col gap-3 text-left">
-              <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Name
-                <input
-                  class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
-                  placeholder="New workspace"
-                  value={workspaceDraftName()}
-                  onInput={(event) => {
-                    const value = event.currentTarget.value;
-                    setWorkspaceDraftName(value);
-                  }}
-                />
-              </label>
-            </div>
-            <div class="flex flex-col gap-2">
-              <Button type="submit" class="w-full shadow-floating">
-                Create workspace
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                class="w-full"
-                onClick={() => {
-                  setWorkspaceModal(null);
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
+      <Dialog open={resetConfirmOpen()} onOpenChange={setResetConfirmOpen}>
+        <DialogContent class="max-w-md">
+          <DialogHeader class="gap-2 text-left">
+            <DialogTitle>Reset sandbox</DialogTitle>
+            <DialogDescription>
+              Replace sandbox data with your current Money Map. This cannot be undone and any in-progress sandbox work will be removed.
+            </DialogDescription>
+          </DialogHeader>
+          <div class="flex flex-col gap-2 text-xs text-slate-500 md:text-sm">
+            <p>
+              Resetting keeps the sandbox aligned with live data before you start a fresh iteration. You can always rebuild changes after the reset.
+            </p>
+          </div>
+          <div class="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setResetConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              class="shadow-floating"
+              disabled={resetting()}
+              onClick={() => void handleResetSandbox()}
+            >
+              {resetting() ? 'Resetting…' : 'Reset sandbox'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={workspaceModal() === 'rename'}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            setWorkspaceModal(null);
-            setWorkspaceToRename(null);
-            setWorkspaceDraftName('');
-          }
-        }}
-      >
-        <DialogContent>
-          <form class="flex flex-col gap-5" onSubmit={handleWorkspaceRename}>
-            <DialogHeader class="gap-2 text-center">
-              <DialogTitle>Rename workspace</DialogTitle>
-              <DialogDescription>Update the title shown for this workspace.</DialogDescription>
-            </DialogHeader>
-            <div class="flex flex-col gap-3 text-left">
-              <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Name
-                <input
-                  class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
-                  placeholder="Workspace name"
-                  value={workspaceDraftName()}
-                  onInput={(event) => {
-                    const value = event.currentTarget.value;
-                    setWorkspaceDraftName(value);
-                  }}
-                />
-              </label>
-            </div>
-            <div class="flex flex-col gap-2">
-              <Button type="submit" class="w-full shadow-floating">
-                Save name
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                class="w-full"
-                onClick={() => {
-                  setWorkspaceModal(null);
-                  setWorkspaceToRename(null);
-                  setWorkspaceDraftName('');
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
+      <Dialog open={applyConfirmOpen()} onOpenChange={setApplyConfirmOpen}>
+        <DialogContent class="max-w-md">
+          <DialogHeader class="gap-2 text-left">
+            <DialogTitle>Apply to Money Map</DialogTitle>
+            <DialogDescription>
+              Publish sandbox changes to the live Money Map. Once applied, live accounts, automations, and shared members will see the updates instantly.
+            </DialogDescription>
+          </DialogHeader>
+          <div class="flex flex-col gap-2 text-xs text-slate-500 md:text-sm">
+            <p>Make sure the sandbox is ready for prime time before applying—this action overwrites the live graph.</p>
+          </div>
+          <div class="mt-4 flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setApplyConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              class="shadow-floating"
+              disabled={applying()}
+              onClick={() => void handleApplySandbox()}
+            >
+              {applying() ? 'Applying…' : 'Apply changes'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={workspaceModal() === 'delete'}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            setWorkspaceModal(null);
-            setWorkspaceToDelete(null);
-          }
-        }}
-      >
+      <Dialog open={approvalConfirmOpen()} onOpenChange={setApprovalConfirmOpen}>
         <DialogContent>
-          <div class="flex w-full flex-col gap-5">
-            <DialogHeader class="gap-2 text-left">
-              <DialogTitle>Delete workspace</DialogTitle>
-              <DialogDescription>
-                This removes <strong>{workspaceToDelete()?.name ?? ''}</strong> and all associated nodes, flows,
-                and rules. This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <div class="flex gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                class="flex-1"
-                onClick={() => {
-                  setWorkspaceModal(null);
-                  setWorkspaceToDelete(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="button" variant="danger" class="flex-1 shadow-floating" onClick={handleWorkspaceDelete}>
-                Delete
-              </Button>
-            </div>
+          <DialogHeader class="gap-2 text-left">
+            <DialogTitle>Sent for approval</DialogTitle>
+            <DialogDescription>
+              Your sandbox updates need a guardian review. We’ll let you know once the Money Map is updated.
+            </DialogDescription>
+          </DialogHeader>
+          <div class="flex justify-end">
+            <Button type="button" onClick={() => setApprovalConfirmOpen(false)}>
+              Got it
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

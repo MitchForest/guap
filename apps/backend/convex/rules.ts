@@ -1,6 +1,6 @@
-import { MutationCtx, mutation } from './_generated/server';
+import { MutationCtx, mutation } from '@guap/api/codegen/server';
 import { v } from 'convex/values';
-import { Id } from './_generated/dataModel';
+import { Id } from '@guap/api/codegen/dataModel';
 
 const now = () => Date.now();
 

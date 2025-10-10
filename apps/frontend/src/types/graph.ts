@@ -1,8 +1,10 @@
-export type CanvasNodeKind = 'income' | 'account' | 'pod' | 'goal' | 'liability';
+import type { IncomeCadence, WorkspaceNodeKind } from '@guap/types';
+
+export type CanvasNodeKind = WorkspaceNodeKind;
 
 export type CanvasPodType = 'goal' | 'category' | 'envelope' | 'custom';
 
-export type CanvasInflowCadence = 'daily' | 'weekly' | 'monthly';
+export type CanvasInflowCadence = Extract<IncomeCadence, 'daily' | 'weekly' | 'monthly'>;
 
 export type CanvasInflow = {
   amount: number;
