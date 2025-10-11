@@ -1,5 +1,6 @@
 import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
 import type { SelectOption } from '~/components/ui/select';
 import {
   Select,
@@ -233,9 +234,10 @@ const RuleDrawer: Component<RuleDrawerProps> = (props) => {
                     <div class="mt-3 flex items-center gap-3">
                       <div class="flex items-center gap-2">
                         <span class="text-sm text-slate-500">%</span>
-                        <input
+                        <Input
                           type="number"
-                          class="w-20 rounded-lg border border-slate-200 px-2 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                          size="sm"
+                          class="w-20 rounded-lg border border-slate-200 px-2 py-2 text-sm text-slate-700"
                           value={allocation.percentage}
                           min={0}
                           max={100}

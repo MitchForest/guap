@@ -14,6 +14,7 @@ import {
   fetchConvexAuthToken,
   getBetterAuthSession,
   refreshBetterAuthSession,
+  type BetterAuthSession,
 } from '~/lib/authClient';
 import { clearConvexAuthToken, setConvexAuthToken } from '~/services/convexClient';
 import { useRole } from '~/contexts/RoleContext';
@@ -94,13 +95,19 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     if (hydrating) return;
     hydrating = true;
     setIsLoading(true);
+    let session: BetterAuthSession | null = null;
     try {
       if (options?.refresh) {
-        await refreshBetterAuthSession().catch((error) => {
+        const refreshed = await refreshBetterAuthSession().catch((error) => {
           console.warn('Better Auth session refresh failed', error);
+          return null;
         });
+        if (refreshed) {
+          session = refreshed;
+        }
       }
-      const session = await getBetterAuthSession();
+      session = session ?? (await getBetterAuthSession());
+      console.log('Auth hydrate: session result', session);
       if (!session?.user) {
         clearConvexAuthToken();
         setUser(null);
@@ -110,8 +117,8 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
       }
 
       const baseName = session.user.name ?? session.user.email ?? 'Member';
-      const tokenResult = await fetchConvexAuthToken();
-      const accessToken = tokenResult?.data?.token ?? null;
+      const accessToken = await fetchConvexAuthToken();
+      console.log('Auth hydrate: convex token', accessToken);
 
       if (!accessToken) {
         console.warn('No Convex token received from Better Auth');
@@ -124,6 +131,11 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
       }
 
       let profile = await guapApi.getUserProfile(session.user.id);
+      console.log('Auth hydrate: session loaded', {
+        sessionUser: session.user,
+        hasAccessToken: !!accessToken,
+        hasProfile: !!profile,
+      });
 
       if (!profile) {
         const emailAddress = session.user.email;
@@ -137,7 +149,7 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
           role: 'kid',
         });
         profile = await guapApi.getUserById(profileId);
-      }
+     }
 
       if (!profile) {
         throw new Error('Unable to resolve profile');
@@ -161,6 +173,7 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         role: profile.role,
       };
 
+      console.log('Auth hydrate: setting user', active);
       setUser(active);
       setRole(active.role);
       setError(null);

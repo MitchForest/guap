@@ -1,5 +1,5 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
-import { convex, crossDomain } from '@convex-dev/better-auth/plugins';
+import { convex } from '@convex-dev/better-auth/plugins';
 import { components } from '@guap/api/codegen/api';
 import type { DataModel } from '@guap/api/codegen/dataModel';
 import { query } from '@guap/api/codegen/server';
@@ -9,9 +9,7 @@ import { betterAuth } from 'better-auth';
 const convexSiteUrl = process.env.CONVEX_SITE_URL!;
 const frontendUrl = process.env.SITE_URL ?? 'http://localhost:3001';
 
-export const authComponent = createClient<DataModel>(components.betterAuth, {
-  verbose: true, // Enable verbose logging to debug
-});
+export const authComponent = createClient<DataModel>(components.betterAuth);
 
 const getDb = (ctx: GenericCtx<DataModel>): QueryCtx['db'] =>
   (ctx as any).db as QueryCtx['db'];
@@ -37,12 +35,7 @@ export const createAuth = (
       updateAge: 60 * 60 * 24,
     },
     trustedOrigins: [frontendUrl, 'http://localhost:3001'].filter(Boolean) as string[],
-    plugins: [
-      crossDomain({
-        siteUrl: frontendUrl,
-      }),
-      convex(),
-    ],
+    plugins: [convex()],
   });
 
 export const getCurrentAuthUser = query({

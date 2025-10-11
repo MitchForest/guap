@@ -1,6 +1,7 @@
 import { useRouter } from '@tanstack/solid-router';
 import { Component, createSignal, createEffect } from 'solid-js';
 import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
 import { useAuth } from '~/contexts/AuthContext';
 import { AppPaths } from '~/routerPaths';
 
@@ -37,23 +38,11 @@ const SignInPage: Component = () => {
         </div>
         <label class="space-y-2 text-sm font-medium text-slate-700">
           Email
-          <input
-            type="email"
-            required
-            class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-            value={email()}
-            onInput={(event) => setEmail(event.currentTarget.value)}
-          />
+          <Input type="email" required value={email()} onInput={(event) => setEmail(event.currentTarget.value)} />
         </label>
         <label class="space-y-2 text-sm font-medium text-slate-700">
           Password
-          <input
-            type="password"
-            required
-            class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-            value={password()}
-            onInput={(event) => setPassword(event.currentTarget.value)}
-          />
+          <Input type="password" required value={password()} onInput={(event) => setPassword(event.currentTarget.value)} />
         </label>
         {error() && <p class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">{error()}</p>}
         <Button type="submit" class="w-full" disabled={isLoading()}>
@@ -61,13 +50,14 @@ const SignInPage: Component = () => {
         </Button>
         <p class="text-center text-sm text-subtle">
           Need an account?{' '}
-          <button
+          <Button
             type="button"
-            class="font-semibold text-slate-900 underline-offset-4 hover:underline"
+            variant="ghost"
+            class="px-0 font-semibold text-slate-900 underline-offset-4 hover:underline"
             onClick={() => router.navigate({ to: AppPaths.signUp })}
           >
             Sign up
-          </button>
+          </Button>
         </p>
       </form>
     </div>

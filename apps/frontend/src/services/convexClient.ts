@@ -13,23 +13,31 @@ let currentToken: string | null = null;
 let authConfigured = false;
 
 const applyAuthFetcher = () => {
-  const setAuth = (convex as unknown as { setAuth?: (fetcher: AuthTokenFetcher) => void }).setAuth;
-  if (typeof setAuth !== 'function') {
+  const client = convex as unknown as { setAuth?: (fetcher: AuthTokenFetcher) => void };
+  if (typeof client.setAuth !== 'function') {
     return;
   }
   const fetcher: AuthTokenFetcher = async () => currentToken;
-  setAuth(fetcher);
+  client.setAuth(fetcher);
   authConfigured = true;
 };
 
 export const setConvexAuthToken = (token: string | null) => {
   currentToken = typeof token === 'string' && token.length > 0 ? token : null;
-  applyAuthFetcher();
+  try {
+    applyAuthFetcher();
+  } catch (error) {
+    console.warn('Failed to register Convex auth fetcher', error);
+  }
 };
 
 export const clearConvexAuthToken = () => {
   currentToken = null;
   if (authConfigured) {
-    applyAuthFetcher();
+    try {
+      applyAuthFetcher();
+    } catch (error) {
+      console.warn('Failed to clear Convex auth fetcher', error);
+    }
   }
 };

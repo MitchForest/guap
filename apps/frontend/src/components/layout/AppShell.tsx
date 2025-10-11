@@ -11,6 +11,7 @@ import {
   onMount,
 } from 'solid-js';
 import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
 import { useAppData } from '~/contexts/AppDataContext';
 import { useAuth } from '~/contexts/AuthContext';
 import { formatCurrency } from '~/utils/format';
@@ -314,9 +315,9 @@ const AppShell: Component<AppShellProps> = (props) => {
               <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
                 🔍
               </span>
-              <input
-                class="h-10 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-900/10"
+              <Input
                 type="search"
+                class="h-10 w-full pl-10 pr-3"
                 placeholder="Search accounts, goals, automations…"
                 aria-label="Search"
               />
@@ -325,26 +326,20 @@ const AppShell: Component<AppShellProps> = (props) => {
           <div class="flex items-center gap-3">
             <Show when={workspacePair().live && workspacePair().sandbox}>
               <div class="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1 text-xs font-semibold text-slate-700 shadow-sm">
-                <button
+                <Button
                   type="button"
-                  class={clsx(
-                    'flex items-center gap-2 rounded-xl px-3 py-1.5 transition',
-                    activeVariant() === 'live'
-                      ? 'bg-slate-900 text-white shadow'
-                      : 'text-slate-600 hover:text-slate-900'
-                  )}
+                  variant={activeVariant() === 'live' ? 'primary' : 'ghost'}
+                  size="sm"
+                  class={clsx('gap-2 rounded-xl px-3 py-1.5', activeVariant() === 'live' ? 'shadow' : '')}
                   onClick={() => handleVariantSelect('live')}
                 >
                   Money Map
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  class={clsx(
-                    'flex items-center gap-2 rounded-xl px-3 py-1.5 transition',
-                    activeVariant() === 'sandbox'
-                      ? 'bg-slate-900 text-white shadow'
-                      : 'text-slate-600 hover:text-slate-900'
-                  )}
+                  variant={activeVariant() === 'sandbox' ? 'primary' : 'ghost'}
+                  size="sm"
+                  class={clsx('gap-2 rounded-xl px-3 py-1.5', activeVariant() === 'sandbox' ? 'shadow' : '')}
                   onClick={() => handleVariantSelect('sandbox')}
                 >
                   Sandbox
@@ -368,7 +363,7 @@ const AppShell: Component<AppShellProps> = (props) => {
                       ? 'Stale'
                       : 'Synced'}
                   </span>
-                </button>
+                </Button>
               </div>
             </Show>
             <Button type="button" variant="secondary" size="sm" class="hidden sm:flex">

@@ -1,5 +1,10 @@
-import type { WorkspaceRecord } from '@guap/api';
-import type { WorkspacePublishPayload } from '@guap/types';
+import {
+  createWorkspacePublishPayload,
+  type WorkspaceGraphFlowInput,
+  type WorkspaceGraphNodeInput,
+  type WorkspaceGraphRuleInput,
+  type WorkspaceRecord,
+} from '@guap/api';
 import { guapApi } from '~/services/guapApi';
 
 type WorkspaceVariant = 'live' | 'sandbox';
@@ -7,34 +12,10 @@ type VariantKey = `${string}:${WorkspaceVariant}`;
 
 let lastHouseholdId: string | null = null;
 
-type GraphPublishPayload = {
-  nodes: Array<{
-    id: string;
-    kind: WorkspacePublishPayload['nodes'][number]['type'];
-    category?: string | null;
-    parentId?: string | null;
-    podType?: string | null;
-    label: string;
-    icon?: string;
-    accent?: string;
-    balance?: number;
-    inflow?: { amount: number; cadence: 'monthly' | 'weekly' | 'daily' } | null;
-    position: { x: number; y: number };
-    metadata?: Record<string, unknown> | null;
-  }>;
-  flows: Array<{
-    id: string;
-    sourceId: string;
-    targetId: string;
-    ruleId?: WorkspacePublishPayload['edges'][number]['ruleClientId'];
-  }>;
-  rules: Array<{
-    id: string;
-    sourceNodeId: string;
-    trigger: WorkspacePublishPayload['rules'][number]['trigger'];
-    triggerNodeId?: string | null;
-    allocations: Array<{ targetNodeId: string; percentage: number }>;
-  }>;
+export type WorkspaceGraphDraft = {
+  nodes: WorkspaceGraphNodeInput[];
+  flows: WorkspaceGraphFlowInput[];
+  rules: WorkspaceGraphRuleInput[];
 };
 
 const variantCache = new Map<VariantKey, WorkspaceRecord | null>();
@@ -109,59 +90,19 @@ export async function fetchGraph(slug: string) {
   return await guapApi.fetchWorkspaceGraph(slug);
 }
 
-export async function publishGraph(target: string | WorkspaceRecord, payload: GraphPublishPayload) {
+export async function publishGraph(target: string | WorkspaceRecord, draft: WorkspaceGraphDraft) {
   const workspace = typeof target === 'string' ? await getWorkspace(target) : target;
   if (!workspace) {
     throw new Error('Workspace not found');
   }
   variantCache.delete(cacheKey(workspace.householdId, workspace.variant));
-  return await guapApi.publishWorkspaceGraph({
+  const publishPayload = createWorkspacePublishPayload({
     slug: workspace.slug,
-    nodes: payload.nodes.map((node) => {
-      const metadata: Record<string, unknown> = node.metadata ? { ...node.metadata } : {};
-      if (node.podType) metadata.podType = node.podType;
-      if (node.inflow) metadata.inflow = node.inflow;
-
-      return {
-        clientId: node.id,
-        type:
-          node.kind === 'income'
-            ? 'income'
-            : node.kind === 'pod'
-            ? 'pod'
-            : node.kind === 'goal'
-            ? 'goal'
-            : node.kind === 'liability'
-            ? 'liability'
-            : 'account',
-        label: node.label,
-        icon: node.icon,
-        accent: node.accent,
-        balanceCents: typeof node.balance === 'number' ? Math.round(node.balance * 100) : undefined,
-        position: node.position,
-        parentClientId: node.parentId ?? null,
-        category: node.category ?? null,
-        metadata: Object.keys(metadata).length ? metadata : undefined,
-      };
-    }),
-    edges: payload.flows.map((flow) => ({
-      clientId: flow.id,
-      sourceClientId: flow.sourceId,
-      targetClientId: flow.targetId,
-      kind: flow.ruleId ? 'automation' : 'manual',
-      ruleClientId: flow.ruleId,
-    })),
-    rules: payload.rules.map((rule) => ({
-      clientId: rule.id,
-      sourceClientId: rule.sourceNodeId,
-      trigger: rule.trigger,
-      triggerNodeClientId: rule.triggerNodeId ?? null,
-      allocations: rule.allocations.map((alloc) => ({
-        targetClientId: alloc.targetNodeId,
-        percentage: alloc.percentage,
-      })),
-    })),
+    nodes: draft.nodes,
+    flows: draft.flows,
+    rules: draft.rules,
   });
+  return await guapApi.publishWorkspaceGraph(publishPayload);
 }
 
 export async function resetSandbox(params: { householdId: string; actorUserId: string }) {

@@ -1,6 +1,7 @@
 import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
 import type { SelectOption } from '~/components/ui/select';
 import {
   Select,
@@ -696,11 +697,12 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
           <div class="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <label class="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
               Balance
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
-                class="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                size="sm"
+                class="mt-1.5"
                 value={balanceInput()}
                 onInput={(event) => {
                   setBalanceInput(event.currentTarget.value);
@@ -723,10 +725,11 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
             <Show when={node() && node()!.kind !== 'income'}>
               <label class="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
                 Return rate (%)
-                <input
+                <Input
                   type="number"
                   step="0.01"
-                  class="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                  size="sm"
+                  class="mt-1.5"
                   placeholder="0.0"
                   value={returnRateInput()}
                   onInput={(event) => {
@@ -758,11 +761,12 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label class="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-500">
                   Amount
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     step="0.01"
-                    class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                    size="sm"
+                    class="mt-1"
                     placeholder="0.00"
                     value={incomeAmountInput()}
                     onInput={(event) => {
@@ -914,10 +918,11 @@ const NodeDrawer: Component<NodeDrawerProps> = (props) => {
                             </div>
                           </Show>
                           <div class="flex items-center gap-1">
-                            <input
+                            <Input
                               type="number"
                               inputMode="decimal"
-                              class="h-8 w-16 rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-800 shadow-inner focus:outline-none focus:ring-2 focus:ring-slate-900/30"
+                              size="sm"
+                              class="h-8 w-16 rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-800 shadow-inner"
                               value={allocation.percentage}
                               min={0}
                               max={100}

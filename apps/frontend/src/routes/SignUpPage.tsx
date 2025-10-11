@@ -2,6 +2,7 @@ import type { UserRole } from '@guap/types';
 import { useRouter } from '@tanstack/solid-router';
 import { Component, createEffect, createSignal } from 'solid-js';
 import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
 import { useAuth } from '~/contexts/AuthContext';
 import { AppPaths } from '~/routerPaths';
 
@@ -40,33 +41,15 @@ const SignUpPage: Component = () => {
         </div>
         <label class="space-y-2 text-sm font-medium text-slate-700">
           Name
-          <input
-            required
-            class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-            value={name()}
-            onInput={(event) => setName(event.currentTarget.value)}
-          />
+          <Input required value={name()} onInput={(event) => setName(event.currentTarget.value)} />
         </label>
         <label class="space-y-2 text-sm font-medium text-slate-700">
           Email
-          <input
-            type="email"
-            required
-            class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-            value={email()}
-            onInput={(event) => setEmail(event.currentTarget.value)}
-          />
+          <Input type="email" required value={email()} onInput={(event) => setEmail(event.currentTarget.value)} />
         </label>
         <label class="space-y-2 text-sm font-medium text-slate-700">
           Password
-          <input
-            type="password"
-            required
-            minlength={8}
-            class="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 shadow-sm transition focus:border-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400"
-            value={password()}
-            onInput={(event) => setPassword(event.currentTarget.value)}
-          />
+          <Input type="password" required minlength={8} value={password()} onInput={(event) => setPassword(event.currentTarget.value)} />
         </label>
         <label class="space-y-2 text-sm font-medium text-slate-700">
           Role
@@ -85,13 +68,14 @@ const SignUpPage: Component = () => {
         </Button>
         <p class="text-center text-sm text-subtle">
           Already have an account?{' '}
-          <button
+          <Button
             type="button"
-            class="font-semibold text-slate-900 underline-offset-4 hover:underline"
+            variant="ghost"
+            class="px-0 font-semibold text-slate-900 underline-offset-4 hover:underline"
             onClick={() => router.navigate({ to: AppPaths.signIn })}
           >
             Sign in
-          </button>
+          </Button>
         </p>
       </form>
     </div>

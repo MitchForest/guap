@@ -1,5 +1,6 @@
 import { Component, Show, createEffect, createSignal } from 'solid-js';
 import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -101,8 +102,7 @@ const IncomeSourceModal: Component<IncomeSourceModalProps> = (props) => {
           </DialogHeader>
           <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             Name
-            <input
-              class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
+            <Input
               placeholder="e.g. Salary, Freelance, Rent"
               value={name()}
               onInput={(event) => {
@@ -113,11 +113,10 @@ const IncomeSourceModal: Component<IncomeSourceModalProps> = (props) => {
           </label>
           <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             Starting balance
-            <input
+            <Input
               type="number"
               min="0"
               step="0.01"
-              class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
               placeholder="0.00"
               value={startingBalance()}
               onInput={(event) => {
@@ -129,11 +128,10 @@ const IncomeSourceModal: Component<IncomeSourceModalProps> = (props) => {
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
               Income amount
-              <input
+              <Input
                 type="number"
                 min="0"
                 step="0.01"
-                class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/30"
                 placeholder="e.g. 2500"
                 value={incomeAmount()}
                 onInput={(event) => {

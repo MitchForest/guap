@@ -1,24 +1,93 @@
 import { createAuthClient } from 'better-auth/react';
-import { convexClient } from '@convex-dev/better-auth/client/plugins';
+import { convexClient, crossDomainClient } from '@convex-dev/better-auth/client/plugins';
 
-const baseURL = import.meta.env.VITE_CONVEX_SITE_URL;
+type ResolvedBaseSettings = {
+  baseURL?: string;
+  basePath?: string;
+};
 
-type BetterAuthClient = ReturnType<typeof createAuthClient>;
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '');
 
-type ExtendedAuthClient = BetterAuthClient & {
-  session: {
-    get: () => Promise<BetterAuthSession | null>;
-  };
+const resolveBaseSettings = (raw?: string): ResolvedBaseSettings => {
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const url = new URL(raw);
+    const normalizedPath = trimTrailingSlash(url.pathname);
+
+    if (normalizedPath.endsWith('/api/auth/convex')) {
+      return { baseURL: url.origin, basePath: '/api/auth' };
+    }
+
+    if (normalizedPath.endsWith('/api/auth')) {
+      return { baseURL: url.origin, basePath: '/api/auth' };
+    }
+
+    return { baseURL: raw };
+  } catch {
+    return { baseURL: raw };
+  }
+};
+
+// Better Auth needs the Convex HTTP endpoint (.convex.site). Fall back to VITE_CONVEX_URL
+// if the site-specific variable isn’t provided.
+const rawBaseUrl =
+  import.meta.env.VITE_CONVEX_SITE_URL ?? import.meta.env.VITE_CONVEX_URL ?? undefined;
+
+const { baseURL, basePath } = resolveBaseSettings(rawBaseUrl);
+
+const clientOptions = {
+  baseURL,
+  basePath,
+  plugins: [convexClient(), crossDomainClient()],
+};
+
+type SessionQueryOptions = {
+  disableCookieCache?: boolean;
+  disableRefresh?: boolean;
+};
+
+type SessionApi = {
+  getSession: (args?: { query?: SessionQueryOptions }) => Promise<{
+    data: BetterAuthSession | null;
+    error: { message?: string | null } | null;
+  }>;
+};
+
+type ConvexApi = {
   convex: {
     token: () => Promise<ConvexTokenResponse>;
   };
-  updateSession: () => Promise<void>;
 };
 
-export const authClient = createAuthClient({
-  baseURL: baseURL ?? undefined,
-  plugins: [convexClient()],
-}) as unknown as ExtendedAuthClient;
+type RawAuthClient = ReturnType<typeof createAuthClient<typeof clientOptions>>;
+
+const hasSessionApi = (value: RawAuthClient): value is RawAuthClient & SessionApi => {
+  const candidate = value as Partial<SessionApi>;
+  return typeof candidate.getSession === 'function';
+};
+
+const hasConvexApi = (value: RawAuthClient): value is RawAuthClient & ConvexApi => {
+  const candidate = value as Partial<ConvexApi>;
+  return typeof candidate.convex?.token === 'function';
+};
+
+const ensureAuthClientCapabilities = (
+  client: RawAuthClient,
+): RawAuthClient & SessionApi & ConvexApi => {
+  if (!hasSessionApi(client)) {
+    throw new Error('Better Auth client missing session helpers');
+  }
+  if (!hasConvexApi(client)) {
+    throw new Error('Better Auth client missing convex token helper');
+  }
+
+  return client;
+};
+
+export const authClient = ensureAuthClientCapabilities(createAuthClient(clientOptions));
 
 export type AuthClient = typeof authClient;
 
@@ -40,12 +109,63 @@ type ConvexTokenResponse = {
   } | null;
 };
 
-export const getBetterAuthSession = async (): Promise<BetterAuthSession | null> =>
-  await authClient.session.get();
+type SessionFetchResult = Awaited<ReturnType<SessionApi['getSession']>>;
 
-export const fetchConvexAuthToken = async (): Promise<ConvexTokenResponse> =>
-  await authClient.convex.token();
+const unwrapSessionResponse = (response: SessionFetchResult): BetterAuthSession | null => {
+  if (response.error) {
+    return null;
+  }
+  const payload = response.data;
+  if (!payload) {
+    return null;
+  }
+  if (typeof (payload as { data?: unknown }).data !== 'undefined') {
+    const inner = (payload as { data?: unknown; error?: unknown }).data;
+    return (inner ?? null) as BetterAuthSession | null;
+  }
+  return payload as unknown as BetterAuthSession | null;
+};
 
-export const refreshBetterAuthSession = async () => {
-  await authClient.updateSession();
+export const getBetterAuthSession = async (
+  query?: SessionQueryOptions,
+): Promise<BetterAuthSession | null> => {
+  const response = await authClient.getSession(query ? { query } : undefined);
+  console.log('getBetterAuthSession: raw response', response);
+  const session = unwrapSessionResponse(response);
+  console.log('getBetterAuthSession: unwrapped session', session);
+  return session;
+};
+
+type ConvexTokenResult = Awaited<ReturnType<(typeof authClient)['convex']['token']>>;
+
+const extractConvexToken = (result: ConvexTokenResult): string | null => {
+  if (!result?.data) return null;
+  const wrapped = result.data as ConvexTokenResponse;
+  return wrapped?.data?.token ?? (result.data as unknown as { token?: string })?.token ?? null;
+};
+
+export const fetchConvexAuthToken = async (): Promise<string | null> => {
+  const result = await authClient.convex.token();
+  if (result.error) {
+    throw new Error(result.error.message ?? 'Failed to fetch Convex auth token');
+  }
+  return extractConvexToken(result);
+};
+
+export const refreshBetterAuthSession = async (): Promise<BetterAuthSession | null> => {
+  try {
+    const response = await authClient.getSession({
+      query: {
+        disableCookieCache: true,
+      },
+    });
+    return unwrapSessionResponse(response);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('aborted') || message.includes('Failed to fetch')) {
+      // Treat aborted or transient network fetches as a cache miss.
+      return null;
+    }
+    throw error;
+  }
 };

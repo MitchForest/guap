@@ -282,6 +282,7 @@ const NodeCard: Component<NodeCardProps> = (props) => {
           </div>
         </Show>
         <div class="absolute left-1/2 top-0 flex -translate-x-1/2 -translate-y-full flex-col items-center">
+          {/* Raw button keeps pointer semantics for flow anchors; design-system Button adds extra DOM */}
           <button
             type="button"
             class="h-8 w-24"

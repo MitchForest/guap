@@ -6,7 +6,7 @@ import type { NodeAllocationStatus, IncomingAllocationInfo } from '../components
 import { CanvasFlow, CanvasNode, CanvasInflow, CanvasInflowCadence, CanvasPodType } from '../types/graph';
 import BottomDock from '../components/layout/BottomDock';
 import ZoomPad from '../components/layout/ZoomPad';
-import { AnchorType, NODE_CARD_HEIGHT, NODE_CARD_WIDTH } from '../components/canvas/NodeCard';
+import { NODE_CARD_HEIGHT, NODE_CARD_WIDTH } from '../components/canvas/NodeCard';
 import { buildEdgePath, getAnchorPoint } from '../components/canvas/EdgeLayer';
 import { clsx } from 'clsx';
 import EmptyHero from '../components/empty/EmptyHero';
@@ -429,7 +429,6 @@ const CanvasPage: Component = () => {
     setDrawerNodeId(null);
     setMarquee(null);
     exitFlowMode();
-    setHoveredAnchor(null);
   };
 
   const {
@@ -447,6 +446,28 @@ const CanvasPage: Component = () => {
     cloneSnapshot,
     cap: HISTORY_CAP,
   });
+  const {
+    flowComposer,
+    hoveredAnchor,
+    connectingPreview,
+    connectingFrom,
+    enterFlowMode,
+    exitFlowMode,
+    startFlowFromNode,
+    completeFlow,
+    handleFlowStartFromAnchor,
+    handleFlowTargetSelect,
+  } = useFlowComposer({
+    getNodes: () => graph.nodes,
+    getFlows: () => graph.flows,
+    updateFlows: (mutator) => setGraph('flows', (flows) => mutator([...flows])),
+    pushHistory,
+    openDrawer: (nodeId) => setDrawerNodeId(nodeId),
+    translateClientToWorld,
+    getAnchorPoint,
+    buildEdgePath,
+  });
+
 
   function resetWorkspaceState() {
     setGraph('nodes', () => []);
@@ -1058,199 +1079,14 @@ const CanvasPage: Component = () => {
     }
   };
 
-  const translateClientToWorld = (clientX: number, clientY: number) => {
+  function translateClientToWorld(clientX: number, clientY: number) {
     if (!viewportElement) return null;
     const { scale, translate } = viewportState();
     const rect = viewportElement.getBoundingClientRect();
     const x = (clientX - rect.left - translate.x) / scale;
     const y = (clientY - rect.top - translate.y) / scale;
     return { x, y };
-  };
-
-  const translatePointerToWorld = (event: PointerEvent) =>
-    translateClientToWorld(event.clientX, event.clientY);
-
-  const updateFlowCursor = (clientX: number, clientY: number) => {
-    const composer = flowComposer();
-    if (composer.stage !== 'pickTarget') return;
-    const basePoint = translateClientToWorld(clientX, clientY);
-    if (!basePoint) return;
-    let cursorPoint = basePoint;
-    const anchor = findAnchorAtClientPoint(clientX, clientY);
-    if (anchor && anchor.anchor === 'top' && anchor.nodeId !== composer.sourceNodeId) {
-      const targetNode = graph.nodes.find((n) => n.id === anchor.nodeId);
-      if (targetNode) {
-        cursorPoint = getAnchorPoint(targetNode, 'top');
-        setHoveredAnchor(anchor);
-        console.log('[flow] cursor over target anchor', {
-          sourceNodeId: composer.sourceNodeId,
-          targetNodeId: anchor.nodeId,
-        });
-      } else {
-        console.log('[flow] anchor node not found during cursor update', anchor);
-        setHoveredAnchor(null);
-      }
-    } else {
-      setHoveredAnchor(null);
-    }
-    setFlowComposer((prev) => (prev.stage === 'pickTarget' ? { ...prev, cursorPoint } : prev));
-  };
-
-  const findAnchorAtClientPoint = (clientX: number, clientY: number) => {
-    let element = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
-    while (element) {
-      const nodeId = element.dataset.anchorNode;
-      const anchorType = element.dataset.anchorType as AnchorType | undefined;
-      if (nodeId && anchorType) {
-        return { nodeId, anchor: anchorType };
-      }
-      element = element.parentElement;
-    }
-    return null;
-  };
-
-  const handleGlobalPointerMove = (event: PointerEvent) => {
-    updateFlowCursor(event.clientX, event.clientY);
-  };
-
-  function handleFlowComposerKeyDown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      exitFlowMode();
-    }
   }
-
-  const handleGlobalMouseMove = (event: MouseEvent) => {
-    updateFlowCursor(event.clientX, event.clientY);
-  };
-
-  function removeFlowListeners() {
-    window.removeEventListener('pointermove', handleGlobalPointerMove, true);
-    window.removeEventListener('pointermove', handleGlobalPointerMove);
-    window.removeEventListener('keydown', handleFlowComposerKeyDown);
-    window.removeEventListener('mousemove', handleGlobalMouseMove, true);
-    window.removeEventListener('mousemove', handleGlobalMouseMove);
-  }
-
-  function ensureFlowListeners() {
-    removeFlowListeners();
-    window.addEventListener('pointermove', handleGlobalPointerMove, true);
-    window.addEventListener('pointermove', handleGlobalPointerMove);
-    window.addEventListener('keydown', handleFlowComposerKeyDown);
-    window.addEventListener('mousemove', handleGlobalMouseMove, true);
-    window.addEventListener('mousemove', handleGlobalMouseMove);
-  }
-
-  const exitFlowMode = () => {
-    const composer = flowComposer();
-    if (composer.stage !== 'idle') {
-      console.log('[flow] cancel', composer);
-      console.trace('[flow] cancel stack');
-    }
-    setFlowComposer({ stage: 'idle' });
-    setHoveredAnchor(null);
-    removeFlowListeners();
-  };
-
-  const completeFlow = (targetNodeId: string) => {
-    const composer = flowComposer();
-    if (composer.stage !== 'pickTarget') return;
-    console.log('[flow] attempt complete', {
-      sourceNodeId: composer.sourceNodeId,
-      targetNodeId,
-    });
-    if (targetNodeId === composer.sourceNodeId) {
-      console.log('[flow] abort self-connection', targetNodeId);
-      exitFlowMode();
-      return;
-    }
-    const exists = graph.flows.some(
-      (flow) => flow.sourceId === composer.sourceNodeId && flow.targetId === targetNodeId
-    );
-    if (!exists) {
-      const id = `${composer.sourceNodeId}-${targetNodeId}-${Date.now()}`;
-      setGraph('flows', (flows) => [
-        ...flows,
-        { id, sourceId: composer.sourceNodeId, targetId: targetNodeId, tag: 'Flow' },
-      ]);
-      pushHistory();
-      console.log('[flow] created', { id, sourceNodeId: composer.sourceNodeId, targetNodeId });
-      console.log('[flow] all', graph.flows.map((flow) => flow.id));
-      
-      // Auto-open drawer for income nodes to set up allocation rules
-      const sourceNode = graph.nodes.find((n) => n.id === composer.sourceNodeId);
-      if (sourceNode?.kind === 'income') {
-        setDrawerNodeId(composer.sourceNodeId);
-      }
-    } else {
-      console.log('[flow] already exists', {
-        sourceNodeId: composer.sourceNodeId,
-        targetNodeId,
-      });
-    }
-    exitFlowMode();
-  };
-
-  const startFlowFromNode = (nodeId: string, event?: PointerEvent) => {
-    const node = graph.nodes.find((n) => n.id === nodeId);
-    if (!node) return;
-    const sourcePoint = getAnchorPoint(node, 'bottom');
-    const initialCursor = event ? translatePointerToWorld(event) ?? sourcePoint : sourcePoint;
-
-    setFlowComposer({
-      stage: 'pickTarget',
-      sourceNodeId: nodeId,
-      sourcePoint,
-      cursorPoint: initialCursor,
-    });
-    setHoveredAnchor(null);
-    ensureFlowListeners();
-    if (event) {
-      updateFlowCursor(event.clientX, event.clientY);
-    }
-    console.log('[flow] source selected', {
-      sourceNodeId: nodeId,
-      sourcePoint,
-    });
-  };
-
-  const enterFlowMode = () => {
-    const composer = flowComposer();
-    if (composer.stage === 'pickTarget') return;
-    setFlowComposer({ stage: 'pickSource' });
-    setHoveredAnchor(null);
-    removeFlowListeners();
-    console.log('[flow] mode armed for source selection');
-  };
-
-  const handleFlowStartFromAnchor = (payload: { nodeId: string; anchor: AnchorType; event: PointerEvent }) => {
-    if (payload.anchor !== 'bottom') return;
-    const composer = flowComposer();
-    if (composer.stage === 'pickTarget' && composer.sourceNodeId === payload.nodeId) {
-      console.log('[flow] duplicate source trigger ignored', composer);
-      return;
-    }
-    startFlowFromNode(payload.nodeId, payload.event);
-  };
-
-  const handleFlowTargetSelect = (payload: {
-    nodeId: string;
-    anchor: AnchorType;
-    event: PointerEvent;
-  }) => {
-    if (payload.anchor !== 'top') return;
-    const composer = flowComposer();
-    if (composer.stage !== 'pickTarget') return;
-    const node = graph.nodes.find((n) => n.id === payload.nodeId);
-    if (!node) return;
-    const targetPoint = getAnchorPoint(node, payload.anchor);
-    setFlowComposer((prev) => (prev.stage === 'pickTarget' ? { ...prev, cursorPoint: targetPoint } : prev));
-    setHoveredAnchor({ nodeId: payload.nodeId, anchor: 'top' });
-    console.log('[flow] target anchor pressed', {
-      nodeId: payload.nodeId,
-      anchor: payload.anchor,
-    });
-    completeFlow(payload.nodeId);
-  };
 
   const handleMarqueeStart = (payload: {
     local: { x: number; y: number };
@@ -1312,10 +1148,6 @@ const CanvasPage: Component = () => {
     );
   });
 
-  onCleanup(() => {
-    removeFlowListeners();
-  });
-
   createEffect(() => {
     if (!contextMenu()) return;
     const handleClick = () => setContextMenu(null);
@@ -1336,31 +1168,6 @@ const CanvasPage: Component = () => {
   const handleViewportChange = (payload: { scale: number; translate: { x: number; y: number } }) => {
     setScalePercent(Math.round(payload.scale * 100));
   };
-
-  const connectingPreview = createMemo(() => {
-    const composer = flowComposer();
-    if (composer.stage !== 'pickTarget') return null;
-    const path = buildEdgePath(composer.sourcePoint, composer.cursorPoint);
-    return (
-      <svg class="absolute inset-0 h-full w-full pointer-events-none" style={{ overflow: 'visible' }}>
-        <path
-          d={path}
-          stroke="rgba(14, 116, 144, 0.8)"
-          stroke-width="4"
-          stroke-linecap="round"
-          stroke-dasharray="6 6"
-          fill="none"
-        />
-      </svg>
-    );
-  });
-
-  const connectingFrom = createMemo(() => {
-    const composer = flowComposer();
-    return composer.stage === 'pickTarget'
-      ? { nodeId: composer.sourceNodeId, anchor: 'bottom' as AnchorType }
-      : null;
-  });
 
   const createNodeAtViewport = async (preset: {
     kind: CanvasNode['kind'];

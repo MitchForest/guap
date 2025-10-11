@@ -22,6 +22,13 @@ import { z } from 'zod';
 import type { ConvexClientInstance } from './env';
 import type { BackendApi } from './types';
 export { createConvexClient } from './env';
+export {
+  createWorkspacePublishPayload,
+  type WorkspaceGraphNodeInput,
+  type WorkspaceGraphFlowInput,
+  type WorkspaceGraphRuleInput,
+  type WorkspaceGraphPublishInput,
+} from './workspaces';
 
 type Client = ConvexClientInstance;
 
