@@ -310,3 +310,71 @@ export const WorkspacePublishResultSchema = z.object({
   edges: z.record(z.string(), z.string()),
   rules: z.record(z.string(), z.string()),
 });
+
+export const MoneyMapNodeKindValues = ['account', 'income', 'expense', 'goal', 'holding'] as const;
+export const MoneyMapNodeKindSchema = z.enum(MoneyMapNodeKindValues);
+
+export const MoneyMapRuleTriggerValues = ['manual', 'schedule', 'threshold'] as const;
+export const MoneyMapRuleTriggerSchema = z.enum(MoneyMapRuleTriggerValues);
+
+export const MoneyMapChangeStatusValues = ['draft', 'awaiting_guardian', 'approved', 'rejected'] as const;
+export const MoneyMapChangeStatusSchema = z.enum(MoneyMapChangeStatusValues);
+
+export const MoneyMapRecordSchema = z.object({
+  _id: z.string(),
+  organizationId: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const MoneyMapNodeRecordSchema = z.object({
+  _id: z.string(),
+  mapId: z.string(),
+  key: z.string(),
+  kind: MoneyMapNodeKindSchema,
+  label: z.string(),
+  metadata: z.record(z.string(), z.any()).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const MoneyMapEdgeRecordSchema = z.object({
+  _id: z.string(),
+  mapId: z.string(),
+  sourceKey: z.string(),
+  targetKey: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const MoneyMapRuleRecordSchema = z.object({
+  _id: z.string(),
+  mapId: z.string(),
+  key: z.string(),
+  trigger: MoneyMapRuleTriggerSchema,
+  config: z.record(z.string(), z.any()),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const MoneyMapSnapshotSchema = z.object({
+  map: MoneyMapRecordSchema,
+  nodes: z.array(MoneyMapNodeRecordSchema),
+  edges: z.array(MoneyMapEdgeRecordSchema),
+  rules: z.array(MoneyMapRuleRecordSchema),
+});
+
+export const MoneyMapChangeRequestRecordSchema = z.object({
+  _id: z.string(),
+  mapId: z.string(),
+  organizationId: z.string(),
+  submitterId: z.string(),
+  status: MoneyMapChangeStatusSchema,
+  summary: z.string().optional(),
+  payload: z.record(z.string(), z.any()),
+  createdAt: z.number(),
+  resolvedAt: z.number().optional(),
+  updatedAt: z.number(),
+});

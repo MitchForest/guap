@@ -1,4 +1,3 @@
-import type { MembershipRole } from '@guap/types';
 import { Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
@@ -48,7 +47,7 @@ const HouseholdMembersPage: Component = () => {
   });
 
   const [inviteEmail, setInviteEmail] = createSignal('');
-  const [inviteRole, setInviteRole] = createSignal<Extract<MembershipRole, 'student' | 'guardian'>>('student');
+  const [inviteRole, setInviteRole] = createSignal<'member' | 'admin'>('member');
   const [submitting, setSubmitting] = createSignal(false);
 
   const canManage = createMemo(() => {
@@ -167,10 +166,10 @@ const HouseholdMembersPage: Component = () => {
               <select
                 class="h-12 w-full rounded-2xl border border-slate-300 px-4 text-base text-slate-900 focus:border-slate-900"
                 value={inviteRole()}
-                onChange={(event) => setInviteRole(event.currentTarget.value as 'student' | 'guardian')}
+                onChange={(event) => setInviteRole(event.currentTarget.value as 'member' | 'admin')}
               >
-                <option value="student">Student</option>
-                <option value="guardian">Parent / Guardian</option>
+                <option value="member">Household member</option>
+                <option value="admin">Household admin</option>
               </select>
             </div>
             <Button

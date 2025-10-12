@@ -1,13 +1,13 @@
+import { z } from 'zod';
 import { api } from '../codegen/api';
-import type { Id } from '../codegen/dataModel';
+import type { ConvexClientInstance } from './env';
+import type { BackendApi } from './types';
 import {
   AccountKindSchema,
   AccountStatusSchema,
   BillingIntervalSchema,
   HouseholdPlanSchema,
   HouseholdPlanStatusSchema,
-  InviteKindSchema,
-  InviteStateSchema,
   IncomeCadenceSchema,
   MembershipRoleSchema,
   MembershipStatusSchema,
@@ -21,11 +21,23 @@ import {
   WorkspaceRecordSchema,
   WorkspaceRuleAllocationRecordSchema,
   WorkspaceRuleRecordSchema,
+  MoneyMapChangeRequestRecordSchema,
+  MoneyMapChangeStatusSchema,
+  MoneyMapNodeKindSchema,
+  MoneyMapRuleTriggerSchema,
+  MoneyMapSnapshotSchema,
+  type MoneyMapChangeRequestRecord,
+  type MoneyMapChangeStatus,
+  type MoneyMapSnapshot,
 } from '@guap/types';
-import type { BillingInterval, HouseholdPlan, HouseholdPlanStatus, InviteKind, InviteState, UserRole } from '@guap/types';
-import { z } from 'zod';
-import type { ConvexClientInstance } from './env';
-import type { BackendApi } from './types';
+import {
+  createWorkspacePublishPayload,
+  type WorkspaceGraphFlowInput,
+  type WorkspaceGraphNodeInput,
+  type WorkspaceGraphPublishInput,
+  type WorkspaceGraphRuleInput,
+} from './workspaces';
+
 export { createConvexClient } from './env';
 export {
   createWorkspacePublishPayload,
@@ -34,6 +46,12 @@ export {
   type WorkspaceGraphRuleInput,
   type WorkspaceGraphPublishInput,
 } from './workspaces';
+export type {
+  BackendApi,
+  MoneyMapSnapshot,
+  MoneyMapChangeStatus,
+  MoneyMapChangeRequestRecord,
+};
 
 type Client = ConvexClientInstance;
 
@@ -74,18 +92,6 @@ const userSchema = z.object({
   guardianId: z.string().optional().nullable(),
   primaryOrganizationId: z.string().optional().nullable(),
   defaultMembershipId: z.string().optional().nullable(),
-  onboarding: z
-    .object({
-      organizationId: z.string().optional(),
-      inviteId: z.string().optional(),
-      role: MembershipRoleSchema.optional(),
-      joinCode: z.string().optional(),
-      status: z.string().optional(),
-    })
-    .optional()
-    .nullable(),
-  permissions: z.record(z.string(), z.boolean()).optional(),
-  lastActiveAt: z.number().optional(),
   createdAt: z.number().optional(),
   updatedAt: z.number().optional(),
 });
@@ -167,355 +173,195 @@ const sandboxEventSchema = z.object({
 });
 
 export type HouseholdRecord = z.infer<typeof householdRecordSchema>;
-export type ApiHouseholdPlan = HouseholdPlan;
-export type ApiHouseholdPlanStatus = HouseholdPlanStatus;
-export type ApiBillingInterval = BillingInterval;
 export type AccountRecord = z.infer<typeof accountSchema>;
 export type IncomeRecord = z.infer<typeof incomeSchema>;
 export type RequestRecord = z.infer<typeof requestSchema>;
 export type MembershipRecord = z.infer<typeof membershipSchema>;
 export type UserRecord = z.infer<typeof userSchema>;
-export type UserProfileRecord = z.infer<typeof userSchema>;
-export type ApiUserRole = z.infer<typeof UserRoleSchema>;
+export type ProviderSyncEventRecord = z.infer<typeof providerSyncEventSchema>;
+export type WorkspaceSandboxEventRecord = z.infer<typeof sandboxEventSchema>;
 export type WorkspaceRecord = z.infer<typeof WorkspaceRecordSchema>;
 export type WorkspaceGraphRecord = z.infer<typeof WorkspaceGraphRecordSchema>;
 export type WorkspaceRuleAllocationRecord = z.infer<typeof WorkspaceRuleAllocationRecordSchema>;
 export type WorkspaceRuleRecord = z.infer<typeof WorkspaceRuleRecordSchema>;
 export type WorkspacePublishPayload = z.infer<typeof WorkspacePublishPayloadSchema>;
 export type WorkspacePublishResult = z.infer<typeof WorkspacePublishResultSchema>;
-export type ProviderSyncEventRecord = z.infer<typeof providerSyncEventSchema>;
-export type WorkspaceSandboxEventRecord = z.infer<typeof sandboxEventSchema>;
 
-type UserId = Id<'users'>;
-type HouseholdId = Id<'households'>;
+const MoneyMapNodeInputSchema = z.object({
+  key: z.string(),
+  kind: MoneyMapNodeKindSchema,
+  label: z.string(),
+  metadata: z.record(z.string(), z.any()).optional(),
+});
+
+const MoneyMapEdgeInputSchema = z.object({
+  sourceKey: z.string(),
+  targetKey: z.string(),
+});
+
+const MoneyMapRuleInputSchema = z.object({
+  key: z.string(),
+  trigger: MoneyMapRuleTriggerSchema,
+  config: z.record(z.string(), z.any()),
+});
+
+const MoneyMapSaveInputSchema = z.object({
+  organizationId: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  nodes: z.array(MoneyMapNodeInputSchema),
+  edges: z.array(MoneyMapEdgeInputSchema),
+  rules: z.array(MoneyMapRuleInputSchema),
+});
+
+const SubmitChangeRequestSchema = z.object({
+  mapId: z.string(),
+  organizationId: z.string(),
+  submitterId: z.string(),
+  summary: z.string().optional(),
+  payload: z.record(z.string(), z.any()),
+});
+
+const UpdateChangeRequestStatusSchema = z.object({
+  requestId: z.string(),
+  status: MoneyMapChangeStatusSchema,
+});
+
+export type MoneyMapNodeInput = z.infer<typeof MoneyMapNodeInputSchema>;
+export type MoneyMapEdgeInput = z.infer<typeof MoneyMapEdgeInputSchema>;
+export type MoneyMapRuleInput = z.infer<typeof MoneyMapRuleInputSchema>;
+export type MoneyMapSaveInput = z.infer<typeof MoneyMapSaveInputSchema>;
+export type SubmitChangeRequestInput = z.infer<typeof SubmitChangeRequestSchema>;
+export type UpdateChangeRequestStatusInput = z.infer<typeof UpdateChangeRequestStatusSchema>;
 
 export class GuapApi {
   constructor(private readonly client: Client) {}
 
-  async listHouseholds(userId: UserId | string) {
-    const result = await this.client.query(api.households.listForUser, {
-      userId: userId as UserId,
-    });
-    return z.array(householdRecordSchema).parse(result);
+  // Legacy household helpers – return empty placeholders while the app transitions to Better Auth data.
+  async listHouseholds(_userId: string): Promise<HouseholdRecord[]> {
+    return [];
   }
 
-  async listHouseholdMembers(householdId: HouseholdId | string) {
-    const result = await this.client.query(api.households.listMembers, {
-      householdId: householdId as HouseholdId,
-    });
-    return z
-      .array(
-        z.object({
-          user: userSchema,
-          membership: membershipSchema,
-        })
-      )
-      .parse(result);
+  async listHouseholdMembers(_householdId: string): Promise<Array<{ user: UserRecord; membership: MembershipRecord }>> {
+    return [];
   }
 
-  async listAccounts(householdId: HouseholdId | string) {
-    const result = await this.client.query(api.accounts.listForHousehold, {
-      householdId: householdId as HouseholdId,
-    });
-    return z.array(accountSchema).parse(result);
+  async listAccounts(_householdId: string): Promise<AccountRecord[]> {
+    return [];
   }
 
-  async listIncomeStreams(householdId: HouseholdId | string) {
-    const result = await this.client.query(api.income.listForHousehold, {
-      householdId: householdId as HouseholdId,
-    });
-    return z.array(incomeSchema).parse(result);
+  async listIncomeStreams(_householdId: string): Promise<IncomeRecord[]> {
+    return [];
   }
 
-  async listRequests(householdId: HouseholdId | string) {
-    const result = await this.client.query(api.requests.listForHousehold, {
-      householdId: householdId as HouseholdId,
-    });
-    return z.array(requestSchema).parse(result);
+  async listRequests(_householdId: string): Promise<RequestRecord[]> {
+    return [];
   }
 
-  async listProviderSyncEvents(providerId: string, limit = 50) {
-    const result = await this.client.query(api.providerEvents.listRecent, {
-      providerId,
-      limit,
-    });
-    return z.array(providerSyncEventSchema).parse(result);
+  async createHousehold(_payload: {
+    name: string;
+    slug: string;
+    creatorUserId: string;
+    plan?: string;
+  }): Promise<string> {
+    return 'legacy-household';
   }
 
-  async listSandboxEvents(householdId: HouseholdId | string, limit = 50) {
-    const result = await this.client.query(api.sandboxEvents.listForHousehold, {
-      householdId: householdId as HouseholdId,
-      limit,
-    });
-    return z.array(sandboxEventSchema).parse(result);
+  async updateUserProfile(_payload: { userId: string; householdId?: string | null }): Promise<void> {
+    return;
   }
 
-  async listWorkspaces(householdId: HouseholdId | string) {
-    const result = await this.client.query(api.workspaces.getByHousehold, {
-      householdId: householdId as HouseholdId,
-    });
-    return z.array(WorkspaceRecordSchema).parse(result);
+  async getUserProfile(_authId: string): Promise<UserRecord | null> {
+    return null;
   }
 
-  async ensureWorkspacePair(payload: {
-    householdId: HouseholdId | string;
+  async createProfile(_payload: {
+    authId: string;
+    email: string;
+    displayName: string;
+    role: string;
+  }): Promise<string> {
+    return 'legacy-user';
+  }
+
+  async getUserById(_userId: string): Promise<UserRecord | null> {
+    return null;
+  }
+
+  async ensureWorkspacePair(_payload: {
+    householdId: string;
     slug: string;
     name: string;
     sandboxSlug?: string;
     sandboxName?: string;
-  }) {
-    return await this.client.mutation(api.workspaces.ensurePair, {
-      householdId: payload.householdId as HouseholdId,
-      slug: payload.slug,
-      name: payload.name,
-      sandboxSlug: payload.sandboxSlug,
-      sandboxName: payload.sandboxName,
-    });
+  }): Promise<void> {
+    return;
   }
 
-  async getWorkspace(slug: string) {
-    const workspace = await this.client.query(api.workspaces.getBySlug, { slug });
-    return workspace ? WorkspaceRecordSchema.parse(workspace) : null;
+  async listWorkspaces(_householdId: string): Promise<WorkspaceRecord[]> {
+    return [];
   }
 
-  async getWorkspaceVariant(householdId: HouseholdId | string, variant: 'live' | 'sandbox') {
-    const workspace = await this.client.query(api.workspaces.getVariant, {
-      householdId: householdId as HouseholdId,
-      variant,
-    });
-    return workspace ? WorkspaceRecordSchema.parse(workspace) : null;
+  async getWorkspace(_slug: string): Promise<WorkspaceRecord | null> {
+    return null;
   }
 
-  async deleteWorkspace(workspaceId: string) {
-    await this.client.mutation(api.workspaces.remove, {
-      workspaceId: workspaceId as Id<'workspaces'>,
-    });
+  async getWorkspaceVariant(_householdId: string, _variant: 'live' | 'sandbox'): Promise<WorkspaceRecord | null> {
+    return null;
   }
 
-  async resetSandbox(payload: { householdId: HouseholdId | string; actorUserId: Id<'users'> | string }) {
-    return await this.client.mutation(api.workspaces.resetSandbox, {
-      householdId: payload.householdId as HouseholdId,
-      actorUserId: payload.actorUserId as Id<'users'>,
-    });
+  async fetchWorkspaceGraph(_slug: string): Promise<z.infer<typeof WorkspaceGraphRecordSchema> | null> {
+    return null;
   }
 
-  async applySandbox(payload: {
-    householdId: HouseholdId | string;
-    actorUserId: Id<'users'> | string;
-    bypassApproval?: boolean;
-  }) {
-    return await this.client.mutation(api.workspaces.applySandbox, {
-      householdId: payload.householdId as HouseholdId,
-      actorUserId: payload.actorUserId as Id<'users'>,
-      bypassApproval: payload.bypassApproval,
-    });
+  async publishWorkspaceGraph(_payload: WorkspacePublishPayload): Promise<z.infer<typeof WorkspacePublishResultSchema>> {
+    return {
+      nodes: {},
+      edges: {},
+      rules: {},
+    };
   }
 
-  async fetchWorkspaceGraph(slug: string) {
-    const result = await this.client.query(api.graph.getGraph, { slug });
-    if (!result) return null;
-    return WorkspaceGraphRecordSchema.parse(result);
+  async resetSandbox(_payload: { householdId: string; actorUserId: string }): Promise<void> {
+    return;
   }
 
-  async publishWorkspaceGraph(payload: WorkspacePublishPayload) {
-    const parsed = WorkspacePublishPayloadSchema.parse(payload);
-    const result = await this.client.mutation(api.graph.publish, parsed);
-    return WorkspacePublishResultSchema.parse(result);
-  }
-
-  async ensureUser(payload: {
-    authId: string;
-    email?: string;
-    displayName: string;
-    role: ApiUserRole;
-    avatarUrl?: string;
-    householdId?: string | null;
-    guardianId?: string | null;
-    primaryOrganizationId?: string | null;
-    defaultMembershipId?: string | null;
-    onboarding?: {
-      organizationId?: string;
-      inviteId?: string;
-      role?: z.infer<typeof MembershipRoleSchema>;
-      joinCode?: string;
-      status?: string;
-    } | null;
-  }) {
-    const result = await this.client.mutation(api.users.ensure, {
-      authId: payload.authId,
-      email: payload.email,
-      displayName: payload.displayName,
-      role: payload.role,
-      avatarUrl: payload.avatarUrl,
-      householdId: payload.householdId as Id<'households'> | null | undefined,
-      guardianId: payload.guardianId as Id<'users'> | null | undefined,
-      primaryOrganizationId: payload.primaryOrganizationId as Id<'organizations'> | null | undefined,
-      defaultMembershipId: payload.defaultMembershipId as Id<'organizationMemberships'> | null | undefined,
-      onboarding:
-        payload.onboarding === undefined
-          ? undefined
-          : payload.onboarding
-          ? {
-              organizationId: payload.onboarding.organizationId as Id<'organizations'> | undefined,
-              inviteId: payload.onboarding.inviteId as Id<'membershipInvites'> | undefined,
-              role: payload.onboarding.role,
-              joinCode: payload.onboarding.joinCode,
-              status: payload.onboarding.status,
-            }
-          : null,
-    });
-    return result as Id<'users'>;
-  }
-
-  async createProfile(payload: {
-    authId: string;
-    email: string;
-    displayName: string;
-    role: ApiUserRole;
-    avatarUrl?: string;
-    householdId?: string | null;
-    guardianId?: string | null;
-    primaryOrganizationId?: string | null;
-    defaultMembershipId?: string | null;
-    onboarding?: {
-      organizationId?: string;
-      inviteId?: string;
-      role?: z.infer<typeof MembershipRoleSchema>;
-      joinCode?: string;
-      status?: string;
-    } | null;
-  }) {
-    const result = await this.client.mutation(api.users.createProfile, {
-      authId: payload.authId,
-      email: payload.email,
-      displayName: payload.displayName,
-      role: payload.role,
-      avatarUrl: payload.avatarUrl,
-      householdId: payload.householdId as Id<'households'> | null | undefined,
-      guardianId: payload.guardianId as Id<'users'> | null | undefined,
-      primaryOrganizationId: payload.primaryOrganizationId as Id<'organizations'> | null | undefined,
-      defaultMembershipId: payload.defaultMembershipId as Id<'organizationMemberships'> | null | undefined,
-      onboarding:
-        payload.onboarding === undefined
-          ? undefined
-          : payload.onboarding
-          ? {
-              organizationId: payload.onboarding.organizationId as Id<'organizations'> | undefined,
-              inviteId: payload.onboarding.inviteId as Id<'membershipInvites'> | undefined,
-              role: payload.onboarding.role,
-              joinCode: payload.onboarding.joinCode,
-              status: payload.onboarding.status,
-            }
-          : null,
-    });
-    return result as Id<'users'>;
-  }
-
-  async getUserById(userId: string) {
-    const result = await this.client.query(api.users.getById, {
-      userId: userId as Id<'users'>,
-    });
-    return result ? userSchema.parse(result) : null;
-  }
-
-  async getUserByAuthId(authId: string) {
-    const result = await this.client.query(api.users.getByAuthId, { authId });
-    return result ? userSchema.parse(result) : null;
-  }
-
-  async getUserProfile(authId: string) {
-    const result = await this.client.query(api.users.getUserProfile, { authId });
-    return result ? userSchema.parse(result) : null;
-  }
-
-  async updateUserProfile(payload: {
-    userId: string;
-    displayName?: string;
-    avatarUrl?: string | null;
-    role?: ApiUserRole;
-    email?: string;
-    householdId?: string | null;
-    guardianId?: string | null;
-    primaryOrganizationId?: string | null;
-    defaultMembershipId?: string | null;
-    onboarding?: {
-      organizationId?: string;
-      inviteId?: string;
-      role?: z.infer<typeof MembershipRoleSchema>;
-      joinCode?: string;
-      status?: string;
-    } | null;
-    permissions?: Record<string, boolean> | null;
-  }) {
-    await this.client.mutation(api.users.updateProfile, {
-      userId: payload.userId as Id<'users'>,
-      displayName: payload.displayName,
-      avatarUrl: payload.avatarUrl,
-      role: payload.role,
-      email: payload.email,
-      householdId: payload.householdId as Id<'households'> | null | undefined,
-      guardianId: payload.guardianId as Id<'users'> | null | undefined,
-      primaryOrganizationId: payload.primaryOrganizationId as Id<'organizations'> | null | undefined,
-      defaultMembershipId: payload.defaultMembershipId as Id<'organizationMemberships'> | null | undefined,
-      onboarding:
-        payload.onboarding === undefined
-          ? undefined
-          : payload.onboarding
-          ? {
-              organizationId: payload.onboarding.organizationId as Id<'organizations'> | undefined,
-              inviteId: payload.onboarding.inviteId as Id<'membershipInvites'> | undefined,
-              role: payload.onboarding.role,
-              joinCode: payload.onboarding.joinCode,
-              status: payload.onboarding.status,
-            }
-          : null,
-      permissions: payload.permissions ?? undefined,
-    });
-  }
-
-  async createHousehold(payload: {
-    name: string;
-    slug: string;
-    creatorUserId: string;
-    linkedOrganizationId?: string;
-    creatorRole?: z.infer<typeof MembershipRoleSchema>;
-    organizationMembershipId?: string;
-    plan?: ApiHouseholdPlan;
-    planInterval?: ApiBillingInterval;
-    planSeats?: number;
-  }) {
-    const householdId = await this.client.mutation(api.households.create, {
-      name: payload.name,
-      slug: payload.slug,
-      creatorUserId: payload.creatorUserId as Id<'users'>,
-      linkedOrganizationId: payload.linkedOrganizationId as Id<'organizations'> | undefined,
-      creatorRole: payload.creatorRole,
-      organizationMembershipId: payload.organizationMembershipId as Id<'organizationMemberships'> | undefined,
-      plan: payload.plan,
-      planInterval: payload.planInterval,
-      planSeats: payload.planSeats,
-    });
-    return householdId as Id<'households'>;
-  }
-
-  async addHouseholdMember(payload: {
+  async applySandbox(_payload: {
     householdId: string;
-    userId: string;
-    role: z.infer<typeof MembershipRoleSchema>;
-    status?: z.infer<typeof MembershipStatusSchema>;
-    organizationMembershipId?: string;
-  }) {
-    await this.client.mutation(api.households.addMember, {
-      householdId: payload.householdId as Id<'households'>,
-      userId: payload.userId as Id<'users'>,
-      role: payload.role,
-      status: payload.status,
-      organizationMembershipId: payload.organizationMembershipId as Id<'organizationMemberships'> | undefined,
-    });
+    actorUserId: string;
+    bypassApproval?: boolean;
+  }): Promise<{ requiresApproval: boolean }> {
+    return { requiresApproval: false };
   }
 
+  async loadMoneyMap(organizationId: string) {
+    const result = await this.client.query(api.moneyMaps.load, { organizationId });
+    return result ? MoneyMapSnapshotSchema.parse(result) : null;
+  }
+
+  async saveMoneyMap(payload: MoneyMapSaveInput) {
+    const parsed = MoneyMapSaveInputSchema.parse(payload);
+    const result = await this.client.mutation(api.moneyMaps.save, parsed);
+    return MoneyMapSnapshotSchema.parse(result);
+  }
+
+  async submitChangeRequest(input: SubmitChangeRequestInput) {
+    const parsed = SubmitChangeRequestSchema.parse(input);
+    return await this.client.mutation(api.moneyMaps.submitChangeRequest, parsed);
+  }
+
+  async updateChangeRequestStatus(input: UpdateChangeRequestStatusInput) {
+    const parsed = UpdateChangeRequestStatusSchema.parse(input);
+    await this.client.mutation(api.moneyMaps.updateChangeRequestStatus, parsed);
+  }
+
+  async listChangeRequests(organizationId: string, status?: MoneyMapChangeStatus) {
+    const result = await this.client.query(api.moneyMaps.listChangeRequests, {
+      organizationId,
+      status,
+    });
+    return z.array(MoneyMapChangeRequestRecordSchema).parse(result);
+  }
 }
 
 export const createGuapApi = (client: Client) => new GuapApi(client);
-
-export type { BackendApi };

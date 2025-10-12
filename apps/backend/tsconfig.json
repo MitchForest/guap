@@ -8,6 +8,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["convex/**/*.ts", "providers/**/*.ts"],
+  "include": ["convex/**/*.ts"],
   "exclude": ["convex/_generated"]
 }

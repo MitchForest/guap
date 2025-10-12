@@ -8,21 +8,11 @@
  * @module
  */
 
-import type * as accounts from "../accounts.js";
 import type * as auth from "../auth.js";
-import type * as edges from "../edges.js";
-import type * as graph from "../graph.js";
-import type * as households from "../households.js";
 import type * as http from "../http.js";
-import type * as income from "../income.js";
 import type * as index from "../index.js";
-import type * as nodes from "../nodes.js";
-import type * as notifications from "../notifications.js";
-import type * as providers from "../providers.js";
-import type * as requests from "../requests.js";
-import type * as rules from "../rules.js";
-import type * as users from "../users.js";
-import type * as workspaces from "../workspaces.js";
+import type * as magicLinkEmail from "../magicLinkEmail.js";
+import type * as moneyMaps from "../moneyMaps.js";
 
 import type {
   ApiFromModules,
@@ -39,21 +29,11 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  accounts: typeof accounts;
   auth: typeof auth;
-  edges: typeof edges;
-  graph: typeof graph;
-  households: typeof households;
   http: typeof http;
-  income: typeof income;
   index: typeof index;
-  nodes: typeof nodes;
-  notifications: typeof notifications;
-  providers: typeof providers;
-  requests: typeof requests;
-  rules: typeof rules;
-  users: typeof users;
-  workspaces: typeof workspaces;
+  magicLinkEmail: typeof magicLinkEmail;
+  moneyMaps: typeof moneyMaps;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 

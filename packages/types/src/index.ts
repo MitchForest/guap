@@ -35,6 +35,15 @@ import {
   WorkspaceRuleAllocationRecordSchema,
   WorkspaceRuleRecordSchema,
   WorkspaceRuleTriggerSchema,
+  MoneyMapRecordSchema,
+  MoneyMapNodeRecordSchema,
+  MoneyMapEdgeRecordSchema,
+  MoneyMapRuleRecordSchema,
+  MoneyMapSnapshotSchema,
+  MoneyMapNodeKindSchema,
+  MoneyMapRuleTriggerSchema,
+  MoneyMapChangeStatusSchema,
+  MoneyMapChangeRequestRecordSchema,
 } from './schemas';
 
 export * from './schemas';
@@ -75,3 +84,12 @@ export type WorkspaceRuleAllocationRecord = typeof WorkspaceRuleAllocationRecord
 export type WorkspaceGraphRecord = typeof WorkspaceGraphRecordSchema._type;
 export type WorkspacePublishPayload = typeof WorkspacePublishPayloadSchema._type;
 export type WorkspacePublishResult = typeof WorkspacePublishResultSchema._type;
+export type MoneyMapRecord = typeof MoneyMapRecordSchema._type;
+export type MoneyMapNodeRecord = typeof MoneyMapNodeRecordSchema._type;
+export type MoneyMapEdgeRecord = typeof MoneyMapEdgeRecordSchema._type;
+export type MoneyMapRuleRecord = typeof MoneyMapRuleRecordSchema._type;
+export type MoneyMapSnapshot = typeof MoneyMapSnapshotSchema._type;
+export type MoneyMapNodeKind = typeof MoneyMapNodeKindSchema._type;
+export type MoneyMapRuleTrigger = typeof MoneyMapRuleTriggerSchema._type;
+export type MoneyMapChangeStatus = typeof MoneyMapChangeStatusSchema._type;
+export type MoneyMapChangeRequestRecord = typeof MoneyMapChangeRequestRecordSchema._type;

@@ -1,11 +1,14 @@
-import { CurrencyAmountSchema } from '@guap/types';
 import { z } from 'zod';
 import type {
   ProviderAdapter,
   ProviderSyncContext,
   ProviderSyncResult,
 } from './contracts';
-import { ProviderAccountSchema, ProviderIncomeSchema } from './contracts';
+import {
+  CurrencyAmountSchema,
+  ProviderAccountSchema,
+  ProviderIncomeSchema,
+} from './contracts';
 
 const amount = (value: number, currency = 'USD') =>
   CurrencyAmountSchema.parse({ cents: Math.round(value), currency });

@@ -12,13 +12,13 @@
     "lint": "pnpm run typecheck"
   },
   "dependencies": {
-    "@guap/providers": "workspace:*",
+    "@better-auth/stripe": "latest",
     "@guap/api": "workspace:*",
     "@guap/types": "workspace:*",
     "@convex-dev/better-auth": "^0.9.1",
     "better-auth": "^1.3.27",
     "convex": "^1.27.5",
-    "zod": "^3.23.8"
+    "stripe": "^18.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.12",

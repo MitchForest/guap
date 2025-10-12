@@ -1,61 +1,62 @@
-# Simplify Identity, Billing, and Money Map Foundations
+# Foundation Plan – Better Auth, Money Map, and Providers
 
 ## Guiding Principles
-- Collapse the product around a single account concept: a household with guardians and students managed entirely through Better Auth.
-- Remove unused scaffolding (impersonation, secondary variants, speculative billing columns) instead of deprecating it.
-- Prefer fresh data structures over migrations when possible; we are allowed to break backward compatibility.
-- Keep the codebase lean until school licensing or other enterprise flows are truly required.
+- Better Auth is the single source of truth for identity, RBAC, households, invites, and billing metadata. We map guardians ⇔ admins and children ⇔ members; households are Better Auth organizations.
+- The frontend never talks to Convex directly. All mutations/queries flow through `@guap/api`, which wraps runtime validation against `@guap/types`.
+- Shared contracts live in `@guap/types` and are consumed everywhere (Convex schema, API client, providers, UI). We only define guardian/child roles.
+- Keep the providers package as a thin abstraction that can return virtual accounts today and swap in real banking adapters later without changing callers.
+- Optimize for a clean baseline first; UI refinements and additional features come after the foundation is solid.
 
-## Phase 1 — Identity & Auth Alignment
-1. **Prune Better Auth roles**  
-   - Update `apps/backend/convex/auth.ts` to configure only `guardian` and `student` roles.  
-   - Remove `internal`, `admin`, `member`, and related access-control logic.
-2. **Disable impersonation / admin plugin**  
-   - Drop the `admin()` plugin registration and any fields or helpers supporting impersonation.  
-   - Delete `impersonatedByUserId`, `permissions`, and other unused user attributes and indexes from `schema.ts`, API layer, and frontend contexts.
-3. **Adopt Better Auth as sole source of user/org truth**  
-   - Remove Convex tables `households`, `householdMemberships`, `organizationMemberships`, `membershipInvites`, and associated mutations/queries.  
-   - Replace direct Convex reads/writes with Better Auth organization/member/invite APIs.  
-   - Preserve only a lightweight `userProfiles` (or similar) table for household-specific metadata that Better Auth cannot store cleanly; document the minimal schema.
+## Phase 1 — Restore Shared Contracts & Client Surface
+1. **Rebuild `@guap/types`**  
+   - Reintroduce enums/schemas for guardian/child roles, households, memberships, money map records, currency amounts, income cadence, etc.  
+   - Export type aliases for all frontend/backend/provider consumers.
+2. **Flesh out `@guap/api`**  
+   - Implement the full Convex client surface the frontend relies on (households, profiles, invites, money map CRUD, approvals).  
+   - Validate all inputs/outputs with the rebuilt schemas and remove placeholder method stubs.
 
-## Phase 2 — Billing Simplification
-4. **Integrate Stripe plugin for household subscriptions**  
-   - Configure the Stripe plugin and run its migrations.  
-   - Create a webhook handler that mirrors only the active plan, renewal date, and payment status into organization metadata.
-5. **Remove legacy billing fields**  
-   - Delete `subscriptionId`, `customerId`, `seatCapacity`, `seatUsage`, `billingProvider`, and pricing scaffolding from deleted tables.  
-   - Eliminate fallback pricing logic in `auth.ts`; defer to Stripe configuration.
+## Phase 2 — Backend Hardening Around Better Auth
+3. **Guard every Convex handler**  
+   - Create shared helpers that call `requireAuth`, load the Better Auth organization/member, and enforce that requested `organizationId`/`mapId`/`childId` belong to the session.  
+   - Apply the guard to all money map queries/mutations; reject cross-tenant access.
+4. **Enforce one money map per child**  
+   - Key the schema by child profile ID (Better Auth member) and guarantee uniqueness.  
+   - Ensure change requests reference that map and only guardians in the same household can approve.  
+   - Normalize “sandbox” behavior into draft/change-request flows rather than duplicate maps.
 
-## Phase 3 — Household Onboarding & Invites
-6. **Streamline invite flows**  
-   - Implement two invite paths via Better Auth: guardian-led (guardian invites student) and student-led (student invites guardian).  
-   - Provide a neutral “household invite” template that can add both parties sequentially.  
-   - Remove any custom Convex invite handlers or email templates no longer required.
-7. **Clean up API/client helpers**  
-   - Update `@guap/api` and frontend contexts to consume Better Auth outputs directly.  
-   - Delete obsolete DTOs, Zod schemas, and generated types tied to removed tables.
+## Phase 3 — Frontend Alignment
+5. **Refactor contexts to Better Auth data**  
+   - Load guardian/child state from Better Auth session data instead of legacy helpers.  
+   - Replace direct Convex references with `@guap/api` calls and drop obsolete compatibility layers.
+6. **Reconnect money map UI to new workflow**  
+   - Update the student experience to draft changes, run simulations, and submit approvals via the guarded mutations.  
+   - Ensure guardian review/approval uses the same API client and reflects live map updates.
 
-## Phase 4 — Money Map Consolidation
-8. **Introduce single-map schema**  
-   - Create `moneyMaps`, `moneyMapNodes`, `moneyMapEdges`, and `moneyMapRules` tables keyed by household (Better Auth organization id).  
-   - Migrate existing workspace data into the new structure; drop `variant`, `pendingRequestId`, `canvasSessions`, `workspaceChangeDiffs`, and sandbox tables/events.  
-   - Update backend mutations/queries and frontend state hooks to operate on the new schema.
-9. **Guarded change workflow**  
-   - Add `moneyMapChangeRequests` recording proposed edits, status (`draft`, `awaiting_guardian`, `approved`, `rejected`), submitter, timestamps, and optional comments.  
-   - Require confirmation dialogs on the student UI; only approved requests commit changes to the live map and generate audit entries.
+## Phase 4 — Providers Abstraction
+7. **Clarify provider contracts**  
+   - Keep `@guap/providers` focused on adapter interfaces, DTO schemas, and the virtual provider implementation.  
+   - Route the backend through this abstraction so switching to real banking adapters is a configuration change.
+8. **Persist sync data consistently**  
+   - Store provider sync results in Convex tables keyed by provider + household using the shared schemas, ready for real-money integrations later.
 
-## Phase 5 — Cleanup & Documentation
-10. **Codebase sweep**  
-    - Remove dead modules (`workspaces.ts`, `sandboxEvents.ts`, etc.) and references from exports.  
-    - Run `pnpm lint` / `pnpm typecheck` and fix any fallout.  
-    - Add targeted unit tests around new money-map mutations once the testing harness is ready.
-11. **Docs & onboarding updates**  
-    - Refresh architecture notes in `.docs/convex.md` and onboarding instructions to reflect the new household-only model.  
-    - Document how future school licensing would layer on (separate doc outlining license codes, seat allocation, and Stripe coordination).
+## Phase 5 — Billing & Stripe (Stub-Friendly)
+9. **Stabilize Stripe plugin usage**  
+   - Maintain placeholder keys for local dev but ensure the plugin path is wired so production credentials are a drop-in.  
+   - Mirror subscription state into Better Auth org metadata only when real keys are supplied.
+
+## Phase 6 — Verification & Documentation
+10. **Validation sweep**  
+    - Run `pnpm lint`, `pnpm typecheck`, and targeted smoke tests once the above phases land.  
+    - Add minimal unit coverage around money map mutations when the test harness is ready.
+11. **Update docs & onboarding**  
+    - Refresh `.docs/convex.md` with the guardian/child household model and the new money map lifecycle.  
+    - Document the provider abstraction and future real-money upgrade path.  
+    - Note that UI feature work resumes only after this baseline is complete.
 
 ## Success Criteria
-- The only persisted account constructs are Better Auth users and organizations (households) plus the new money map tables.
-- Guardians and students can invite each other without any Convex-specific invite tables.
-- Billing state lives in Stripe + Better Auth metadata; no stray columns or placeholder enums remain.
-- Money map editing works off a single source of truth with a clear approval path.
-- Code and docs no longer reference removed tables, plugins, or sandbox flows.
+- Only Better Auth defines users, households, invites, and roles (guardian/child); Convex stores references, not parallel data models.
+- `@guap/types` and `@guap/api` provide the single contract for all mutations/queries; frontend code depends on them exclusively.
+- Money maps exist as one canonical record per child with a clear draft → approval → live workflow and enforced tenant boundaries.
+- Providers remain swappable, with virtual accounts serving free plans and real adapters ready for paid upgrades.
+- Billing integration is Stripe-first but safely stubbed until credentials arrive.
+- Docs and code reflect this baseline, enabling future feature work without re-litigating foundational pieces.
