@@ -43,12 +43,13 @@ export const ProviderUserSchema = z.object({
   providerUserId: z.string(),
   displayName: z.string(),
   email: z.string().email().optional(),
-  role: UserRoleSchema.default('kid'),
+  role: UserRoleSchema.default('student'),
   metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const ProviderSyncContextSchema = z.object({
   householdId: z.string(),
+  organizationId: z.string().optional(),
   userId: z.string(),
   providerConfig: z.record(z.string(), z.any()).optional(),
   forceRefresh: z.boolean().default(false),

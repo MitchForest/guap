@@ -3,6 +3,11 @@ import type { Id } from '../codegen/dataModel';
 import {
   AccountKindSchema,
   AccountStatusSchema,
+  BillingIntervalSchema,
+  HouseholdPlanSchema,
+  HouseholdPlanStatusSchema,
+  InviteKindSchema,
+  InviteStateSchema,
   IncomeCadenceSchema,
   MembershipRoleSchema,
   MembershipStatusSchema,
@@ -17,7 +22,7 @@ import {
   WorkspaceRuleAllocationRecordSchema,
   WorkspaceRuleRecordSchema,
 } from '@guap/types';
-import type { UserRole } from '@guap/types';
+import type { BillingInterval, HouseholdPlan, HouseholdPlanStatus, InviteKind, InviteState, UserRole } from '@guap/types';
 import { z } from 'zod';
 import type { ConvexClientInstance } from './env';
 import type { BackendApi } from './types';
@@ -36,6 +41,13 @@ const householdRecordSchema = z.object({
   _id: z.string(),
   name: z.string(),
   slug: z.string(),
+  plan: HouseholdPlanSchema,
+  planStatus: HouseholdPlanStatusSchema,
+  planInterval: BillingIntervalSchema.optional(),
+  planSeats: z.number().int().nonnegative().optional(),
+  subscriptionId: z.string().optional(),
+  customerId: z.string().optional(),
+  linkedOrganizationId: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -46,6 +58,7 @@ const membershipSchema = z.object({
   userId: z.string(),
   role: MembershipRoleSchema,
   status: MembershipStatusSchema,
+  organizationMembershipId: z.string().optional().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -57,7 +70,24 @@ const userSchema = z.object({
   displayName: z.string(),
   avatarUrl: z.string().optional(),
   email: z.string().optional(),
-  householdId: z.string().optional(),
+  householdId: z.string().optional().nullable(),
+  guardianId: z.string().optional().nullable(),
+  primaryOrganizationId: z.string().optional().nullable(),
+  defaultMembershipId: z.string().optional().nullable(),
+  onboarding: z
+    .object({
+      organizationId: z.string().optional(),
+      inviteId: z.string().optional(),
+      role: MembershipRoleSchema.optional(),
+      joinCode: z.string().optional(),
+      status: z.string().optional(),
+    })
+    .optional()
+    .nullable(),
+  permissions: z.record(z.string(), z.boolean()).optional(),
+  lastActiveAt: z.number().optional(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
 });
 
 const accountSchema = z.object({
@@ -137,6 +167,9 @@ const sandboxEventSchema = z.object({
 });
 
 export type HouseholdRecord = z.infer<typeof householdRecordSchema>;
+export type ApiHouseholdPlan = HouseholdPlan;
+export type ApiHouseholdPlanStatus = HouseholdPlanStatus;
+export type ApiBillingInterval = BillingInterval;
 export type AccountRecord = z.infer<typeof accountSchema>;
 export type IncomeRecord = z.infer<typeof incomeSchema>;
 export type RequestRecord = z.infer<typeof requestSchema>;
@@ -296,8 +329,17 @@ export class GuapApi {
     displayName: string;
     role: ApiUserRole;
     avatarUrl?: string;
-    householdId?: string;
-    guardianId?: string;
+    householdId?: string | null;
+    guardianId?: string | null;
+    primaryOrganizationId?: string | null;
+    defaultMembershipId?: string | null;
+    onboarding?: {
+      organizationId?: string;
+      inviteId?: string;
+      role?: z.infer<typeof MembershipRoleSchema>;
+      joinCode?: string;
+      status?: string;
+    } | null;
   }) {
     const result = await this.client.mutation(api.users.ensure, {
       authId: payload.authId,
@@ -305,8 +347,22 @@ export class GuapApi {
       displayName: payload.displayName,
       role: payload.role,
       avatarUrl: payload.avatarUrl,
-      householdId: payload.householdId as Id<'households'> | undefined,
-      guardianId: payload.guardianId as Id<'users'> | undefined,
+      householdId: payload.householdId as Id<'households'> | null | undefined,
+      guardianId: payload.guardianId as Id<'users'> | null | undefined,
+      primaryOrganizationId: payload.primaryOrganizationId as Id<'organizations'> | null | undefined,
+      defaultMembershipId: payload.defaultMembershipId as Id<'organizationMemberships'> | null | undefined,
+      onboarding:
+        payload.onboarding === undefined
+          ? undefined
+          : payload.onboarding
+          ? {
+              organizationId: payload.onboarding.organizationId as Id<'organizations'> | undefined,
+              inviteId: payload.onboarding.inviteId as Id<'membershipInvites'> | undefined,
+              role: payload.onboarding.role,
+              joinCode: payload.onboarding.joinCode,
+              status: payload.onboarding.status,
+            }
+          : null,
     });
     return result as Id<'users'>;
   }
@@ -317,6 +373,17 @@ export class GuapApi {
     displayName: string;
     role: ApiUserRole;
     avatarUrl?: string;
+    householdId?: string | null;
+    guardianId?: string | null;
+    primaryOrganizationId?: string | null;
+    defaultMembershipId?: string | null;
+    onboarding?: {
+      organizationId?: string;
+      inviteId?: string;
+      role?: z.infer<typeof MembershipRoleSchema>;
+      joinCode?: string;
+      status?: string;
+    } | null;
   }) {
     const result = await this.client.mutation(api.users.createProfile, {
       authId: payload.authId,
@@ -324,6 +391,22 @@ export class GuapApi {
       displayName: payload.displayName,
       role: payload.role,
       avatarUrl: payload.avatarUrl,
+      householdId: payload.householdId as Id<'households'> | null | undefined,
+      guardianId: payload.guardianId as Id<'users'> | null | undefined,
+      primaryOrganizationId: payload.primaryOrganizationId as Id<'organizations'> | null | undefined,
+      defaultMembershipId: payload.defaultMembershipId as Id<'organizationMemberships'> | null | undefined,
+      onboarding:
+        payload.onboarding === undefined
+          ? undefined
+          : payload.onboarding
+          ? {
+              organizationId: payload.onboarding.organizationId as Id<'organizations'> | undefined,
+              inviteId: payload.onboarding.inviteId as Id<'membershipInvites'> | undefined,
+              role: payload.onboarding.role,
+              joinCode: payload.onboarding.joinCode,
+              status: payload.onboarding.status,
+            }
+          : null,
     });
     return result as Id<'users'>;
   }
@@ -353,6 +436,16 @@ export class GuapApi {
     email?: string;
     householdId?: string | null;
     guardianId?: string | null;
+    primaryOrganizationId?: string | null;
+    defaultMembershipId?: string | null;
+    onboarding?: {
+      organizationId?: string;
+      inviteId?: string;
+      role?: z.infer<typeof MembershipRoleSchema>;
+      joinCode?: string;
+      status?: string;
+    } | null;
+    permissions?: Record<string, boolean> | null;
   }) {
     await this.client.mutation(api.users.updateProfile, {
       userId: payload.userId as Id<'users'>,
@@ -362,14 +455,45 @@ export class GuapApi {
       email: payload.email,
       householdId: payload.householdId as Id<'households'> | null | undefined,
       guardianId: payload.guardianId as Id<'users'> | null | undefined,
+      primaryOrganizationId: payload.primaryOrganizationId as Id<'organizations'> | null | undefined,
+      defaultMembershipId: payload.defaultMembershipId as Id<'organizationMemberships'> | null | undefined,
+      onboarding:
+        payload.onboarding === undefined
+          ? undefined
+          : payload.onboarding
+          ? {
+              organizationId: payload.onboarding.organizationId as Id<'organizations'> | undefined,
+              inviteId: payload.onboarding.inviteId as Id<'membershipInvites'> | undefined,
+              role: payload.onboarding.role,
+              joinCode: payload.onboarding.joinCode,
+              status: payload.onboarding.status,
+            }
+          : null,
+      permissions: payload.permissions ?? undefined,
     });
   }
 
-  async createHousehold(payload: { name: string; slug: string; creatorUserId: string }) {
+  async createHousehold(payload: {
+    name: string;
+    slug: string;
+    creatorUserId: string;
+    linkedOrganizationId?: string;
+    creatorRole?: z.infer<typeof MembershipRoleSchema>;
+    organizationMembershipId?: string;
+    plan?: ApiHouseholdPlan;
+    planInterval?: ApiBillingInterval;
+    planSeats?: number;
+  }) {
     const householdId = await this.client.mutation(api.households.create, {
       name: payload.name,
       slug: payload.slug,
       creatorUserId: payload.creatorUserId as Id<'users'>,
+      linkedOrganizationId: payload.linkedOrganizationId as Id<'organizations'> | undefined,
+      creatorRole: payload.creatorRole,
+      organizationMembershipId: payload.organizationMembershipId as Id<'organizationMemberships'> | undefined,
+      plan: payload.plan,
+      planInterval: payload.planInterval,
+      planSeats: payload.planSeats,
     });
     return householdId as Id<'households'>;
   }
@@ -379,14 +503,17 @@ export class GuapApi {
     userId: string;
     role: z.infer<typeof MembershipRoleSchema>;
     status?: z.infer<typeof MembershipStatusSchema>;
+    organizationMembershipId?: string;
   }) {
     await this.client.mutation(api.households.addMember, {
       householdId: payload.householdId as Id<'households'>,
       userId: payload.userId as Id<'users'>,
       role: payload.role,
       status: payload.status,
+      organizationMembershipId: payload.organizationMembershipId as Id<'organizationMemberships'> | undefined,
     });
   }
+
 }
 
 export const createGuapApi = (client: Client) => new GuapApi(client);

@@ -88,8 +88,8 @@ Create `.env.local` in the repo root (ignored by git) with credentials for the h
 SMOKE_AUTH_URL=https://<your-convex-deployment>.convex.site
 SMOKE_CONVEX_URL=https://<your-convex-deployment>.convex.cloud
 SMOKE_EMAIL=<smoke-user@your-domain>
-SMOKE_PASSWORD=<min-8-char-password>
 SMOKE_NAME=<Display Name>
+SMOKE_MAGIC_LINK_SECRET=<shared-secret-string>
 ```
 Then run:
 ```

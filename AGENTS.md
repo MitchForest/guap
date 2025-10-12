@@ -11,6 +11,7 @@ This pnpm workspace houses two apps and three shared packages. `apps/frontend` i
 - `pnpm build` – rebuild shared packages, run Convex codegen, then compile the frontend.
 - `pnpm lint` / `pnpm typecheck` – enforce ESLint rules and strict `tsc --noEmit`.
 - `pnpm smoke:auth-workspace` – exercise the auth + workspace publish path via HTTP.
+- **Do not run** `pnpm --filter @guap/backend dev`. Convex dev is already managed by the shared `pnpm dev` flow, and running the backend target directly will fail on schema validation (existing data lacks optional fields) and wastes time. If you need to regenerate backend artefacts, use `pnpm --filter @guap/backend generate` instead.
 
 ## Coding Style & Naming Conventions
 Use TypeScript strict mode from `tsconfig.base.json` and prefer named exports per module. Default to two-space indentation and keep Solid components in PascalCase (`MoneyMapCanvas`). Reference shared enums and schemas from `@guap/types` rather than re-declaring literals. Frontend routes must use the `AppPaths` helpers from `router.tsx`, and backend Convex modules should stay domain-scoped (`convex/workspaces.ts`, `convex/providers.ts`). Solid entry points should wrap children with `AppProviders` so Role/Auth/AppData/Shell contexts remain in sync. ESLint (see `apps/frontend/eslint.config.js`) enforces Solid and TypeScript rules; prefix intentionally unused variables with `_` to satisfy the configured `no-unused-vars` warning.

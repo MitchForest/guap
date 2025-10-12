@@ -101,15 +101,22 @@ const AppShell: Component<AppShellProps> = (props) => {
     return currentPath() === path || currentPath().startsWith(`${path}/`);
   };
 
-  const activeRole = createMemo(() => user()?.role ?? 'kid');
-  const requestsLabel = createMemo(() => (activeRole() === 'kid' ? 'Requests' : 'Approvals'));
+  const activeRole = createMemo(() => user()?.role ?? 'student');
+  const requestsLabel = createMemo(() => (activeRole() === 'student' ? 'Requests' : 'Approvals'));
   const activeHouseholdName = createMemo(() => activeHousehold()?.name ?? 'Household');
-  const totalBalance = createMemo(() =>
-    accounts().reduce((sum, account) => sum + account.balanceCents, 0)
-  );
-  const activeRequestsCount = createMemo(
-    () => requests().filter((item) => item.state === 'pending').length
-  );
+  const totalBalance = createMemo(() => accounts().reduce((sum, account) => sum + account.balanceCents, 0));
+  const activeRequestsCount = createMemo(() => requests().filter((item) => item.state === 'pending').length);
+  const settingsNav = createMemo<NavItem[]>(() => {
+    const items: NavItem[] = [
+      { label: 'Members', path: AppPaths.appSettingsMembers, icon: '👥' },
+      { label: 'Billing', path: AppPaths.appSettingsBilling, icon: '💳' },
+    ];
+    const role = user()?.role;
+    if (role === 'admin' || role === 'internal') {
+      items.push({ label: 'Org roster', path: AppPaths.appSettingsOrganization, icon: '🏫' });
+    }
+    return items;
+  });
   const sandboxStatus = createMemo(() => deriveSandboxStatus(workspacePair()));
   const activeVariant = createMemo<WorkspaceVariant>(() => {
     const slug = activeWorkspaceSlug();
@@ -258,6 +265,27 @@ const AppShell: Component<AppShellProps> = (props) => {
             <div class="space-y-1">
               <p class="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
               <For each={toolsNav}>
+                {(item) => (
+                  <Link
+                    to={item.path}
+                    class={clsx(
+                      'flex items-center gap-3 rounded-xl px-3 py-2 font-medium transition hover:bg-slate-100',
+                      isActive(item.path)
+                        ? 'bg-slate-200 text-slate-900'
+                        : 'text-slate-600 hover:text-slate-900'
+                    )}
+                  >
+                    <span aria-hidden="true" class="text-lg">
+                      {item.icon}
+                    </span>
+                    <span>{item.label}</span>
+                  </Link>
+                )}
+              </For>
+            </div>
+            <div class="space-y-1">
+              <p class="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Settings</p>
+              <For each={settingsNav()}>
                 {(item) => (
                   <Link
                     to={item.path}

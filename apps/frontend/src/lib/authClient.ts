@@ -1,4 +1,6 @@
-import { createAuthClient } from 'better-auth/react';
+import { createAuthClient } from 'better-auth/solid';
+import { magicLinkClient, organizationClient, adminClient } from 'better-auth/client/plugins';
+import { createAccessControl } from 'better-auth/plugins/access';
 import { convexClient, crossDomainClient } from '@convex-dev/better-auth/client/plugins';
 
 type ResolvedBaseSettings = {
@@ -38,10 +40,64 @@ const rawBaseUrl =
 
 const { baseURL, basePath } = resolveBaseSettings(rawBaseUrl);
 
+const organizationStatements = {
+  organization: ['read', 'update', 'delete'],
+  member: ['create', 'update', 'delete'],
+  invitation: ['create', 'cancel'],
+} as const;
+
+const organizationAccessControl = createAccessControl<typeof organizationStatements>(organizationStatements);
+
+const ownerRole = organizationAccessControl.newRole({
+  organization: ['read', 'update', 'delete'],
+  member: ['create', 'update', 'delete'],
+  invitation: ['create', 'cancel'],
+}) as any;
+
+const adminRole = organizationAccessControl.newRole({
+  organization: ['read', 'update'],
+  member: ['create', 'update'],
+  invitation: ['create', 'cancel'],
+}) as any;
+
+const memberRole = organizationAccessControl.newRole({
+  organization: ['read'],
+}) as any;
+
+const guardianRole = organizationAccessControl.newRole({
+  organization: ['read'],
+  invitation: ['create'],
+}) as any;
+
+const studentRole = organizationAccessControl.newRole({}) as any;
+
+const organizationRoles = {
+  owner: ownerRole,
+  admin: adminRole,
+  member: memberRole,
+  guardian: guardianRole,
+  student: studentRole,
+};
+
 const clientOptions = {
   baseURL,
   basePath,
-  plugins: [convexClient(), crossDomainClient()],
+  plugins: [
+    convexClient(),
+    crossDomainClient(),
+    magicLinkClient(),
+    organizationClient({
+      ac: organizationAccessControl,
+      roles: organizationRoles,
+      dynamicAccessControl: {
+        enabled: false,
+      },
+      teams: {
+        enabled: false,
+      },
+    }),
+    adminClient(),
+  ],
 };
 
 type SessionQueryOptions = {

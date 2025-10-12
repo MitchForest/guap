@@ -5,16 +5,17 @@
  * ensure a workspace exists, publish a minimal graph, and verify the persisted record.
  *
  * Requires a running backend with Better Auth + Convex and the following env vars:
- *   SMOKE_AUTH_URL       → Better Auth HTTP endpoint (e.g. http://localhost:3000)
- *   SMOKE_CONVEX_URL     → Convex deployment URL (e.g. http://localhost:3000)
- *   SMOKE_EMAIL          → Email used for the smoke user
- *   SMOKE_PASSWORD       → Password for the smoke user (min 8 chars per auth config)
- *   SMOKE_NAME           → Display name to seed the profile (used on first sign up)
+ *   SMOKE_AUTH_URL            → Better Auth HTTP endpoint (e.g. http://localhost:3000)
+ *   SMOKE_CONVEX_URL          → Convex deployment URL (e.g. http://localhost:3000)
+ *   SMOKE_EMAIL               → Email used for the smoke user
+ *   SMOKE_NAME                → Display name to seed the profile (used on first sign up)
+ *   SMOKE_MAGIC_LINK_SECRET   → Shared secret that allows the smoke harness to capture magic link tokens
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const currentFile = fileURLToPath(import.meta.url);
@@ -60,8 +61,8 @@ const requiredEnv = [
   'SMOKE_AUTH_URL',
   'SMOKE_CONVEX_URL',
   'SMOKE_EMAIL',
-  'SMOKE_PASSWORD',
   'SMOKE_NAME',
+  'SMOKE_MAGIC_LINK_SECRET',
 ];
 
 const missing = requiredEnv.filter((key) => !process.env[key]);
@@ -73,9 +74,8 @@ if (missing.length) {
 const authBase = process.env.SMOKE_AUTH_URL.replace(/\/$/, '');
 const convexBase = process.env.SMOKE_CONVEX_URL.replace(/\/$/, '');
 const email = process.env.SMOKE_EMAIL;
-const password = process.env.SMOKE_PASSWORD;
 const displayName = process.env.SMOKE_NAME;
-
+const smokeMagicLinkSecret = process.env.SMOKE_MAGIC_LINK_SECRET;
 const cookieJar = new Map();
 
 function setCookie(header) {
@@ -110,11 +110,18 @@ async function authFetch(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const cookies = getCookieHeader();
   if (cookies) headers.set('cookie', cookies);
+  if (!headers.has('origin')) {
+    headers.set('origin', authBase);
+  }
+  if (!headers.has('referer')) {
+    headers.set('referer', authBase);
+  }
   if (options.body && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
 
-  const res = await fetch(`${authBase}${path}`, {
+  const url = path.startsWith('http://') || path.startsWith('https://') ? path : `${authBase}${path}`;
+  const res = await fetch(url, {
     ...options,
     headers,
   });
@@ -127,38 +134,73 @@ async function authFetch(path, options = {}) {
   return res;
 }
 
-async function ensureSignedIn() {
-  // Try sign-in first
-  const signInRes = await authFetch('/api/auth/sign-in/email', {
+async function requestMagicLink({ key }) {
+  const response = await authFetch('/api/auth/sign-in/magic-link', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
-  });
-
-  if (signInRes.status === 200) {
-    return signInRes.json();
-  }
-
-  if (![400, 401, 404].includes(signInRes.status)) {
-    const text = await signInRes.text();
-    throw new Error(`Sign-in failed: ${signInRes.status} ${text}`);
-  }
-
-  // Attempt sign-up if sign-in failed (likely account doesn’t exist yet)
-  const signUpRes = await authFetch('/api/auth/sign-up/email', {
-    method: 'POST',
+    headers: {
+      'x-smoke-magic-link-key': key,
+      'x-smoke-magic-link-secret': smokeMagicLinkSecret,
+    },
     body: JSON.stringify({
       email,
-      password,
       name: displayName,
+      callbackURL: '/',
+      newUserCallbackURL: '/',
+      errorCallbackURL: '/auth/sign-in',
     }),
   });
 
-  if (!signUpRes.ok) {
-    const text = await signUpRes.text();
-    throw new Error(`Sign-up failed: ${signUpRes.status} ${text}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Magic link request failed: ${response.status} ${text}`);
+  }
+}
+
+async function fetchMagicLinkToken(key) {
+  const response = await authFetch('/api/smoke/magic-link-token', {
+    method: 'POST',
+    body: JSON.stringify({
+      key,
+      secret: smokeMagicLinkSecret,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Magic link token fetch failed: ${response.status} ${text}`);
   }
 
-  return signUpRes.json();
+  const data = await response.json();
+  if (!data?.token) {
+    throw new Error('Magic link token missing in response');
+  }
+
+  return data.token;
+}
+
+async function verifyMagicLink(token) {
+  const params = new URLSearchParams({
+    token,
+    callbackURL: '/',
+  });
+
+  const response = await authFetch(`/api/auth/magic-link/verify?${params.toString()}`, {
+    method: 'GET',
+    redirect: 'follow',
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Magic link verification failed: ${response.status} ${text}`);
+  }
+}
+
+async function ensureSignedIn() {
+  const key = randomUUID();
+  await requestMagicLink({ key });
+  const token = await fetchMagicLinkToken(key);
+  await verifyMagicLink(token);
+  return { email };
 }
 
 async function fetchConvexToken() {
@@ -206,13 +248,12 @@ function createWorkspacePayload(slug) {
 
 async function main() {
   console.log('🔐 Signing in (or creating) smoke user…');
-  const signInResult = await ensureSignedIn();
-  const user = signInResult?.user;
-  console.log(`✅ Authenticated as ${user?.email ?? user?.id ?? 'unknown user'}`);
+  const { email: signedInEmail } = await ensureSignedIn();
+  console.log(`✅ Authenticated as ${signedInEmail}`);
 
   let token = getCookieValue('__Secure-better-auth.convex_jwt');
   if (!token) {
-  console.log('🔑 Convex JWT cookie missing, fetching token endpoint…');
+    console.log('🔑 Convex JWT cookie missing, fetching token endpoint…');
     token = await fetchConvexToken();
   } else {
     console.log('🔑 Using Convex JWT from cookie…');

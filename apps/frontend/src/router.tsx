@@ -1,6 +1,6 @@
-import { Outlet, Route, RouterProvider, RootRoute, createRouter } from '@tanstack/solid-router';
+import { Outlet, Route, RouterProvider, RootRoute, createRouter, useRouter } from '@tanstack/solid-router';
 import type { RoutePaths } from '@tanstack/solid-router';
-import { Component } from 'solid-js';
+import { Component, createEffect } from 'solid-js';
 import AppLayout from './routes/AppLayout';
 import CanvasPage from './routes/CanvasPage';
 import CompoundToolPage from './routes/CompoundToolPage';
@@ -9,12 +9,22 @@ import DonatePage from './routes/DonatePage';
 import EarnPage from './routes/EarnPage';
 import InvestPage from './routes/InvestPage';
 import LandingPage from './routes/LandingPage';
+import PricingPage from './routes/PricingPage';
 import RootLayout from './routes/RootLayout';
 import SavePage from './routes/SavePage';
 import SignInPage from './routes/SignInPage';
 import SignUpPage from './routes/SignUpPage';
+import VerifyEmailPage from './routes/VerifyEmailPage';
+import AcceptInvitePage from './routes/AcceptInvitePage';
+import SettingsLayout from './routes/settings/SettingsLayout';
+import HouseholdMembersPage from './routes/settings/HouseholdMembersPage';
+import HouseholdBillingPage from './routes/settings/HouseholdBillingPage';
+import OrganizationRosterPage from './routes/settings/OrganizationRosterPage';
 import SpendPage from './routes/SpendPage';
 import WealthLadderPage from './routes/WealthLadderPage';
+import GoalSelectionPage from './routes/onboarding/GoalSelectionPage';
+import UseCasePage from './routes/onboarding/UseCasePage';
+import ReferralPage from './routes/onboarding/ReferralPage';
 import { AppPaths as StaticAppPaths } from './routerPaths';
 
 const rootRoute = new RootRoute({
@@ -25,6 +35,12 @@ const landingRoute = new Route({
   getParentRoute: () => rootRoute,
   path: '/',
   component: LandingPage,
+});
+
+const pricingRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: '/pricing',
+  component: PricingPage,
 });
 
 const authRoute = new Route({
@@ -44,6 +60,50 @@ const signUpRoute = new Route({
   path: 'sign-up',
   component: SignUpPage,
 });
+
+const verifyRoute = new Route({
+  getParentRoute: () => authRoute,
+  path: 'verify',
+  component: VerifyEmailPage,
+});
+
+const acceptInviteRoute = new Route({
+  getParentRoute: () => authRoute,
+  path: 'accept-invite/$invitationId',
+  component: AcceptInvitePage,
+});
+
+const onboardingRoute = new Route({
+  getParentRoute: () => rootRoute,
+  path: 'onboarding',
+  component: () => <Outlet />,
+});
+
+const goalRoute = new Route({
+  getParentRoute: () => onboardingRoute,
+  path: 'goal',
+  component: GoalSelectionPage,
+});
+
+const useCaseRoute = new Route({
+  getParentRoute: () => onboardingRoute,
+  path: 'use-case',
+  component: UseCasePage,
+});
+
+const referralRoute = new Route({
+  getParentRoute: () => onboardingRoute,
+  path: 'referral',
+  component: ReferralPage,
+});
+
+const SettingsIndexPage: Component = () => {
+  const router = useRouter();
+  createEffect(() => {
+    router.navigate({ to: '/app/settings/members' });
+  });
+  return null;
+};
 
 const appRoute = new Route({
   getParentRoute: () => rootRoute,
@@ -93,6 +153,36 @@ const automationsRoute = new Route({
   component: CanvasPage,
 });
 
+const settingsRoute = new Route({
+  getParentRoute: () => appRoute,
+  path: 'settings',
+  component: SettingsLayout,
+});
+
+const settingsIndexRoute = new Route({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  component: SettingsIndexPage,
+});
+
+const settingsMembersRoute = new Route({
+  getParentRoute: () => settingsRoute,
+  path: 'members',
+  component: HouseholdMembersPage,
+});
+
+const settingsBillingRoute = new Route({
+  getParentRoute: () => settingsRoute,
+  path: 'billing',
+  component: HouseholdBillingPage,
+});
+
+const settingsOrganizationRoute = new Route({
+  getParentRoute: () => settingsRoute,
+  path: 'organization',
+  component: OrganizationRosterPage,
+});
+
 const toolsRoute = new Route({
   getParentRoute: () => appRoute,
   path: 'tools',
@@ -111,7 +201,8 @@ const wealthLadderRoute = new Route({
   component: WealthLadderPage,
 });
 
-const authTree = authRoute.addChildren([signInRoute, signUpRoute]);
+const authTree = authRoute.addChildren([signInRoute, signUpRoute, verifyRoute, acceptInviteRoute]);
+const onboardingTree = onboardingRoute.addChildren([goalRoute, useCaseRoute, referralRoute]);
 const toolsTree = toolsRoute.addChildren([compoundRoute, wealthLadderRoute]);
 const appTree = appRoute.addChildren([
   dashboardRoute,
@@ -122,9 +213,10 @@ const appTree = appRoute.addChildren([
   donateRoute,
   automationsRoute,
   toolsTree,
+  settingsRoute.addChildren([settingsIndexRoute, settingsMembersRoute, settingsBillingRoute, settingsOrganizationRoute]),
 ]);
 
-const routeTree = rootRoute.addChildren([landingRoute, authTree, appTree]);
+const routeTree = rootRoute.addChildren([landingRoute, pricingRoute, authTree, onboardingTree, appTree]);
 
 export const router = createRouter({ routeTree });
 

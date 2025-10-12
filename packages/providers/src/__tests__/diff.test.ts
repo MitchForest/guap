@@ -92,8 +92,8 @@ describe('diffProviderSync', () => {
         },
         {
           providerUserId: 'user-2',
-          displayName: 'Kid Two',
-          role: 'kid',
+          displayName: 'Student Two',
+          role: 'student',
         },
       ],
     };

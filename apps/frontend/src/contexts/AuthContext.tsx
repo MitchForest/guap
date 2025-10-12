@@ -8,7 +8,7 @@ import {
   type Component,
   type JSX,
 } from 'solid-js';
-import type { UserRole } from '@guap/types';
+import type { OrganizationKind, UserRole } from '@guap/types';
 import {
   authClient,
   fetchConvexAuthToken,
@@ -22,11 +22,25 @@ import { workspaceSync } from '~/domains/workspaces/state/workspaceSync';
 import { guapApi } from '~/services/guapApi';
 import { recordAuthFailure, recordAuthSignOut, resetAuthTelemetry } from '~/services/telemetry';
 import { toast } from 'solid-sonner';
+import { AppPaths } from '~/routerPaths';
+import { getPendingInvite, clearPendingInvite } from '~/lib/pendingInvite';
+
+type SignUpRequest = {
+  email: string;
+  name: string;
+  role: UserRole;
+  organizationName?: string;
+  organizationKind?: OrganizationKind;
+};
+
+type PendingSignup = Partial<SignUpRequest> & { email: string };
 
 export type AuthUser = {
   authId: string;
   profileId: string;
   householdId?: string | null;
+  organizationId?: string | null;
+  organizationMembershipId?: string | null;
   email?: string;
   displayName: string;
   role: UserRole;
@@ -36,8 +50,8 @@ type AuthContextValue = {
   user: Accessor<AuthUser | null>;
   isLoading: Accessor<boolean>;
   isAuthenticated: Accessor<boolean>;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, name: string, role: UserRole) => Promise<void>;
+  signIn: (email: string, name?: string) => Promise<void>;
+  signUp: (payload: SignUpRequest) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   error: Accessor<string | null>;
@@ -54,21 +68,6 @@ const generateSlug = (seed: string) => {
   return `${base}-${suffix}`;
 };
 
-const upsertProfile = async (payload: {
-  authId: string;
-  email?: string;
-  displayName: string;
-  role: UserRole;
-}) => {
-  const result = await guapApi.ensureUser({
-    authId: payload.authId,
-    email: payload.email,
-    displayName: payload.displayName,
-    role: payload.role,
-  });
-  return result;
-};
-
 const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
   const { setRole } = useRole();
   const [user, setUser] = createSignal<AuthUser | null>(null);
@@ -76,11 +75,34 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
   const [error, setError] = createSignal<string | null>(null);
   let hydrating = false;
 
+  const getPendingSignup = () => {
+    if (typeof window === 'undefined') return null;
+    const raw = window.sessionStorage.getItem('pendingSignup');
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as PendingSignup;
+      return parsed?.email ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const setPendingSignup = (payload: SignUpRequest) => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem('pendingSignup', JSON.stringify(payload));
+  };
+
+  const clearPendingSignup = () => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.removeItem('pendingSignup');
+  };
+
   const createDefaultHousehold = async (profileId: string, displayName: string) => {
     const householdId = await guapApi.createHousehold({
       name: `${displayName}'s Household`,
       slug: generateSlug(displayName),
       creatorUserId: profileId,
+      plan: 'free',
     });
 
     await guapApi.updateUserProfile({
@@ -89,6 +111,25 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     });
 
     return householdId;
+  };
+
+  const processPendingInvite = async (pending: ReturnType<typeof getPendingInvite>) => {
+    if (!pending?.invitationId) return false;
+    try {
+      const result = await authClient.organization.acceptInvitation({
+        invitationId: pending.invitationId,
+      });
+      if (result.error) {
+        throw new Error(result.error.message ?? 'Unable to accept invite');
+      }
+      clearPendingInvite();
+      toast.success('Invite accepted! Your account has been linked.');
+      return true;
+    } catch (error) {
+      console.error('Pending invite acceptance failed', error);
+      toast.error('We could not accept that invite. You can try again from the Invitations page.');
+      return false;
+    }
   };
 
   const hydrateFromSession = async (options?: { refresh?: boolean }) => {
@@ -117,6 +158,10 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
       }
 
       const baseName = session.user.name ?? session.user.email ?? 'Member';
+      const pending = getPendingSignup();
+      if (pending && session.user.email && pending.email && pending.email !== session.user.email) {
+        clearPendingSignup();
+      }
       const accessToken = await fetchConvexAuthToken();
       console.log('Auth hydrate: convex token', accessToken);
 
@@ -130,6 +175,8 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         clearConvexAuthToken();
       }
 
+      const pendingInvite = getPendingInvite();
+
       let profile = await guapApi.getUserProfile(session.user.id);
       console.log('Auth hydrate: session loaded', {
         sessionUser: session.user,
@@ -142,21 +189,75 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         if (!emailAddress) {
           throw new Error('Authenticated user is missing an email address');
         }
+        const pending = getPendingSignup();
+        if (pending?.email && pending.email !== emailAddress) {
+          clearPendingSignup();
+        }
         const profileId = await guapApi.createProfile({
           authId: session.user.id,
           email: emailAddress,
-          displayName: baseName,
-          role: 'kid',
+          displayName: pending?.name ?? baseName,
+          role: pending?.role ?? 'student',
         });
         profile = await guapApi.getUserById(profileId);
-     }
+      }
 
       if (!profile) {
         throw new Error('Unable to resolve profile');
       }
 
+      if (pending) {
+        let processedPending = false;
+        try {
+          if (pending.role === 'admin') {
+            if (!profile.primaryOrganizationId) {
+              if (!pending.organizationName) {
+                throw new Error('Organization name is required to finish admin onboarding.');
+              }
+              const kind: OrganizationKind = pending.organizationKind ?? 'family';
+              const organizationType = kind === 'institution' ? 'school' : 'household';
+              const slug = generateSlug(pending.organizationName);
+              const result = await authClient.organization.create({
+                name: pending.organizationName,
+                slug,
+                metadata: {
+                  type: organizationType,
+                },
+                userId: session.user.id,
+              });
+              if (result.error) {
+                throw new Error(result.error.message ?? 'Unable to create organization');
+              }
+              toast.success('Organization created! Invite your team from the roster page.');
+              processedPending = true;
+            } else {
+              processedPending = true;
+            }
+          } else {
+            processedPending = true;
+          }
+        } catch (pendingError) {
+          console.error('Pending signup completion failed', pendingError);
+          toast.error(
+            pendingError instanceof Error
+              ? pendingError.message
+              : 'We were unable to finish onboarding automatically.'
+          );
+        }
+
+        if (processedPending) {
+          const refreshed = await guapApi.getUserById(profile._id);
+          if (refreshed) {
+            profile = refreshed;
+          }
+          clearPendingSignup();
+        } else {
+          clearPendingSignup();
+        }
+      }
+
       let householdId = profile.householdId ?? null;
-      if (!householdId) {
+      if (!householdId && !pendingInvite) {
         householdId = await createDefaultHousehold(profile._id, profile.displayName ?? baseName);
         profile = await guapApi.getUserById(profile._id);
         if (!profile) {
@@ -164,10 +265,21 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         }
       }
 
+      const acceptedInvite = await processPendingInvite(pendingInvite);
+      if (acceptedInvite) {
+        const refreshedProfile = await guapApi.getUserById(profile._id);
+        if (refreshedProfile) {
+          profile = refreshedProfile;
+          householdId = refreshedProfile.householdId ?? householdId;
+        }
+      }
+
       const active: AuthUser = {
         authId: profile.authId,
         profileId: profile._id,
         householdId,
+        organizationId: profile.primaryOrganizationId ?? null,
+        organizationMembershipId: profile.defaultMembershipId ?? null,
         email: profile.email ?? session.user.email ?? undefined,
         displayName: profile.displayName ?? baseName,
         role: profile.role,
@@ -213,16 +325,21 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     }
   });
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, name?: string) => {
     setIsLoading(true);
     try {
-      const result = await authClient.signIn.email({ email, password });
+      const result = await authClient.signIn.magicLink({
+        email,
+        name,
+        callbackURL: AppPaths.app,
+        newUserCallbackURL: AppPaths.app,
+        errorCallbackURL: AppPaths.signIn,
+      });
       if (result.error) {
         throw new Error(result.error.message);
       }
-      await hydrateFromSession({ refresh: true });
       setError(null);
-      toast.success('Signed in successfully.');
+      toast.success('Magic link sent! Check your email to continue.');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to sign in';
       setError(message);
@@ -232,26 +349,25 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     }
   };
 
-  const signUp = async (email: string, password: string, name: string, role: UserRole) => {
+  const signUp = async (payload: SignUpRequest) => {
     setIsLoading(true);
     try {
-      const result = await authClient.signUp.email({ email, password, name });
-      if (result.error || !result.data) {
-        throw new Error(result.error?.message ?? 'Sign up failed');
-      }
-      const profileId = await upsertProfile({
-        authId: result.data.user.id,
-        email,
-        displayName: name,
-        role,
+      setPendingSignup(payload);
+      const result = await authClient.signIn.magicLink({
+        email: payload.email,
+        name: payload.name,
+        callbackURL: AppPaths.app,
+        newUserCallbackURL: AppPaths.app,
+        errorCallbackURL: AppPaths.signIn,
       });
-      if (role === 'guardian') {
-        await createDefaultHousehold(profileId, name);
+      if (result.error) {
+        clearPendingSignup();
+        throw new Error(result.error.message ?? 'Sign up failed');
       }
-      await hydrateFromSession({ refresh: true });
       setError(null);
-      toast.success('Welcome to Guap!');
+      toast.success('Magic link sent! Check your email to finish signing up.');
     } catch (err) {
+      clearPendingSignup();
       const message = err instanceof Error ? err.message : 'Unable to sign up';
       setError(message);
       throw err;
@@ -269,7 +385,7 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     clearConvexAuthToken();
     workspaceSync.clear();
     setUser(null);
-    setRole('kid');
+    setRole('student');
     setError(null);
     recordAuthSignOut();
     toast.success('Signed out. See you soon!');

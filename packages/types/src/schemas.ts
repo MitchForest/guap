@@ -1,11 +1,59 @@
 import { z } from 'zod';
 
-export const UserRoleValues = ['kid', 'guardian'] as const;
+export const UserRoleValues = ['student', 'guardian', 'admin', 'internal'] as const;
 export const UserRoleSchema = z.enum(UserRoleValues);
-export const MembershipRoleValues = ['kid', 'guardian', 'manager'] as const;
+
+export const MembershipRoleValues = ['owner', 'admin', 'member', 'guardian', 'student', 'internal'] as const;
 export const MembershipRoleSchema = z.enum(MembershipRoleValues);
-export const MembershipStatusValues = ['active', 'invited', 'left'] as const;
+
+export const MembershipStatusValues = ['active', 'invited', 'pending', 'suspended', 'left'] as const;
 export const MembershipStatusSchema = z.enum(MembershipStatusValues);
+
+export const HouseholdPlanValues = ['free', 'household', 'organization'] as const;
+export const HouseholdPlanSchema = z.enum(HouseholdPlanValues);
+
+export const HouseholdPlanStatusValues = ['inactive', 'active', 'past_due', 'canceled'] as const;
+export const HouseholdPlanStatusSchema = z.enum(HouseholdPlanStatusValues);
+
+export const BillingIntervalValues = ['monthly', 'annual'] as const;
+export const BillingIntervalSchema = z.enum(BillingIntervalValues);
+
+export const OrganizationKindValues = ['family', 'institution', 'internal'] as const;
+export const OrganizationKindSchema = z.enum(OrganizationKindValues);
+
+export const OrganizationStatusValues = ['draft', 'active', 'suspended', 'archived'] as const;
+export const OrganizationStatusSchema = z.enum(OrganizationStatusValues);
+
+export const OrganizationBillingPlanValues = ['solo', 'family', 'standard', 'high_volume'] as const;
+export const OrganizationBillingPlanSchema = z.enum(OrganizationBillingPlanValues);
+
+export const OrganizationBillingIntervalValues = ['monthly', 'annual'] as const;
+export const OrganizationBillingIntervalSchema = z.enum(OrganizationBillingIntervalValues);
+
+export const OrganizationPricingTierSchema = z.object({
+  minSeats: z.number().int().nonnegative(),
+  maxSeats: z.number().int().nonnegative().nullable(),
+  monthlyCentsPerSeat: z.number().int().nonnegative(),
+  annualCentsPerSeat: z.number().int().nonnegative(),
+});
+
+export const OrganizationPricingSchema = z.object({
+  baseMonthlyCents: z.number().int().nonnegative().optional(),
+  baseAnnualCents: z.number().int().nonnegative().optional(),
+  includedSeats: z.number().int().nonnegative().optional(),
+  tiers: z.array(OrganizationPricingTierSchema).optional(),
+});
+
+export const HouseholdPlanRecordSchema = z.object({
+  plan: HouseholdPlanSchema,
+  status: HouseholdPlanStatusSchema,
+  interval: BillingIntervalSchema.optional(),
+  seats: z.number().int().nonnegative().optional(),
+  subscriptionId: z.string().optional(),
+  customerId: z.string().optional(),
+  linkedOrganizationId: z.string().optional(),
+  updatedAt: z.number().optional(),
+});
 
 export const AccountKindValues = [
   'checking',
@@ -55,6 +103,76 @@ export const WealthLevelSchema = z.enum(WealthLevelValues);
 export const CurrencyAmountSchema = z.object({
   cents: z.number().int(),
   currency: z.string().default('USD'),
+});
+
+export const OrganizationRecordSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  logo: z.string().optional(),
+  shortCode: z.string(),
+  joinCode: z.string(),
+  kind: OrganizationKindSchema,
+  type: z.string().optional(),
+  status: OrganizationStatusSchema,
+  createdByUserId: z.string(),
+  primaryHouseholdId: z.string().optional(),
+  billingPlan: OrganizationBillingPlanSchema,
+  billingInterval: OrganizationBillingIntervalSchema,
+  pricing: OrganizationPricingSchema.optional(),
+  billingProvider: z
+    .object({
+      provider: z.enum(['stripe']).optional(),
+      customerId: z.string().optional(),
+      subscriptionId: z.string().optional(),
+      status: z.enum(['trialing', 'active', 'past_due', 'canceled', 'incomplete', 'paused']).optional(),
+    })
+    .optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const OrganizationMembershipRecordSchema = z.object({
+  _id: z.string(),
+  organizationId: z.string(),
+  userId: z.string(),
+  role: MembershipRoleSchema,
+  status: MembershipStatusSchema,
+  invitedByUserId: z.string().optional(),
+  invitationId: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const InviteKindValues = ['household', 'organization'] as const;
+export const InviteKindSchema = z.enum(InviteKindValues);
+
+export const InviteStateValues = ['pending', 'accepted', 'rejected', 'canceled'] as const;
+export const InviteStateSchema = z.enum(InviteStateValues);
+
+export const MembershipInviteRecordSchema = z.object({
+  _id: z.string(),
+  targetKind: InviteKindSchema,
+  organizationId: z.string().optional(),
+  householdId: z.string().optional(),
+  email: z.string(),
+  role: MembershipRoleSchema,
+  code: z.string(),
+  token: z.string(),
+  state: InviteStateSchema,
+  invitedByUserId: z.string(),
+  invitedAt: z.number(),
+  expiresAt: z.number().optional(),
+  acceptedByUserId: z.string().optional(),
+  acceptedAt: z.number().optional(),
+  rejectedByUserId: z.string().optional(),
+  rejectedAt: z.number().optional(),
+  canceledByUserId: z.string().optional(),
+  canceledAt: z.number().optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
 });
 
 export const WorkspaceRecordSchema = z.object({

@@ -37,6 +37,7 @@
     "@tanstack/solid-router": "^1.132.41",
     "@tanstack/solid-table": "^8.21.3",
     "better-auth": "^1.3.27",
+    "chart.js": "catalog:",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "convex": "catalog:",
