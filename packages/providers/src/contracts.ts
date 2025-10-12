@@ -1,27 +1,13 @@
 import { z } from 'zod';
+import {
+  AccountKindSchema,
+  AccountStatusSchema,
+  CurrencyAmountSchema,
+  IncomeCadenceSchema,
+  UserRoleSchema,
+} from '@guap/types';
 
-export const CurrencyAmountSchema = z.object({
-  cents: z.number().int(),
-  currency: z.string().default('USD'),
-});
-
-export const AccountKindValues = ['checking', 'savings', 'cash', 'hysa', 'brokerage', 'credit', 'loan'] as const;
-export const AccountKindSchema = z.enum(AccountKindValues);
-
-export const AccountStatusValues = ['active', 'inactive', 'closed'] as const;
-export const AccountStatusSchema = z.enum(AccountStatusValues);
-
-export const IncomeCadenceValues = [
-  'weekly',
-  'biweekly',
-  'monthly',
-  'quarterly',
-  'annual',
-] as const;
-export const IncomeCadenceSchema = z.enum(IncomeCadenceValues);
-
-export const ProviderUserRoleValues = ['owner', 'guardian', 'student', 'member', 'admin'] as const;
-export const ProviderUserRoleSchema = z.enum(ProviderUserRoleValues);
+export { CurrencyAmountSchema, IncomeCadenceSchema };
 
 export const ProviderAccountSchema = z.object({
   providerAccountId: z.string(),
@@ -59,13 +45,14 @@ export const ProviderUserSchema = z.object({
   providerUserId: z.string(),
   displayName: z.string(),
   email: z.string().email().optional(),
-  role: ProviderUserRoleSchema.default('member'),
+  role: UserRoleSchema.default('child'),
   metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const ProviderSyncContextSchema = z.object({
-  organizationId: z.string(),
-  userId: z.string(),
+  householdId: z.string(),
+  organizationId: z.string().optional(),
+  profileId: z.string(),
   providerConfig: z.record(z.string(), z.any()).optional(),
   forceRefresh: z.boolean().default(false),
 });

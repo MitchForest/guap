@@ -1,30 +1,83 @@
 import {
-  createWorkspacePublishPayload,
-  type WorkspaceGraphFlowInput,
-  type WorkspaceGraphNodeInput,
-  type WorkspaceGraphRuleInput,
+  createMoneyMapSaveInput,
+  workspaceGraphFromSnapshot,
+  type MoneyMapChangeRequestRecord,
+  type MoneyMapChangeStatus,
+  type MoneyMapSnapshot,
+  type WorkspaceGraphDraft,
+  type WorkspaceGraphData,
   type WorkspaceRecord,
 } from '@guap/api';
 import { guapApi } from '~/services/guapApi';
 
-type WorkspaceVariant = 'live' | 'sandbox';
+export type { WorkspaceGraphDraft } from '@guap/api';
+
+type WorkspaceVariant = 'live' | 'draft';
 type VariantKey = `${string}:${WorkspaceVariant}`;
 
 let lastHouseholdId: string | null = null;
 
-export type WorkspaceGraphDraft = {
-  nodes: WorkspaceGraphNodeInput[];
-  flows: WorkspaceGraphFlowInput[];
-  rules: WorkspaceGraphRuleInput[];
-};
-
 const variantCache = new Map<VariantKey, WorkspaceRecord | null>();
+const snapshotCache = new Map<string, MoneyMapSnapshot | null>();
 
 const cacheKey = (householdId: string, variant: WorkspaceVariant): VariantKey =>
   `${householdId}:${variant}`;
 
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '') || 'money-map';
+
+const registerSlugs = (householdId: string, snapshot: MoneyMapSnapshot | null) => {
+  const base = slugify(snapshot?.map?.name ?? householdId);
+  const liveSlug = `${base}-live`;
+  const draftSlug = `${base}-draft`;
+  return { liveSlug, draftSlug };
+};
+
+const organizationIdFor = (householdId: string) => householdId;
+
+const loadSnapshot = async (householdId: string) => {
+  const organizationId = organizationIdFor(householdId);
+  const result = await guapApi.loadMoneyMap(organizationId);
+  snapshotCache.set(householdId, result ?? null);
+  return result ?? null;
+};
+
+const getSnapshot = async (householdId: string) => {
+  if (snapshotCache.has(householdId)) {
+    return snapshotCache.get(householdId) ?? null;
+  }
+  return await loadSnapshot(householdId);
+};
+
+const toWorkspaceRecord = (
+  householdId: string,
+  slug: string,
+  variant: WorkspaceVariant,
+  snapshot: MoneyMapSnapshot | null
+): WorkspaceRecord => {
+  const mapMeta = snapshot?.map;
+  const baseName = mapMeta?.name ?? 'Money Map';
+  return {
+    _id: `${variant}:${householdId}`,
+    name: baseName,
+    slug,
+    householdId,
+    variant: variant === 'live' ? 'live' : 'sandbox',
+    lastSyncedAt: mapMeta?.updatedAt ?? null,
+    lastAppliedAt: mapMeta?.updatedAt ?? null,
+    pendingRequestId: null,
+    createdAt: mapMeta?.createdAt ?? Date.now(),
+    updatedAt: mapMeta?.updatedAt ?? Date.now(),
+  };
+};
+
 export const clearWorkspaceCache = () => {
   variantCache.clear();
+  snapshotCache.clear();
 };
 
 export async function ensureWorkspacePair(params: {
@@ -34,43 +87,55 @@ export async function ensureWorkspacePair(params: {
   sandboxSlug?: string;
   sandboxName?: string;
 }) {
-  const result = await guapApi.ensureWorkspacePair({
-    householdId: params.householdId,
-    slug: params.slug,
+  await guapApi.saveMoneyMap({
+    organizationId: organizationIdFor(params.householdId),
     name: params.name,
-    sandboxSlug: params.sandboxSlug,
-    sandboxName: params.sandboxName,
+    description: undefined,
+    nodes: [],
+    edges: [],
+    rules: [],
   });
+  snapshotCache.delete(params.householdId);
   variantCache.delete(cacheKey(params.householdId, 'live'));
-  variantCache.delete(cacheKey(params.householdId, 'sandbox'));
-  return result;
+  variantCache.delete(cacheKey(params.householdId, 'draft'));
 }
 
 export async function listWorkspaceVariants(householdId: string) {
   lastHouseholdId = householdId;
-  const workspaces = await guapApi.listWorkspaces(householdId);
-  let live: WorkspaceRecord | null = null;
-  let sandbox: WorkspaceRecord | null = null;
-  for (const workspace of workspaces) {
-    variantCache.set(cacheKey(workspace.householdId, workspace.variant), workspace);
-    if (workspace.variant === 'live') live = workspace;
-    if (workspace.variant === 'sandbox') sandbox = workspace;
-  }
-  return { live, sandbox };
+  const snapshot = await getSnapshot(householdId);
+  const { liveSlug, draftSlug } = registerSlugs(householdId, snapshot);
+
+  const live = toWorkspaceRecord(householdId, liveSlug, 'live', snapshot);
+  const draft = snapshot ? toWorkspaceRecord(householdId, draftSlug, 'draft', snapshot) : null;
+
+  variantCache.set(cacheKey(householdId, 'live'), live);
+  variantCache.set(cacheKey(householdId, 'draft'), draft);
+
+  return { live, sandbox: draft };
 }
 
 export async function getWorkspace(slug: string): Promise<WorkspaceRecord | null> {
-  for (const workspace of variantCache.values()) {
-    if (workspace?.slug === slug) {
-      return workspace;
+  for (const record of variantCache.values()) {
+    if (record?.slug === slug) {
+      return record;
     }
   }
-  const record = await guapApi.getWorkspace(slug);
-  if (record) {
-    variantCache.set(cacheKey(record.householdId, record.variant), record);
-    lastHouseholdId = record.householdId;
+
+  if (!lastHouseholdId) {
+    return null;
   }
-  return record;
+
+  const snapshot = await getSnapshot(lastHouseholdId);
+  const { liveSlug, draftSlug } = registerSlugs(lastHouseholdId, snapshot);
+  const live = toWorkspaceRecord(lastHouseholdId, liveSlug, 'live', snapshot);
+  const draft = snapshot ? toWorkspaceRecord(lastHouseholdId, draftSlug, 'draft', snapshot) : null;
+
+  variantCache.set(cacheKey(lastHouseholdId, 'live'), live);
+  variantCache.set(cacheKey(lastHouseholdId, 'draft'), draft);
+
+  if (slug === liveSlug) return live;
+  if (slug === draftSlug) return draft;
+  return null;
 }
 
 export async function getWorkspaceVariant(
@@ -81,71 +146,142 @@ export async function getWorkspaceVariant(
   if (variantCache.has(key)) {
     return variantCache.get(key) ?? null;
   }
-  const workspace = await guapApi.getWorkspaceVariant(householdId, variant);
-  variantCache.set(key, workspace);
-  return workspace;
+  const snapshot = await getSnapshot(householdId);
+  const { liveSlug, draftSlug } = registerSlugs(householdId, snapshot);
+  const record =
+    variant === 'draft' && snapshot
+      ? toWorkspaceRecord(householdId, draftSlug, 'draft', snapshot)
+      : toWorkspaceRecord(householdId, liveSlug, 'live', snapshot);
+  variantCache.set(key, record);
+  return record;
 }
 
-export async function fetchGraph(slug: string) {
-  return await guapApi.fetchWorkspaceGraph(slug);
+export async function fetchGraph(slug: string): Promise<WorkspaceGraphData> {
+  const workspace = await getWorkspace(slug);
+  if (!workspace) {
+    return { nodes: [], edges: [], rules: [], allocations: [] };
+  }
+  const snapshot = await getSnapshot(workspace.householdId);
+  return workspaceGraphFromSnapshot(snapshot);
 }
 
 export async function publishGraph(target: string | WorkspaceRecord, draft: WorkspaceGraphDraft) {
   const workspace = typeof target === 'string' ? await getWorkspace(target) : target;
   if (!workspace) {
-    throw new Error('Workspace not found');
+    throw new Error('Money Map not found');
   }
-  variantCache.delete(cacheKey(workspace.householdId, workspace.variant));
-  const publishPayload = createWorkspacePublishPayload({
-    slug: workspace.slug,
-    nodes: draft.nodes,
-    flows: draft.flows,
-    rules: draft.rules,
+
+  const householdId = workspace.householdId;
+  const snapshot = await getSnapshot(householdId);
+  const payload = createMoneyMapSaveInput({
+    organizationId: organizationIdFor(householdId),
+    draft,
+    snapshot,
+    fallbackName: snapshot?.map?.name ?? 'Money Map',
+    fallbackDescription: snapshot?.map?.description,
   });
-  return await guapApi.publishWorkspaceGraph(publishPayload);
+
+  const result = await guapApi.saveMoneyMap(payload);
+  snapshotCache.set(householdId, result);
+  variantCache.delete(cacheKey(householdId, 'live'));
+  variantCache.delete(cacheKey(householdId, 'draft'));
+
+  return {
+    nodes: Object.fromEntries(result.nodes.map((node) => [node.metadata?.id ?? node._id, node._id])),
+    edges: Object.fromEntries(result.edges.map((edge) => {
+      const metadata = (edge.metadata ?? {}) as Record<string, unknown>;
+      const id = typeof metadata.id === 'string' ? metadata.id : edge._id;
+      return [id, edge._id];
+    })),
+    rules: Object.fromEntries(result.rules.map((rule) => {
+      const config = (rule.config ?? {}) as Record<string, unknown>;
+      const id = typeof config.ruleId === 'string' ? config.ruleId : rule._id;
+      return [id, rule._id];
+    })),
+  };
 }
 
-export async function resetSandbox(params: { householdId: string; actorUserId: string }) {
-  const result = await guapApi.resetSandbox(params);
-  variantCache.delete(cacheKey(params.householdId, 'sandbox'));
-  return result;
+export async function resetSandbox(_params: { householdId: string; actorUserId: string }) {
+  console.warn('Sandbox reset is no longer supported; Money Map edits apply directly.');
 }
 
-export async function applySandbox(params: {
+export async function applySandbox(_params: {
   householdId: string;
   actorUserId: string;
   bypassApproval?: boolean;
 }) {
-  const result = await guapApi.applySandbox(params);
-  variantCache.delete(cacheKey(params.householdId, 'live'));
-  variantCache.delete(cacheKey(params.householdId, 'sandbox'));
-  return result;
+  return { requiresApproval: false };
 }
 
 export async function listWorkspaces(): Promise<WorkspaceRecord[]> {
   if (!lastHouseholdId) {
     return [];
   }
-  const pair = await listWorkspaceVariants(lastHouseholdId);
-  return [pair.live, pair.sandbox].filter(Boolean) as WorkspaceRecord[];
+  const { live, sandbox } = await listWorkspaceVariants(lastHouseholdId);
+  return [live, sandbox].filter(Boolean) as WorkspaceRecord[];
 }
 
 export async function ensureWorkspace(slug: string, name: string): Promise<WorkspaceRecord | null> {
   if (!lastHouseholdId) {
     return null;
   }
-  const sandboxSlug = `${slug}-sandbox`;
   await ensureWorkspacePair({
     householdId: lastHouseholdId,
     slug,
     name,
-    sandboxSlug,
-    sandboxName: `${name} Sandbox`,
-  }).catch(() => undefined);
+    sandboxSlug: `${slug}-draft`,
+    sandboxName: `${name} Draft`,
+  });
   const workspaces = await listWorkspaces();
-  return workspaces.find((workspace) => workspace.slug === slug) ?? workspaces.find((workspace) => workspace.variant === 'sandbox') ?? null;
+  return (
+    workspaces.find((workspace) => workspace.slug === slug) ??
+    workspaces.find((workspace) => workspace.variant === 'sandbox') ??
+    null
+  );
 }
 
 export async function deleteWorkspace(_workspaceId: string) {
-  console.warn('Workspace deletion is disabled; sandbox model enforces a single pair per household.');
+  console.warn('Money Map enforces a single record per household. Delete is disabled.');
+}
+
+export async function submitChangeRequest(params: {
+  householdId: string;
+  submitterId: string;
+  draft: WorkspaceGraphDraft;
+  summary?: string;
+}) {
+  const snapshot = await getSnapshot(params.householdId);
+  if (!snapshot) {
+    throw new Error('No Money Map exists yet for this household');
+  }
+
+  const payload = createMoneyMapSaveInput({
+    organizationId: organizationIdFor(params.householdId),
+    draft: params.draft,
+    snapshot,
+    fallbackName: snapshot.map.name ?? 'Money Map',
+    fallbackDescription: snapshot.map.description,
+  });
+
+  return await guapApi.submitChangeRequest({
+    mapId: snapshot.map._id,
+    organizationId: organizationIdFor(params.householdId),
+    submitterId: params.submitterId,
+    summary: params.summary,
+    payload,
+  });
+}
+
+export async function listChangeRequests(
+  householdId: string,
+  status?: MoneyMapChangeStatus
+): Promise<MoneyMapChangeRequestRecord[]> {
+  return await guapApi.listChangeRequests(organizationIdFor(householdId), status);
+}
+
+export async function updateChangeRequestStatus(params: {
+  requestId: string;
+  status: MoneyMapChangeStatus;
+}) {
+  await guapApi.updateChangeRequestStatus(params);
 }

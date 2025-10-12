@@ -61,7 +61,7 @@ const PricingPage: Component = () => {
       description: 'Seat-based pricing for classrooms, districts, and youth programs.',
       features: [
         'Admin dashboard for rosters & seats',
-        'Guardian + student co-invitations',
+        'Guardian + child co-invitations',
         'Bulk lesson plans & challenges',
         'Centralized billing & reporting',
         'Leaderboard and cohort insights',
@@ -135,7 +135,7 @@ const PricingPage: Component = () => {
             Start free, upgrade when you're ready
           </h1>
           <p class="mx-auto max-w-2xl text-lg text-slate-600">
-            Every student begins with a sandbox account. Add real money features with the plan that fits your family or organization.
+            Every child begins with a sandbox account. Add real money features with the plan that fits your family or organization.
           </p>
 
           {/* Billing Toggle */}

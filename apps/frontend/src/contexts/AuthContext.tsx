@@ -8,7 +8,13 @@ import {
   type Component,
   type JSX,
 } from 'solid-js';
-import type { OrganizationKind, UserRole } from '@guap/types';
+import {
+  BetterAuthSessionSchema,
+  UserRoleSchema,
+  type BetterAuthSessionUser,
+  type OrganizationKind,
+  type UserRole,
+} from '@guap/types';
 import {
   authClient,
   fetchConvexAuthToken,
@@ -18,8 +24,6 @@ import {
 } from '~/lib/authClient';
 import { clearConvexAuthToken, setConvexAuthToken } from '~/services/convexClient';
 import { useRole } from '~/contexts/RoleContext';
-import { workspaceSync } from '~/domains/workspaces/state/workspaceSync';
-import { guapApi } from '~/services/guapApi';
 import { recordAuthFailure, recordAuthSignOut, resetAuthTelemetry } from '~/services/telemetry';
 import { toast } from 'solid-sonner';
 import { AppPaths } from '~/routerPaths';
@@ -97,20 +101,71 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     window.sessionStorage.removeItem('pendingSignup');
   };
 
-  const createDefaultHousehold = async (profileId: string, displayName: string) => {
-    const householdId = await guapApi.createHousehold({
-      name: `${displayName}'s Household`,
-      slug: generateSlug(displayName),
-      creatorUserId: profileId,
-      plan: 'free',
-    });
+  const parseSessionUser = (session: BetterAuthSession | null) => {
+    if (!session) {
+      return null;
+    }
+    const parsed = BetterAuthSessionSchema.safeParse(session);
+    if (!parsed.success) {
+      console.error('Unable to parse Better Auth session payload', parsed.error);
+      throw new Error('Invalid session payload from Better Auth');
+    }
+    const merged: BetterAuthSessionUser = {
+      ...parsed.data.user,
+      ...(parsed.data.session?.user ?? {}),
+    };
+    return { raw: parsed.data, user: merged };
+  };
 
-    await guapApi.updateUserProfile({
-      userId: profileId,
-      householdId,
+  const refreshSessionUser = async () => {
+    const refreshed = await refreshBetterAuthSession().catch((error) => {
+      console.warn('Better Auth session refresh failed', error);
+      return null;
     });
+    if (!refreshed) {
+      return null;
+    }
+    return parseSessionUser(refreshed);
+  };
 
-    return householdId;
+  const ensureGuardianOrganization = async (
+    pending: PendingSignup,
+    sessionUser: BetterAuthSessionUser
+  ) => {
+    if (pending.role !== 'guardian') {
+      return sessionUser;
+    }
+
+    const hasOrganization =
+      !!sessionUser.activeOrganizationId ||
+      !!sessionUser.organizationId ||
+      !!sessionUser.householdId;
+
+    if (hasOrganization) {
+      return sessionUser;
+    }
+
+    if (!pending.organizationName) {
+      throw new Error('Organization name is required to finish admin onboarding.');
+    }
+
+    const kind: OrganizationKind = pending.organizationKind ?? 'family';
+    const organizationType = kind === 'institution' ? 'school' : 'household';
+    const slug = generateSlug(pending.organizationName);
+    const result = await authClient.organization.create({
+      name: pending.organizationName,
+      slug,
+      metadata: {
+        type: organizationType,
+      },
+      userId: sessionUser.id,
+    });
+    if (result.error) {
+      throw new Error(result.error.message ?? 'Unable to create organization');
+    }
+    toast.success('Organization created! Invite your team from the roster page.');
+    const refreshed = await refreshSessionUser();
+    return refreshed?.user ?? sessionUser;
   };
 
   const processPendingInvite = async (pending: ReturnType<typeof getPendingInvite>) => {
@@ -136,40 +191,32 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     if (hydrating) return;
     hydrating = true;
     setIsLoading(true);
-    let session: BetterAuthSession | null = null;
     try {
-      if (options?.refresh) {
-        const refreshed = await refreshBetterAuthSession().catch((error) => {
-          console.warn('Better Auth session refresh failed', error);
-          return null;
-        });
-        if (refreshed) {
-          session = refreshed;
-        }
+      let sessionInfo = options?.refresh ? await refreshSessionUser() : null;
+      if (!sessionInfo) {
+        const initial = await getBetterAuthSession();
+        sessionInfo = parseSessionUser(initial ?? null);
       }
-      session = session ?? (await getBetterAuthSession());
-      console.log('Auth hydrate: session result', session);
-      if (!session?.user) {
+
+      if (!sessionInfo) {
         clearConvexAuthToken();
         setUser(null);
-        workspaceSync.clear();
         setError(null);
         return;
       }
 
-      const baseName = session.user.name ?? session.user.email ?? 'Member';
+      let sessionUser = sessionInfo.user;
+      const baseName = sessionUser.name ?? sessionUser.email ?? 'Member';
       const pending = getPendingSignup();
-      if (pending && session.user.email && pending.email && pending.email !== session.user.email) {
+      if (pending && sessionUser.email && pending.email && pending.email !== sessionUser.email) {
         clearPendingSignup();
       }
-      const accessToken = await fetchConvexAuthToken();
-      console.log('Auth hydrate: convex token', accessToken);
+      const accessToken = await fetchConvexAuthToken().catch((error) => {
+        console.warn('Failed to fetch Convex auth token', error);
+        return null;
+      });
 
-      if (!accessToken) {
-        console.warn('No Convex token received from Better Auth');
-      }
-
-      if (accessToken) {
+      if (accessToken && accessToken.length > 0) {
         setConvexAuthToken(accessToken);
       } else {
         clearConvexAuthToken();
@@ -177,65 +224,11 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
 
       const pendingInvite = getPendingInvite();
 
-      let profile = await guapApi.getUserProfile(session.user.id);
-      console.log('Auth hydrate: session loaded', {
-        sessionUser: session.user,
-        hasAccessToken: !!accessToken,
-        hasProfile: !!profile,
-      });
-
-      if (!profile) {
-        const emailAddress = session.user.email;
-        if (!emailAddress) {
-          throw new Error('Authenticated user is missing an email address');
-        }
-        const pending = getPendingSignup();
-        if (pending?.email && pending.email !== emailAddress) {
-          clearPendingSignup();
-        }
-        const profileId = await guapApi.createProfile({
-          authId: session.user.id,
-          email: emailAddress,
-          displayName: pending?.name ?? baseName,
-          role: pending?.role ?? 'student',
-        });
-        profile = await guapApi.getUserById(profileId);
-      }
-
-      if (!profile) {
-        throw new Error('Unable to resolve profile');
-      }
-
       if (pending) {
         let processedPending = false;
         try {
-          if (pending.role === 'admin') {
-            if (!profile.primaryOrganizationId) {
-              if (!pending.organizationName) {
-                throw new Error('Organization name is required to finish admin onboarding.');
-              }
-              const kind: OrganizationKind = pending.organizationKind ?? 'family';
-              const organizationType = kind === 'institution' ? 'school' : 'household';
-              const slug = generateSlug(pending.organizationName);
-              const result = await authClient.organization.create({
-                name: pending.organizationName,
-                slug,
-                metadata: {
-                  type: organizationType,
-                },
-                userId: session.user.id,
-              });
-              if (result.error) {
-                throw new Error(result.error.message ?? 'Unable to create organization');
-              }
-              toast.success('Organization created! Invite your team from the roster page.');
-              processedPending = true;
-            } else {
-              processedPending = true;
-            }
-          } else {
-            processedPending = true;
-          }
+          sessionUser = await ensureGuardianOrganization(pending, sessionUser);
+          processedPending = true;
         } catch (pendingError) {
           console.error('Pending signup completion failed', pendingError);
           toast.error(
@@ -246,46 +239,37 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         }
 
         if (processedPending) {
-          const refreshed = await guapApi.getUserById(profile._id);
-          if (refreshed) {
-            profile = refreshed;
-          }
           clearPendingSignup();
         } else {
           clearPendingSignup();
         }
       }
 
-      let householdId = profile.householdId ?? null;
-      if (!householdId && !pendingInvite) {
-        householdId = await createDefaultHousehold(profile._id, profile.displayName ?? baseName);
-        profile = await guapApi.getUserById(profile._id);
-        if (!profile) {
-          throw new Error('Unable to resolve profile after household creation');
-        }
-      }
-
       const acceptedInvite = await processPendingInvite(pendingInvite);
       if (acceptedInvite) {
-        const refreshedProfile = await guapApi.getUserById(profile._id);
-        if (refreshedProfile) {
-          profile = refreshedProfile;
-          householdId = refreshedProfile.householdId ?? householdId;
+        const refreshed = await refreshSessionUser();
+        if (refreshed) {
+          sessionUser = refreshed.user;
         }
       }
 
+      const roleResult = UserRoleSchema.safeParse(sessionUser.role);
+      const resolvedRole: UserRole = roleResult.success ? roleResult.data : 'child';
+      const organizationId =
+        sessionUser.activeOrganizationId ?? sessionUser.organizationId ?? null;
+      const householdId = sessionUser.householdId ?? organizationId;
+
       const active: AuthUser = {
-        authId: profile.authId,
-        profileId: profile._id,
+        authId: sessionUser.id,
+        profileId: sessionUser.profileId ?? sessionUser.id,
         householdId,
-        organizationId: profile.primaryOrganizationId ?? null,
-        organizationMembershipId: profile.defaultMembershipId ?? null,
-        email: profile.email ?? session.user.email ?? undefined,
-        displayName: profile.displayName ?? baseName,
-        role: profile.role,
+        organizationId,
+        organizationMembershipId: sessionUser.organizationMembershipId ?? null,
+        email: sessionUser.email,
+        displayName: baseName,
+        role: resolvedRole,
       };
 
-      console.log('Auth hydrate: setting user', active);
       setUser(active);
       setRole(active.role);
       setError(null);
@@ -297,7 +281,6 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
       await authClient
         .signOut()
         .catch((signOutError) => console.warn('Better Auth sign out failed', signOutError));
-      workspaceSync.clear();
       setError(error instanceof Error ? error.message : 'Unable to refresh session');
       recordAuthFailure(error instanceof Error ? error.message : undefined);
       toast.error('Session refresh failed. Please sign in again.');
@@ -383,9 +366,8 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
       console.warn('Better Auth sign out error', error);
     }
     clearConvexAuthToken();
-    workspaceSync.clear();
     setUser(null);
-    setRole('student');
+    setRole('child');
     setError(null);
     recordAuthSignOut();
     toast.success('Signed out. See you soon!');

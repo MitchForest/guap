@@ -19,7 +19,7 @@ const SettingsLayout: Component = () => {
       { label: 'Household members', path: AppPaths.appSettingsMembers },
       { label: 'Billing & plans', path: AppPaths.appSettingsBilling },
     ];
-    if (user()?.role === 'admin' || user()?.role === 'internal') {
+    if (user()?.role === 'guardian') {
       base.push({ label: 'Organization roster', path: AppPaths.appSettingsOrganization });
     }
     return base;

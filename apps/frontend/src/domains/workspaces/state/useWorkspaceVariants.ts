@@ -41,9 +41,7 @@ export const useWorkspaceVariants = ({
     const slug = workspaceSlugValue();
     const sandbox = sandboxWorkspace();
     if (slug && sandbox && sandbox.slug === slug) return 'sandbox';
-    const live = liveWorkspace();
-    if (slug && live && live.slug === slug) return 'live';
-    return sandbox ? 'sandbox' : 'live';
+    return 'live';
   });
 
   const currentWorkspace = createMemo<WorkspaceRecord | null>(() => {
@@ -137,14 +135,14 @@ export const useWorkspaceVariants = ({
       if (!pair.live || !pair.sandbox) {
         const baseSlug = toSlug(household.slug ?? household.name ?? `household-${household._id}`);
         const liveSlug = `${baseSlug}-live`;
-        const sandboxSlug = `${baseSlug}-sandbox`;
+        const sandboxSlug = `${baseSlug}-draft`;
         const householdName = household.name ?? 'Money Map';
         await ensureWorkspacePair({
           householdId: household._id,
           slug: liveSlug,
           name: `${householdName} Money Map`,
           sandboxSlug,
-          sandboxName: `${householdName} Sandbox`,
+          sandboxName: `${householdName} Draft`,
         });
         pair = await listWorkspaceVariants(household._id);
       }

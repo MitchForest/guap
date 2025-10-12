@@ -9,8 +9,9 @@ import {
   useContext,
 } from 'solid-js';
 import type { AccountRecord, HouseholdRecord, IncomeRecord, RequestRecord } from '@guap/api';
+import { HouseholdRecordSchema } from '@guap/types';
 import { useAuth } from '~/contexts/AuthContext';
-import { guapApi } from '~/services/guapApi';
+import type { AuthUser } from '~/contexts/AuthContext';
 
 type AppDataContextValue = {
   households: Accessor<HouseholdRecord[]>;
@@ -30,103 +31,55 @@ type AppDataProviderProps = {
 const AppDataProvider: Component<AppDataProviderProps> = (props) => {
   const { user } = useAuth();
   const [households, setHouseholds] = createSignal<HouseholdRecord[]>([]);
-  const [accounts, setAccounts] = createSignal<AccountRecord[]>([]);
-  const [incomeStreams, setIncomeStreams] = createSignal<IncomeRecord[]>([]);
-  const [requests, setRequests] = createSignal<RequestRecord[]>([]);
+  const [accounts] = createSignal<AccountRecord[]>([]);
+  const [incomeStreams] = createSignal<IncomeRecord[]>([]);
+  const [requests] = createSignal<RequestRecord[]>([]);
   const [activeHouseholdId, setActiveHouseholdId] = createSignal<string | null>(null);
   const activeHousehold = createMemo(() => {
     const id = activeHouseholdId();
     if (!id) return null;
     return households().find((household) => household._id === id) ?? null;
   });
-  const loadHouseholdData = async (profileId: string, preferredHouseholdId?: string | null) => {
-    try {
-      const fetchedHouseholds = await guapApi.listHouseholds(profileId);
-      setHouseholds(fetchedHouseholds);
-      if (!fetchedHouseholds.length) {
-        setActiveHouseholdId(null);
-        return;
-      }
+  const toSlug = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '') || 'household';
 
-      const hasPreferred = preferredHouseholdId
-        ? fetchedHouseholds.some((household) => household._id === preferredHouseholdId)
-        : false;
-
-      setActiveHouseholdId((current) => {
-        if (current && fetchedHouseholds.some((household) => household._id === current)) {
-          return current;
-        }
-        if (hasPreferred && preferredHouseholdId) {
-          return preferredHouseholdId;
-        }
-        return fetchedHouseholds[0]._id;
-      });
-    } catch (error) {
-      console.error('Failed to load households', error);
+  const loadHouseholdData = (authUser: AuthUser | null) => {
+    if (!authUser?.householdId) {
       setHouseholds([]);
       setActiveHouseholdId(null);
-    }
-  };
-  const loadHouseholdResources = async (householdId: string) => {
-    if (!householdId || !householdId.includes(':')) {
-      setAccounts([]);
-      setIncomeStreams([]);
-      setRequests([]);
       return;
     }
+
     try {
-      const [fetchedAccounts, fetchedIncome, fetchedRequests] = await Promise.all([
-        guapApi.listAccounts(householdId),
-        guapApi.listIncomeStreams(householdId),
-        guapApi.listRequests(householdId),
-      ]);
-      setAccounts(fetchedAccounts);
-      setIncomeStreams(fetchedIncome);
-      setRequests(fetchedRequests);
+      const household = HouseholdRecordSchema.parse({
+        _id: authUser.householdId,
+        name: authUser.displayName ? `${authUser.displayName}'s Household` : 'Household',
+        slug: toSlug(authUser.householdId),
+        plan: 'free',
+        planStatus: 'active',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      setHouseholds([household]);
+      setActiveHouseholdId(household._id);
     } catch (error) {
-      console.error('Failed to load household data', error);
-      setAccounts([]);
-      setIncomeStreams([]);
-      setRequests([]);
-    }
-  };
-  createEffect(() => {
-    const currentUser = user();
-    if (currentUser?.profileId) {
-      void loadHouseholdData(currentUser.profileId, currentUser.householdId ?? null);
-    } else {
+      console.error('Failed to derive household from auth session', error);
       setHouseholds([]);
       setActiveHouseholdId(null);
-      setAccounts([]);
-      setIncomeStreams([]);
-      setRequests([]);
     }
-  });
+  };
+
   createEffect(() => {
-    const householdId = activeHouseholdId();
-    if (householdId) {
-      void loadHouseholdResources(householdId);
-    } else {
-      setAccounts([]);
-      setIncomeStreams([]);
-      setRequests([]);
-    }
+    const currentUser = user();
+    loadHouseholdData(currentUser ?? null);
   });
-  const filteredAccounts = createMemo(() => {
-    const id = activeHouseholdId();
-    if (!id) return accounts();
-    return accounts().filter((account) => account.householdId === id);
-  });
-  const filteredIncomeStreams = createMemo(() => {
-    const id = activeHouseholdId();
-    if (!id) return incomeStreams();
-    return incomeStreams().filter((income) => income.householdId === id);
-  });
-  const filteredRequests = createMemo(() => {
-    const id = activeHouseholdId();
-    if (!id) return requests();
-    return requests().filter((request) => request.householdId === id);
-  });
+  const filteredAccounts = createMemo(() => accounts());
+  const filteredIncomeStreams = createMemo(() => incomeStreams());
+  const filteredRequests = createMemo(() => requests());
   return (
     <AppDataContext.Provider
       value={{

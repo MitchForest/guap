@@ -1,11 +1,13 @@
 import { Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
+import { z } from 'zod';
 import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { useAppData } from '~/contexts/AppDataContext';
 import { useAuth } from '~/contexts/AuthContext';
-import { guapApi } from '~/services/guapApi';
 import { toast } from 'solid-sonner';
 import { authClient } from '~/lib/authClient';
+import type { MembershipRecord, ProfileRecord } from '@guap/api';
+import { MembershipRecordSchema, ProfileRecordSchema } from '@guap/types';
 
 const HouseholdMembersPage: Component = () => {
   const { activeHousehold } = useAppData();
@@ -13,12 +15,72 @@ const HouseholdMembersPage: Component = () => {
 
   const householdId = createMemo(() => activeHousehold()?._id ?? null);
   const [members] = createResource(householdId, async (id) => {
-    if (!id) return [];
-    return guapApi.listHouseholdMembers(id);
+    const organizationId = user()?.organizationId ?? null;
+    if (!id || !organizationId) return [];
+    try {
+      const result = await authClient.organization.listMembers({
+        query: { organizationId },
+      });
+      if (result.error) {
+        throw new Error(result.error.message ?? 'Unable to load organization members');
+      }
+      const dataset = Array.isArray(result.data) ? result.data : [];
+      return dataset
+        .map((entry: Record<string, unknown>) => {
+          const userInfo = ProfileRecordSchema.pick({
+            _id: true,
+            displayName: true,
+            email: true,
+            role: true,
+          })
+            .extend({
+              authId: ProfileRecordSchema.shape.authId,
+            })
+            .passthrough()
+            .safeParse({
+              _id: String(entry.profileId ?? entry.userId ?? ''),
+              displayName: String(entry.name ?? entry.displayName ?? ''),
+              email: entry.email ? String(entry.email) : undefined,
+              role: entry.role === 'admin' ? 'guardian' : 'child',
+              authId: String(entry.userId ?? ''),
+            });
+
+          const membershipInfo = MembershipRecordSchema.pick({
+            role: true,
+            status: true,
+          })
+            .extend({
+              membershipId: z.string().optional(),
+            })
+            .safeParse({
+              role: entry.role === 'admin' ? 'guardian' : 'child',
+              status: 'active',
+              membershipId: entry.memberId ? String(entry.memberId) : undefined,
+            });
+
+          if (!userInfo.success || !membershipInfo.success) {
+            return null;
+          }
+
+          return {
+            user: userInfo.data as Pick<ProfileRecord, '_id' | 'displayName' | 'email' | 'role'> & {
+              authId: string;
+            },
+            membership: membershipInfo.data as Pick<MembershipRecord, 'role' | 'status'> & {
+              membershipId?: string;
+            },
+          };
+        })
+        .filter(Boolean) as Array<{
+        user: Pick<ProfileRecord, '_id' | 'displayName' | 'email' | 'role'> & { authId: string };
+        membership: Pick<MembershipRecord, 'role' | 'status'> & { membershipId?: string };
+      }>;
+    } catch (error) {
+      console.error('Failed to load household members', error);
+      return [];
+    }
   });
-  const linkedOrganizationId = createMemo(
-    () => activeHousehold()?.linkedOrganizationId ?? user()?.organizationId ?? null
-  );
+  const linkedOrganizationId = createMemo(() => user()?.organizationId ?? null);
   const inviteQuery = createMemo(() => {
     const organizationId = linkedOrganizationId();
     const household = householdId();
@@ -51,7 +113,7 @@ const HouseholdMembersPage: Component = () => {
   const [submitting, setSubmitting] = createSignal(false);
 
   const canManage = createMemo(() => {
-    if (user()?.role === 'student') return false;
+    if (user()?.role === 'child') return false;
     return Boolean(linkedOrganizationId());
   });
 
@@ -112,9 +174,7 @@ const HouseholdMembersPage: Component = () => {
     <div class="space-y-8">
       <header class="space-y-2">
         <h1 class="text-2xl font-bold text-slate-900">Household members</h1>
-        <p class="text-sm text-slate-600">
-          Manage the guardians and students who can collaborate on this money map.
-        </p>
+        <p class="text-sm text-slate-600">Manage the guardians and children who can collaborate on this money map.</p>
       </header>
 
       <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -158,7 +218,7 @@ const HouseholdMembersPage: Component = () => {
                 value={inviteEmail()}
                 onInput={(event) => setInviteEmail(event.currentTarget.value)}
                 class="h-12 rounded-2xl border border-slate-300 text-base placeholder:text-slate-400 focus:border-slate-900"
-                placeholder="student@family.com"
+                  placeholder="child@family.com"
               />
             </div>
             <div class="space-y-2">

@@ -4,11 +4,11 @@ import { createStore } from 'solid-js/store';
 import CanvasViewport, { DragPayload, ViewportControls } from '../components/canvas/CanvasViewport';
 import type { NodeAllocationStatus, IncomingAllocationInfo } from '../components/canvas/NodeCard';
 import { CanvasFlow, CanvasNode, CanvasInflow, CanvasInflowCadence, CanvasPodType } from '../types/graph';
+import type { MoneyMapSnapshot } from '@guap/api';
 import BottomDock from '../components/layout/BottomDock';
 import ZoomPad from '../components/layout/ZoomPad';
 import { NODE_CARD_HEIGHT, NODE_CARD_WIDTH } from '../components/canvas/NodeCard';
 import { buildEdgePath, getAnchorPoint } from '../components/canvas/EdgeLayer';
-import { clsx } from 'clsx';
 import EmptyHero from '../components/empty/EmptyHero';
 import NodeContextMenu from '../components/nodes/NodeContextMenu';
 import NodeDrawer from '../components/nodes/NodeDrawer';
@@ -20,29 +20,15 @@ import { createHistory } from '~/domains/canvas/history';
 import { useCanvasSimulation, simulationHorizonOptions } from '~/domains/canvas/useCanvasSimulation';
 import { SimulationPanel } from '~/components/canvas/SimulationPanel';
 import { useFlowComposer } from '~/domains/canvas/useFlowComposer';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '~/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '~/components/ui/dropdown-menu';
 import { useAppData } from '~/contexts/AppDataContext';
 import { useAuth } from '~/contexts/AuthContext';
 import {
-  applySandbox as applySandboxMutation,
-  fetchGraph,
-  publishGraph,
-  resetSandbox as resetSandboxMutation,
-} from '~/domains/workspaces/api/client';
-import { useWorkspaceVariants } from '~/domains/workspaces/state/useWorkspaceVariants';
+  clearMoneyMapCache,
+  loadMoneyMapGraph,
+  saveMoneyMapGraph,
+  submitMoneyMapChangeRequest,
+} from '~/domains/moneyMap/api/client';
 import { useShell } from '../contexts/ShellContext';
 import { toast } from 'solid-sonner';
 
@@ -87,25 +73,6 @@ const ExitIcon = () => (
     <path d="M15 6l6 6-6 6" />
     <path d="M21 12H9" />
     <path d="M9 5H5a2 2 0 00-2 2v10a2 2 0 002 2h4" />
-  </svg>
-);
-
-const DeleteIcon = () => (
-  <svg
-    class="h-4 w-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M3 6h18" />
-    <path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2" />
-    <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-    <path d="M10 11v6" />
-    <path d="M14 11v6" />
   </svg>
 );
 
@@ -213,28 +180,16 @@ const CanvasPage: Component = () => {
   onMount(() => setFullScreen(true));
   onCleanup(() => setFullScreen(false));
 
-  const {
-    workspacePair,
-    workspaceSlug,
-    activeVariant,
-    currentWorkspace,
-    sandboxStatus,
-    editingLocked,
-    canApplySandbox,
-    canResetSandbox,
-    sandboxStatusLabel,
-    sandboxStatusClass,
-    refreshWorkspaces,
-    initializingWorkspace,
-  } = useWorkspaceVariants({
-    activeHousehold,
-    isAuthenticated,
+  const householdId = createMemo(() => activeHousehold()?._id ?? null);
+  const [initializingMap, setInitializingMap] = createSignal(true);
+  const [saving, setSaving] = createSignal(false);
+  const [submittingChangeRequest, setSubmittingChangeRequest] = createSignal(false);
+  const [lastSnapshot, setLastSnapshot] = createSignal<MoneyMapSnapshot | null>(null);
+  const lastUpdatedLabel = createMemo(() => {
+    const ts = lastSnapshot()?.map?.updatedAt ?? null;
+    if (!ts) return null;
+    return new Date(ts).toLocaleString();
   });
-  const [resetConfirmOpen, setResetConfirmOpen] = createSignal(false);
-  const [applyConfirmOpen, setApplyConfirmOpen] = createSignal(false);
-  const [approvalConfirmOpen, setApprovalConfirmOpen] = createSignal(false);
-  const [resetting, setResetting] = createSignal(false);
-  const [applying, setApplying] = createSignal(false);
   let drawerContainerRef: HTMLDivElement | undefined;
   let shareStatusTimeout: number | undefined;
 
@@ -254,7 +209,6 @@ const CanvasPage: Component = () => {
   const [podParentId, setPodParentId] = createSignal<string | null>(null);
   const [rules, setRules] = createSignal<RuleRecord[]>([]);
   const [showHero, setShowHero] = createSignal(true);
-  const [saving, setSaving] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
   const [actionsMenuOpen, setActionsMenuOpen] = createSignal(false);
   const [shareStatus, setShareStatus] = createSignal<'copied' | 'error' | null>(null);
@@ -269,13 +223,38 @@ const CanvasPage: Component = () => {
   >(null);
   const [placementIndex, setPlacementIndex] = createSignal(0);
 
-  const refreshWorkspacePair = async () => {
+  const loadMoneyMapState = async ({ primeHistory = false }: { primeHistory?: boolean } = {}) => {
+    const id = householdId();
+    if (!id || !isAuthenticated()) {
+      clearMoneyMapCache();
+      resetGraphState();
+      setLastSnapshot(null);
+      setHasChanges(false);
+      setShowHero(true);
+      setLoading(false);
+      setInitializingMap(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      await refreshWorkspaces();
-      return workspacePair();
+      const { snapshot, graph } = await loadMoneyMapGraph(id);
+      setLastSnapshot(snapshot);
+      if (graph.nodes.length || graph.edges.length || graph.rules.length) {
+        hydrateGraph(graph, { primeHistory });
+        setShowHero(false);
+      } else {
+        resetGraphState();
+        setShowHero(true);
+      }
+      setHasChanges(false);
+    } catch (error) {
+      console.error('Failed to load Money Map', error);
+      resetGraphState();
+      toast.error('Unable to load Money Map data.');
     } finally {
       setLoading(false);
+      setInitializingMap(false);
     }
   };
 
@@ -287,14 +266,11 @@ const CanvasPage: Component = () => {
     }
   };
 
-  const handleShareWorkspace = async () => {
-    const slug = workspaceSlug();
-    if (!slug) return;
+  const handleShareMoneyMap = async () => {
     if (typeof window === 'undefined') return;
 
     try {
       const url = new URL(window.location.href);
-      url.searchParams.set('workspace', slug);
       if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         await navigator.clipboard.writeText(url.toString());
         showShareStatus('copied');
@@ -302,97 +278,8 @@ const CanvasPage: Component = () => {
         showShareStatus('error');
       }
     } catch (error) {
-      console.error('Failed to copy workspace link', error);
+      console.error('Failed to copy Money Map link', error);
       showShareStatus('error');
-    }
-  };
-
-  const loadGraphForSlug = async (slug: string, options: { primeHistory?: boolean } = {}) => {
-    const slugSnapshot = slug;
-
-    resetWorkspaceState();
-    setLoading(true);
-
-    try {
-      const data = await fetchGraph(slugSnapshot);
-      if (workspaceSlug() !== slugSnapshot) return;
-
-      if (data && data.nodes?.length) {
-        hydrateGraph(data, { primeHistory: options.primeHistory });
-        setHasChanges(false);
-      } else {
-        resetWorkspaceState();
-      }
-    } catch (error) {
-      if (workspaceSlug() === slugSnapshot) {
-        console.error('Failed to load workspace graph', error);
-        resetWorkspaceState();
-      }
-    } finally {
-      if (workspaceSlug() === slugSnapshot) {
-        setLoading(false);
-      }
-    }
-  };
-
-  const handleResetSandbox = async () => {
-    if (activeVariant() !== 'sandbox' || resetting()) return;
-    const sandbox = workspacePair().sandbox;
-    const actorId = user()?.profileId;
-    if (!sandbox || !actorId) {
-      setResetConfirmOpen(false);
-      return;
-    }
-
-    setResetting(true);
-    try {
-      await resetSandboxMutation({
-        householdId: sandbox.householdId,
-        actorUserId: actorId,
-      });
-      await refreshWorkspacePair();
-      if (workspaceSlug() === sandbox.slug) {
-        await loadGraphForSlug(sandbox.slug, { primeHistory: true });
-      }
-      toast.success('Sandbox reset to match your Money Map.');
-    } catch (error) {
-      console.error('Failed to reset sandbox', error);
-      toast.error('Unable to reset the sandbox. Please try again.');
-    } finally {
-      setResetting(false);
-      setResetConfirmOpen(false);
-    }
-  };
-
-  const handleApplySandbox = async () => {
-    if (activeVariant() !== 'sandbox' || applying()) return;
-    const sandbox = workspacePair().sandbox;
-    const actorId = user()?.profileId;
-    if (!sandbox || !actorId) {
-      setApplyConfirmOpen(false);
-      return;
-    }
-
-    setApplying(true);
-    try {
-      const result = await applySandboxMutation({
-        householdId: sandbox.householdId,
-        actorUserId: actorId,
-      });
-      await refreshWorkspacePair();
-      await loadGraphForSlug(sandbox.slug, { primeHistory: true });
-      if (result.requiresApproval) {
-        setApprovalConfirmOpen(true);
-        toast.message('Sandbox submitted for approval.');
-      } else {
-        toast.success('Sandbox applied to your Money Map.');
-      }
-    } catch (error) {
-      console.error('Failed to apply sandbox to live', error);
-      toast.error('Apply failed. Check the console for details.');
-    } finally {
-      setApplying(false);
-      setApplyConfirmOpen(false);
     }
   };
 
@@ -469,7 +356,7 @@ const CanvasPage: Component = () => {
   });
 
 
-  function resetWorkspaceState() {
+function resetGraphState() {
     setGraph('nodes', () => []);
     setGraph('flows', () => []);
     setRules([]);
@@ -644,23 +531,41 @@ const CanvasPage: Component = () => {
     hasAllocationIssues: () => allocationIssues().length > 0,
   });
 
+  const editingLocked = createMemo(() => false);
+
   const canSave = createMemo(
     () =>
-      activeVariant() === 'sandbox' &&
-      Boolean(workspaceSlug()) &&
+      !saving() &&
+      isAuthenticated() &&
+      Boolean(householdId()) &&
       hasChanges() &&
-      allocationIssues().length === 0 &&
-      !saving(),
+      allocationIssues().length === 0
   );
 
   const saveDisabledReason = createMemo(() => {
     if (saving()) return null;
-    if (activeVariant() !== 'sandbox') return 'Switch to the Sandbox to save changes.';
-    if (!workspaceSlug()) return 'Select or create a workspace to save.';
+    if (!isAuthenticated()) return 'Sign in to save changes.';
+    if (!householdId()) return 'Join or create a household to save changes.';
     if (!hasChanges()) return 'No changes to save.';
     if (allocationIssues().length > 0) {
       return 'Complete allocation rules for all income sources to save.';
     }
+    return null;
+  });
+
+  const canSubmitChangeRequest = createMemo(
+    () =>
+      !submittingChangeRequest() &&
+      Boolean(user()?.profileId) &&
+      Boolean(householdId()) &&
+      hasChanges()
+  );
+
+  const submitDisabledReason = createMemo(() => {
+    if (submittingChangeRequest()) return null;
+    if (!isAuthenticated()) return 'Sign in to submit changes.';
+    if (!householdId()) return 'Join or create a household to submit changes.';
+    if (!hasChanges()) return 'No changes to submit.';
     return null;
   });
 
@@ -738,12 +643,33 @@ const CanvasPage: Component = () => {
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    void refreshWorkspacePair();
+    void loadMoneyMapState({ primeHistory: true });
 
     onCleanup(() => {
       window.removeEventListener('keydown', handleKeyDown);
     });
   });
+
+  createEffect(
+    on(
+      () => ({ id: householdId(), authed: isAuthenticated() }),
+      ({ id, authed }) => {
+        if (!id || !authed) {
+          clearMoneyMapCache();
+          resetGraphState();
+          setLastSnapshot(null);
+          setHasChanges(false);
+          setShowHero(true);
+          setLoading(false);
+          setInitializingMap(false);
+          return;
+        }
+        setInitializingMap(true);
+        void loadMoneyMapState({ primeHistory: true });
+      },
+      { defer: true }
+    )
+  );
 
   const hydrateGraph = (data: any, options: { primeHistory?: boolean } = {}) => {
     const nodes = (data.nodes ?? []).map((node: any) => {
@@ -843,59 +769,6 @@ const CanvasPage: Component = () => {
     });
   }
   };
-
-  createEffect(
-    on(
-      () => workspaceSlug(),
-      (slug) => {
-        if (!slug) {
-          resetWorkspaceState();
-          setLoading(false);
-          return;
-        }
-
-        const slugSnapshot = slug;
-        (async () => {
-          if (!currentWorkspace() || currentWorkspace()?.slug !== slugSnapshot) {
-            await refreshWorkspacePair();
-            if (workspaceSlug() !== slugSnapshot) return;
-          }
-          await loadGraphForSlug(slugSnapshot, { primeHistory: true });
-        })().catch((error) => {
-          if (workspaceSlug() === slugSnapshot) {
-            console.error('Failed to load workspace graph', error);
-            setLoading(false);
-          }
-        });
-      },
-      { defer: true },
-    ),
-  );
-
-  createEffect(
-    on(
-      () => activeHousehold()?._id,
-      () => {
-        void refreshWorkspacePair();
-      },
-      { defer: true },
-    ),
-  );
-
-  createEffect(() => {
-    const slug = workspaceSlug();
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    if (slug) {
-      if (url.searchParams.get('workspace') !== slug) {
-        url.searchParams.set('workspace', slug);
-        window.history.replaceState(null, '', url.toString());
-      }
-    } else if (url.searchParams.has('workspace')) {
-      url.searchParams.delete('workspace');
-      window.history.replaceState(null, '', url.toString());
-    }
-  });
 
   createEffect(() => {
     if (!simulationMenuOpen()) return;
@@ -1182,8 +1055,7 @@ const CanvasPage: Component = () => {
     returnRate?: number;
     metadata?: CanvasNode['metadata'];
   }): Promise<string | undefined> => {
-    const slug = workspaceSlug();
-    if (!slug || editingLocked()) {
+    if (editingLocked()) {
       return undefined;
     }
     if (!viewportElement) return undefined;
@@ -1348,19 +1220,19 @@ const CanvasPage: Component = () => {
   };
 
   const handleAddIncome = () => {
-    if (!workspaceSlug() || editingLocked()) return;
+    if (editingLocked()) return;
     setShowHero(false);
     setCreateModal('income');
   };
 
   const handleAddAccount = () => {
-    if (!workspaceSlug() || editingLocked()) return;
+    if (editingLocked()) return;
     setShowHero(false);
     setCreateModal('account');
   };
 
   const handleAddPod = () => {
-    if (!workspaceSlug() || editingLocked()) return;
+    if (editingLocked()) return;
     const available = accountNodes();
     if (available.length === 0) {
       handleAddAccount();
@@ -1374,7 +1246,7 @@ const CanvasPage: Component = () => {
   };
 
   const handleStartFlow = () => {
-    if (!workspaceSlug() || editingLocked()) return;
+    if (editingLocked()) return;
     const stage = flowComposer().stage;
     if (stage === 'pickSource') {
       exitFlowMode();
@@ -1549,79 +1421,71 @@ const CanvasPage: Component = () => {
   const simulationPanelOpen = createMemo(() => Boolean(simulationResult()));
 
   const handleSave = async () => {
-    const slug = workspaceSlug();
-    if (!slug || saving() || !hasChanges()) return;
-    if (activeVariant() !== 'sandbox') {
-      console.warn('Cannot save changes while viewing Money Map.');
-      return;
-    }
-    if (editingLocked()) {
-      console.warn('Sandbox is currently locked.');
+    const id = householdId();
+    if (!id || saving()) return;
+    if (!hasChanges()) {
+      toast.message('No changes to save.');
       return;
     }
     if (allocationIssues().length > 0) {
-      console.warn('Cannot save until all income allocations total 100%.');
+      toast.error('Complete allocation rules for all income sources before saving.');
       return;
     }
     setSaving(true);
     try {
-      const result = await publishGraph(slug, {
-        nodes: graph.nodes,
-        flows: graph.flows,
-        rules: rules(),
+      const { snapshot, graph: savedGraph } = await saveMoneyMapGraph({
+        householdId: id,
+        draft: {
+          nodes: graph.nodes,
+          flows: graph.flows,
+          rules: rules(),
+        },
       });
 
-      const nodeMap = new Map<string, string>(Object.entries(result.nodes ?? {}));
-      const ruleMap = new Map<string, string>(Object.entries(result.rules ?? {}));
-      const edgeMap = new Map<string, string>(Object.entries(result.edges ?? {}));
-
-      setGraph('nodes', (nodes) =>
-        nodes.map((node) => {
-          const newId = nodeMap.get(node.id);
-          return newId ? { ...node, id: newId } : node;
-        })
-      );
-
-      setGraph('flows', (flows) =>
-        flows.map((flow) => {
-          const newId = edgeMap.get(flow.id);
-          return {
-            ...flow,
-            id: newId ?? flow.id,
-            sourceId: nodeMap.get(flow.sourceId) ?? flow.sourceId,
-            targetId: nodeMap.get(flow.targetId) ?? flow.targetId,
-            ruleId: flow.ruleId ? ruleMap.get(flow.ruleId) ?? flow.ruleId : flow.ruleId,
-          };
-        })
-      );
-
-      setRules((existing) =>
-        existing.map((rule) => ({
-          ...rule,
-          id: ruleMap.get(rule.id) ?? rule.id,
-          sourceNodeId: nodeMap.get(rule.sourceNodeId) ?? rule.sourceNodeId,
-          triggerNodeId: rule.triggerNodeId
-            ? nodeMap.get(rule.triggerNodeId) ?? rule.triggerNodeId
-            : rule.triggerNodeId,
-          allocations: rule.allocations.map((alloc) => ({
-            id: alloc.id,
-            targetNodeId: nodeMap.get(alloc.targetNodeId) ?? alloc.targetNodeId,
-            percentage: alloc.percentage,
-          })),
-        }))
-      );
-
-      setSelectedIds((ids) => ids.map((id) => nodeMap.get(id) ?? id));
-      setPlacementIndex(graph.nodes.length);
-      setShowHero(graph.nodes.length === 0);
+      setLastSnapshot(snapshot);
+      hydrateGraph(savedGraph, { primeHistory: true });
       replaceHistory(snapshotGraph());
-      await refreshWorkspacePair();
-      toast.success('Sandbox changes saved.');
+      setHasChanges(false);
+      setShowHero(savedGraph.nodes.length === 0);
+      toast.success('Money Map saved.');
     } catch (error) {
-      console.error('Failed to save graph', error);
-      toast.error('Unable to save the sandbox.');
+      console.error('Failed to save Money Map', error);
+      toast.error('Unable to save your Money Map changes.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSubmitChangeRequest = async () => {
+    const id = householdId();
+    const submitterId = user()?.profileId ?? null;
+    if (!id || !submitterId) {
+      toast.error('Sign in with a linked profile to submit changes.');
+      return;
+    }
+    if (!hasChanges()) {
+      toast.message('No changes to submit for approval.');
+      return;
+    }
+
+    setSubmittingChangeRequest(true);
+    try {
+      await submitMoneyMapChangeRequest({
+        householdId: id,
+        submitterId,
+        draft: {
+          nodes: graph.nodes,
+          flows: graph.flows,
+          rules: rules(),
+        },
+      });
+      setHasChanges(false);
+      toast.success('Submitted for guardian approval.');
+    } catch (error) {
+      console.error('Failed to submit Money Map change request', error);
+      toast.error('Unable to submit changes for approval.');
+    } finally {
+      setSubmittingChangeRequest(false);
     }
   };
 
@@ -1640,7 +1504,7 @@ const CanvasPage: Component = () => {
     >
       <div class="pointer-events-none absolute left-6 top-6 z-40 flex items-center gap-2">
         <Show
-          when={!initializingWorkspace()}
+          when={!initializingMap()}
           fallback={
             <span class="pointer-events-auto rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
               Loading…
@@ -1649,55 +1513,42 @@ const CanvasPage: Component = () => {
         >
           <div class="pointer-events-auto flex flex-wrap items-center gap-3 rounded-full border border-slate-200/70 bg-white/85 px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur">
             <span class="flex items-center gap-2 text-sm text-slate-800">
-              {currentWorkspace()?.name ?? 'Workspace'}
-              <Show when={activeVariant() === 'sandbox'}>
-                <span
-                  class={clsx(
-                    sandboxStatusClass(),
-                    'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]'
-                  )}
-                >
-                  {sandboxStatusLabel()}
-                </span>
-              </Show>
-              <Show when={activeVariant() === 'live'}>
-                <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  View Only
-                </span>
+              {lastSnapshot()?.map?.name ?? activeHousehold()?.name ?? 'Money Map'}
+              <Show when={lastUpdatedLabel()}>
+                {(label) => (
+                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                    Last saved {label()}
+                  </span>
+                )}
               </Show>
             </span>
             <div class="flex items-center gap-2">
-              <Button type="button" variant="secondary" size="xs" onClick={handleShareWorkspace}>
+              <Button type="button" variant="secondary" size="xs" onClick={handleShareMoneyMap}>
                 Share
               </Button>
-              <Show when={activeVariant() === 'sandbox'}>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="xs"
-                  class="rounded-full"
-                  disabled={!canResetSandbox() || saving() || resetting()}
-                  onClick={() => setResetConfirmOpen(true)}
-                >
-                  Reset
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="xs"
-                  class="rounded-full"
-                  disabled={!canApplySandbox() || saving() || applying()}
-                  onClick={() => setApplyConfirmOpen(true)}
-                >
-                  {applying() ? 'Applying…' : 'Apply'}
-                </Button>
-              </Show>
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                class="rounded-full"
+                disabled={!canSave()}
+                title={saveDisabledReason() ?? undefined}
+                onClick={() => void handleSave()}
+              >
+                {saving() ? 'Saving…' : 'Save'}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="xs"
+                class="rounded-full"
+                disabled={!canSubmitChangeRequest()}
+                title={submitDisabledReason() ?? undefined}
+                onClick={() => void handleSubmitChangeRequest()}
+              >
+                {submittingChangeRequest() ? 'Submitting…' : 'Request Approval'}
+              </Button>
             </div>
-            <Show when={activeVariant() === 'sandbox' && sandboxStatus() === 'stale'}>
-              <span class="w-full text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-600">
-                Money Map changed since last reset
-              </span>
-            </Show>
           </div>
         </Show>
       </div>
@@ -1737,24 +1588,11 @@ const CanvasPage: Component = () => {
       >
         {connectingPreview()}
       </CanvasViewport>
-      <Show when={editingLocked()}>
-        <div class="pointer-events-none absolute inset-0 z-30 bg-white/30 backdrop-blur-sm">
-          <div class="pointer-events-auto absolute left-1/2 top-8 w-max -translate-x-1/2 rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-slate-700 shadow">
-            {activeVariant() === 'live'
-              ? 'Money Map is view-only. Switch to Sandbox to make changes.'
-              : 'Sandbox changes are pending approval.'}
-          </div>
-        </div>
-      </Show>
       <Show when={!loading() && showHero() && !hasNodes()}>
         <div class="absolute inset-0 pointer-events-none">
           <div class="pointer-events-auto h-full w-full">
             <EmptyHero
               onCreate={() => {
-                if (!workspaceSlug()) {
-                  void refreshWorkspacePair();
-                  return;
-                }
                 if (editingLocked()) return;
                 setShowHero(false);
                 setCreateModal('income');
@@ -1806,48 +1644,35 @@ const CanvasPage: Component = () => {
               <ChevronDownIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent class="w-60">
-              <DropdownMenuLabel>Sandbox</DropdownMenuLabel>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={activeVariant() !== 'sandbox' || !canSave()}
+                disabled={!canSave()}
                 onSelect={() => {
-                  if (activeVariant() !== 'sandbox' || !canSave()) return;
+                  if (!canSave()) return;
                   setActionsMenuOpen(false);
                   void handleSave();
                 }}
               >
                 <SaveIcon />
-                <span>{saving() ? 'Saving…' : 'Save Sandbox'}</span>
+                <span>{saving() ? 'Saving…' : 'Save Money Map'}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={activeVariant() !== 'sandbox' || !canApplySandbox() || applying()}
+                disabled={!canSubmitChangeRequest()}
                 onSelect={() => {
-                  if (activeVariant() !== 'sandbox' || !canApplySandbox() || applying()) return;
+                  if (!canSubmitChangeRequest()) return;
                   setActionsMenuOpen(false);
-                  setApplyConfirmOpen(true);
+                  void handleSubmitChangeRequest();
                 }}
               >
                 <DuplicateIcon />
-                <span>{applying() ? 'Applying…' : 'Apply to Money Map'}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={activeVariant() !== 'sandbox' || !canResetSandbox() || resetting()}
-                onSelect={() => {
-                  if (activeVariant() !== 'sandbox' || !canResetSandbox() || resetting()) return;
-                  setActionsMenuOpen(false);
-                  setResetConfirmOpen(true);
-                }}
-              >
-                <DeleteIcon />
-                <span>{resetting() ? 'Resetting…' : 'Reset Sandbox'}</span>
+                <span>{submittingChangeRequest() ? 'Submitting…' : 'Request Approval'}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 class="px-3 py-2 text-sm font-semibold text-slate-700"
                 onSelect={() => {
                   setActionsMenuOpen(false);
-                  void handleShareWorkspace();
+                  void handleShareMoneyMap();
                 }}
               >
                 <ShareIcon />
@@ -1876,13 +1701,6 @@ const CanvasPage: Component = () => {
               }}
             >
               {status() === 'copied' ? 'Link copied to clipboard' : 'Unable to copy link'}
-            </span>
-          )}
-        </Show>
-        <Show when={actionsMenuOpen() ? saveDisabledReason() : null}>
-          {(message) => (
-            <span class="max-w-xs rounded-xl border border-slate-200 bg-white/90 px-3 py-1.5 text-xs text-slate-600 shadow-floating">
-              {message()}
             </span>
           )}
         </Show>
@@ -2090,76 +1908,6 @@ const CanvasPage: Component = () => {
           if (id) setDrawerNodeId(id);
         }}
       />
-      <Dialog open={resetConfirmOpen()} onOpenChange={setResetConfirmOpen}>
-        <DialogContent class="max-w-md">
-          <DialogHeader class="gap-2 text-left">
-            <DialogTitle>Reset sandbox</DialogTitle>
-            <DialogDescription>
-              Replace sandbox data with your current Money Map. This cannot be undone and any in-progress sandbox work will be removed.
-            </DialogDescription>
-          </DialogHeader>
-          <div class="flex flex-col gap-2 text-xs text-slate-500 md:text-sm">
-            <p>
-              Resetting keeps the sandbox aligned with live data before you start a fresh iteration. You can always rebuild changes after the reset.
-            </p>
-          </div>
-          <div class="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setResetConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              class="shadow-floating"
-              disabled={resetting()}
-              onClick={() => void handleResetSandbox()}
-            >
-              {resetting() ? 'Resetting…' : 'Reset sandbox'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={applyConfirmOpen()} onOpenChange={setApplyConfirmOpen}>
-        <DialogContent class="max-w-md">
-          <DialogHeader class="gap-2 text-left">
-            <DialogTitle>Apply to Money Map</DialogTitle>
-            <DialogDescription>
-              Publish sandbox changes to the live Money Map. Once applied, live accounts, automations, and shared members will see the updates instantly.
-            </DialogDescription>
-          </DialogHeader>
-          <div class="flex flex-col gap-2 text-xs text-slate-500 md:text-sm">
-            <p>Make sure the sandbox is ready for prime time before applying—this action overwrites the live graph.</p>
-          </div>
-          <div class="mt-4 flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setApplyConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              class="shadow-floating"
-              disabled={applying()}
-              onClick={() => void handleApplySandbox()}
-            >
-              {applying() ? 'Applying…' : 'Apply changes'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={approvalConfirmOpen()} onOpenChange={setApprovalConfirmOpen}>
-        <DialogContent>
-          <DialogHeader class="gap-2 text-left">
-            <DialogTitle>Sent for approval</DialogTitle>
-            <DialogDescription>
-              Your sandbox updates need a guardian review. We’ll let you know once the Money Map is updated.
-            </DialogDescription>
-          </DialogHeader>
-          <div class="flex justify-end">
-            <Button type="button" onClick={() => setApprovalConfirmOpen(false)}>
-              Got it
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

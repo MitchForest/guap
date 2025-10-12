@@ -20,7 +20,7 @@ const RoleProvider: Component<RoleProviderProps> = (props) => {
     typeof window !== 'undefined'
       ? (window.localStorage.getItem(ROLE_STORAGE_KEY) as UserRole | null)
       : null;
-  const [role, setRole] = createSignal<UserRole>(props.initialRole ?? storedRole ?? 'student');
+  const [role, setRole] = createSignal<UserRole>(props.initialRole ?? storedRole ?? 'child');
 
   const updateRole = (next: UserRole) => {
     setRole(next);

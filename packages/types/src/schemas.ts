@@ -1,15 +1,14 @@
 import { z } from 'zod';
-
-export const UserRoleValues = ['student', 'guardian', 'admin', 'internal'] as const;
+export const UserRoleValues = ['guardian', 'child'] as const;
 export const UserRoleSchema = z.enum(UserRoleValues);
 
-export const MembershipRoleValues = ['owner', 'admin', 'member', 'guardian', 'student', 'internal'] as const;
+export const MembershipRoleValues = ['guardian', 'child'] as const;
 export const MembershipRoleSchema = z.enum(MembershipRoleValues);
 
-export const MembershipStatusValues = ['active', 'invited', 'pending', 'suspended', 'left'] as const;
+export const MembershipStatusValues = ['active', 'invited', 'pending'] as const;
 export const MembershipStatusSchema = z.enum(MembershipStatusValues);
 
-export const HouseholdPlanValues = ['free', 'household', 'organization'] as const;
+export const HouseholdPlanValues = ['free', 'standard'] as const;
 export const HouseholdPlanSchema = z.enum(HouseholdPlanValues);
 
 export const HouseholdPlanStatusValues = ['inactive', 'active', 'past_due', 'canceled'] as const;
@@ -18,42 +17,8 @@ export const HouseholdPlanStatusSchema = z.enum(HouseholdPlanStatusValues);
 export const BillingIntervalValues = ['monthly', 'annual'] as const;
 export const BillingIntervalSchema = z.enum(BillingIntervalValues);
 
-export const OrganizationKindValues = ['family', 'institution', 'internal'] as const;
+export const OrganizationKindValues = ['family', 'institution'] as const;
 export const OrganizationKindSchema = z.enum(OrganizationKindValues);
-
-export const OrganizationStatusValues = ['draft', 'active', 'suspended', 'archived'] as const;
-export const OrganizationStatusSchema = z.enum(OrganizationStatusValues);
-
-export const OrganizationBillingPlanValues = ['solo', 'family', 'standard', 'high_volume'] as const;
-export const OrganizationBillingPlanSchema = z.enum(OrganizationBillingPlanValues);
-
-export const OrganizationBillingIntervalValues = ['monthly', 'annual'] as const;
-export const OrganizationBillingIntervalSchema = z.enum(OrganizationBillingIntervalValues);
-
-export const OrganizationPricingTierSchema = z.object({
-  minSeats: z.number().int().nonnegative(),
-  maxSeats: z.number().int().nonnegative().nullable(),
-  monthlyCentsPerSeat: z.number().int().nonnegative(),
-  annualCentsPerSeat: z.number().int().nonnegative(),
-});
-
-export const OrganizationPricingSchema = z.object({
-  baseMonthlyCents: z.number().int().nonnegative().optional(),
-  baseAnnualCents: z.number().int().nonnegative().optional(),
-  includedSeats: z.number().int().nonnegative().optional(),
-  tiers: z.array(OrganizationPricingTierSchema).optional(),
-});
-
-export const HouseholdPlanRecordSchema = z.object({
-  plan: HouseholdPlanSchema,
-  status: HouseholdPlanStatusSchema,
-  interval: BillingIntervalSchema.optional(),
-  seats: z.number().int().nonnegative().optional(),
-  subscriptionId: z.string().optional(),
-  customerId: z.string().optional(),
-  linkedOrganizationId: z.string().optional(),
-  updatedAt: z.number().optional(),
-});
 
 export const AccountKindValues = [
   'checking',
@@ -72,115 +37,103 @@ export const AccountStatusSchema = z.enum(AccountStatusValues);
 export const IncomeCadenceValues = ['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'yearly'] as const;
 export const IncomeCadenceSchema = z.enum(IncomeCadenceValues);
 
-export const AutomationNodeKindValues = ['income', 'account', 'pod', 'goal', 'liability', 'condition', 'sink'] as const;
-export const AutomationNodeKindSchema = z.enum(AutomationNodeKindValues);
-
-export const AutomationEdgeKindValues = ['manual', 'automation'] as const;
-export const AutomationEdgeKindSchema = z.enum(AutomationEdgeKindValues);
-
-export const AutomationNodeMetadataSchema = z
-  .object({
-    podType: z.enum(['goal', 'category', 'envelope', 'custom']).optional(),
-    returnRate: z.number().optional(),
-    inflow: z
-      .object({
-        amount: z.number(),
-        cadence: IncomeCadenceSchema,
-      })
-      .optional(),
-  })
-  .passthrough();
-
-export const RequestKindValues = ['transfer', 'purchase', 'goal-funding', 'automation-change'] as const;
-export const RequestKindSchema = z.enum(RequestKindValues);
-
-export const RequestStateValues = ['pending', 'approved', 'rejected', 'cancelled'] as const;
-export const RequestStateSchema = z.enum(RequestStateValues);
-
-export const WealthLevelValues = ['0-10k', '10k-100k', '100k-1m', '1m-10m', '10m+'] as const;
-export const WealthLevelSchema = z.enum(WealthLevelValues);
-
 export const CurrencyAmountSchema = z.object({
   cents: z.number().int(),
   currency: z.string().default('USD'),
 });
 
-export const OrganizationRecordSchema = z.object({
+export const ProfileRecordSchema = z.object({
+  _id: z.string(),
+  authId: z.string(),
+  role: UserRoleSchema,
+  displayName: z.string().optional(),
+  email: z.string().optional(),
+  householdId: z.string().nullable().optional(),
+  guardianProfileId: z.string().nullable().optional(),
+  organizationId: z.string().nullable().optional(),
+  membershipId: z.string().nullable().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const HouseholdRecordSchema = z.object({
   _id: z.string(),
   name: z.string(),
   slug: z.string(),
-  logo: z.string().optional(),
-  shortCode: z.string(),
-  joinCode: z.string(),
-  kind: OrganizationKindSchema,
-  type: z.string().optional(),
-  status: OrganizationStatusSchema,
-  createdByUserId: z.string(),
-  primaryHouseholdId: z.string().optional(),
-  billingPlan: OrganizationBillingPlanSchema,
-  billingInterval: OrganizationBillingIntervalSchema,
-  pricing: OrganizationPricingSchema.optional(),
-  billingProvider: z
-    .object({
-      provider: z.enum(['stripe']).optional(),
-      customerId: z.string().optional(),
-      subscriptionId: z.string().optional(),
-      status: z.enum(['trialing', 'active', 'past_due', 'canceled', 'incomplete', 'paused']).optional(),
-    })
-    .optional(),
-  metadata: z.record(z.string(), z.any()).optional(),
+  plan: HouseholdPlanSchema.default('free'),
+  planStatus: HouseholdPlanStatusSchema.default('active'),
+  planInterval: BillingIntervalSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
 
-export const OrganizationMembershipRecordSchema = z.object({
+export const MembershipRecordSchema = z.object({
   _id: z.string(),
-  organizationId: z.string(),
-  userId: z.string(),
+  householdId: z.string(),
+  profileId: z.string(),
   role: MembershipRoleSchema,
   status: MembershipStatusSchema,
-  invitedByUserId: z.string().optional(),
-  invitationId: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
 
-export const InviteKindValues = ['household', 'organization'] as const;
-export const InviteKindSchema = z.enum(InviteKindValues);
-
-export const InviteStateValues = ['pending', 'accepted', 'rejected', 'canceled'] as const;
-export const InviteStateSchema = z.enum(InviteStateValues);
-
-export const MembershipInviteRecordSchema = z.object({
+export const AccountRecordSchema = z.object({
   _id: z.string(),
-  targetKind: InviteKindSchema,
-  organizationId: z.string().optional(),
-  householdId: z.string().optional(),
-  email: z.string(),
-  role: MembershipRoleSchema,
-  code: z.string(),
-  token: z.string(),
-  state: InviteStateSchema,
-  invitedByUserId: z.string(),
-  invitedAt: z.number(),
-  expiresAt: z.number().optional(),
-  acceptedByUserId: z.string().optional(),
-  acceptedAt: z.number().optional(),
-  rejectedByUserId: z.string().optional(),
-  rejectedAt: z.number().optional(),
-  canceledByUserId: z.string().optional(),
-  canceledAt: z.number().optional(),
+  householdId: z.string(),
+  ownerProfileId: z.string().nullable().optional(),
+  name: z.string(),
+  kind: AccountKindSchema,
+  status: AccountStatusSchema,
+  currency: z.string().default('USD'),
+  balanceCents: z.number(),
+  availableCents: z.number().nullable().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
+
+export const IncomeRecordSchema = z.object({
+  _id: z.string(),
+  householdId: z.string(),
+  label: z.string(),
+  cadence: IncomeCadenceSchema,
+  amountCents: z.number(),
+  sourceAccountId: z.string().nullable().optional(),
+  active: z.boolean().default(true),
+  metadata: z.record(z.string(), z.any()).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const RequestKindValues = ['money_map_change'] as const;
+export const RequestKindSchema = z.enum(RequestKindValues);
+
+export const RequestStateValues = ['pending', 'approved', 'rejected'] as const;
+export const RequestStateSchema = z.enum(RequestStateValues);
+
+export const RequestRecordSchema = z.object({
+  _id: z.string(),
+  householdId: z.string(),
+  createdByProfileId: z.string(),
+  assignedToProfileId: z.string().nullable().optional(),
+  kind: RequestKindSchema,
+  state: RequestStateSchema,
+  payload: z.record(z.string(), z.any()).optional(),
+  resolvedByProfileId: z.string().nullable().optional(),
+  resolvedAt: z.number().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const WorkspaceVariantValues = ['live', 'sandbox'] as const;
+export const WorkspaceVariantSchema = z.enum(WorkspaceVariantValues);
 
 export const WorkspaceRecordSchema = z.object({
   _id: z.string(),
-  name: z.string(),
-  slug: z.string(),
   householdId: z.string(),
-  variant: z.enum(['live', 'sandbox']),
+  slug: z.string(),
+  name: z.string(),
+  variant: WorkspaceVariantSchema,
   lastSyncedAt: z.number().nullable().optional(),
   lastAppliedAt: z.number().nullable().optional(),
   pendingRequestId: z.string().nullable().optional(),
@@ -195,8 +148,6 @@ export const WorkspaceNodePositionSchema = z.object({
   x: z.number(),
   y: z.number(),
 });
-
-export const WorkspaceNodeMetadataSchema = AutomationNodeMetadataSchema;
 
 export const WorkspaceNodeRecordSchema = z.object({
   _id: z.string(),
@@ -218,7 +169,7 @@ export const WorkspaceEdgeRecordSchema = z.object({
   workspaceId: z.string(),
   sourceNodeId: z.string(),
   targetNodeId: z.string(),
-  kind: AutomationEdgeKindSchema.optional(),
+  kind: z.enum(['manual', 'automation']).optional(),
   ruleId: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -227,20 +178,18 @@ export const WorkspaceEdgeRecordSchema = z.object({
 export const WorkspaceRuleTriggerValues = ['incoming', 'scheduled'] as const;
 export const WorkspaceRuleTriggerSchema = z.enum(WorkspaceRuleTriggerValues);
 
-export const WorkspaceRuleScheduleSchema = z
-  .object({
-    cadence: z.enum(['daily', 'weekly', 'monthly']),
-    day: z.number().optional(),
-  })
-  .optional();
-
 export const WorkspaceRuleRecordSchema = z.object({
   _id: z.string(),
   workspaceId: z.string(),
   sourceNodeId: z.string(),
   triggerType: WorkspaceRuleTriggerSchema,
   triggerNodeId: z.string().optional(),
-  schedule: WorkspaceRuleScheduleSchema,
+  schedule: z
+    .object({
+      cadence: z.enum(['daily', 'weekly', 'monthly']),
+      day: z.number().optional(),
+    })
+    .optional(),
   name: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -281,7 +230,7 @@ export const WorkspacePublishEdgeSchema = z.object({
   clientId: z.string(),
   sourceClientId: z.string(),
   targetClientId: z.string(),
-  kind: AutomationEdgeKindSchema.optional(),
+  kind: z.enum(['manual', 'automation']).optional(),
   ruleClientId: z.string().optional(),
 });
 
@@ -311,10 +260,10 @@ export const WorkspacePublishResultSchema = z.object({
   rules: z.record(z.string(), z.string()),
 });
 
-export const MoneyMapNodeKindValues = ['account', 'income', 'expense', 'goal', 'holding'] as const;
+export const MoneyMapNodeKindValues = ['income', 'account', 'pod', 'goal', 'liability'] as const;
 export const MoneyMapNodeKindSchema = z.enum(MoneyMapNodeKindValues);
 
-export const MoneyMapRuleTriggerValues = ['manual', 'schedule', 'threshold'] as const;
+export const MoneyMapRuleTriggerValues = ['incoming', 'scheduled'] as const;
 export const MoneyMapRuleTriggerSchema = z.enum(MoneyMapRuleTriggerValues);
 
 export const MoneyMapChangeStatusValues = ['draft', 'awaiting_guardian', 'approved', 'rejected'] as const;
@@ -329,32 +278,78 @@ export const MoneyMapRecordSchema = z.object({
   updatedAt: z.number(),
 });
 
+export const MoneyMapNodeMetadataSchema = z.object({
+  id: z.string().optional(),
+  category: z.string().nullable().optional(),
+  parentId: z.string().nullable().optional(),
+  podType: z.enum(['goal', 'category', 'envelope', 'custom']).nullable().optional(),
+  icon: z.string().nullable().optional(),
+  accent: z.string().nullable().optional(),
+  balanceCents: z.number().nullable().optional(),
+  inflow: z
+    .object({
+      amount: z.number(),
+      cadence: z.enum(['monthly', 'weekly', 'daily']),
+    })
+    .nullable()
+    .optional(),
+  position: WorkspaceNodePositionSchema.optional(),
+  returnRate: z.number().nullable().optional(),
+}).passthrough();
+
 export const MoneyMapNodeRecordSchema = z.object({
   _id: z.string(),
   mapId: z.string(),
   key: z.string(),
   kind: MoneyMapNodeKindSchema,
   label: z.string(),
-  metadata: z.record(z.string(), z.any()).optional(),
+  metadata: MoneyMapNodeMetadataSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
+
+export const MoneyMapEdgeMetadataSchema = z
+  .object({
+    id: z.string().optional(),
+    ruleId: z.string().nullable().optional(),
+    amountCents: z.number().nullable().optional(),
+    tag: z.string().nullable().optional(),
+    note: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export const MoneyMapEdgeRecordSchema = z.object({
   _id: z.string(),
   mapId: z.string(),
   sourceKey: z.string(),
   targetKey: z.string(),
+  metadata: MoneyMapEdgeMetadataSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
+
+export const MoneyMapRuleConfigSchema = z
+  .object({
+    ruleId: z.string().optional(),
+    sourceNodeId: z.string().optional(),
+    triggerNodeId: z.string().nullable().optional(),
+    allocations: z
+      .array(
+        z.object({
+          targetNodeId: z.string(),
+          percentage: z.number(),
+        })
+      )
+      .optional(),
+  })
+  .passthrough();
 
 export const MoneyMapRuleRecordSchema = z.object({
   _id: z.string(),
   mapId: z.string(),
   key: z.string(),
   trigger: MoneyMapRuleTriggerSchema,
-  config: z.record(z.string(), z.any()),
+  config: MoneyMapRuleConfigSchema,
   createdAt: z.number(),
   updatedAt: z.number(),
 });

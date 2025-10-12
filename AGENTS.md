@@ -24,3 +24,36 @@ Follow the existing git history: concise, present-tense commit subjects (`add sa
 
 ## Reference Docs & Environment
 Before larger work, review `.docs/plan.md` for current priorities and `.docs/convex.md` for architecture notes. Keep Convex secrets out of the repo; use `convex env set` or project-bound secrets. When switching contexts (sandbox vs live workspace), ensure both backend mutations and frontend router paths stay aligned to avoid leaking data between variants.
+
+---- DON'T DELETE BELOW THIS LINE (authored by user)----
+
+RULES:
+- Auth Schema Updates (local install): cd apps/backend/convex/betterAuth, npx @better-auth/cli generate -y, pnpm sync:codegen, npx convex dev --once
+- Get user explicit approval before any database/schema changes
+- Use kobalte, tailwind, class variance authority for components
+
+
+PRINCIPLES:
+- Simplicity First, Always
+We optimize for clarity, not cleverness. The best system is the simplest one that accomplishes the goal cleanly.
+
+- Question complexity, don’t perpetuate it.
+When you see technical debt, awkward abstractions, or tangled logic, pause before adding more. Ask: “Is this the simplest way to achieve the goal?”
+
+- Favor deletion over addition.
+If a feature, abstraction, or layer can be removed without breaking the product’s promise — remove it. Every extra piece of code is a maintenance cost.
+
+- Resist “cargo cult” engineering.
+Don’t copy patterns or introduce frameworks without understanding why they’re needed. Build from first principles and adapt to our actual use case.
+
+- Prefer explicitness to cleverness.
+Code should be easy to reason about for any future reader. If something requires multiple mental hops to follow, it’s too complex.
+
+- Spot and call out over-engineering.
+It’s everyone’s job to raise a hand when something feels more complicated than it needs to be — even if it “works.” Silent acceptance is how technical debt spirals.
+
+- Conventions over invention.
+Follow established patterns and architecture guidelines unless there’s a clear, articulated reason to deviate. Shared conventions reduce friction and cognitive load.
+
+- Mental models over magic.
+Each module should have a simple conceptual model (“this thing does one job”). If it’s hard to explain, it’s probably hard to maintain.
