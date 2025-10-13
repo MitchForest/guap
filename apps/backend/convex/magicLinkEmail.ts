@@ -250,14 +250,8 @@ export const sendOrganizationInvitationEmail = async ({
   inviterName,
 }: InvitationEmailPayload) => {
   await sendWithResend({
-    apiKey: pickApiKey(
-      process.env.INVITE_RESEND_API_KEY,
-      process.env.MAGIC_LINK_RESEND_API_KEY,
-      process.env.RESEND_API_KEY
-    ),
-    from:
-      pickEnv(process.env.INVITE_FROM_EMAIL, process.env.MAGIC_LINK_FROM_EMAIL, DEFAULT_FROM) ??
-      DEFAULT_FROM,
+    apiKey: pickApiKey(process.env.MAGIC_LINK_RESEND_API_KEY, process.env.RESEND_API_KEY),
+    from: pickEnv(process.env.MAGIC_LINK_FROM_EMAIL, DEFAULT_FROM) ?? DEFAULT_FROM,
     to: email,
     subject: `You're invited to ${organizationName}`,
     html: renderInvitationHtml({ invitationUrl, organizationName, role, inviterName }),

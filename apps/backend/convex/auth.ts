@@ -10,10 +10,7 @@ import authSchema from './betterAuth/schema';
 import { sendMagicLinkEmail, sendOrganizationInvitationEmail } from './magicLinkEmail';
 
 const convexSiteUrl = process.env.CONVEX_SITE_URL ?? '';
-const frontendSiteUrl =
-  process.env.SITE_URL ??
-  process.env.APP_URL ??
-  (convexSiteUrl || 'http://localhost:3001');
+const frontendSiteUrl = process.env.SITE_URL ?? (convexSiteUrl || 'http://localhost:3001');
 
 export const authComponent = createClient<DataModel, typeof authSchema>(components.betterAuth, {
   local: {

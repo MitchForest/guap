@@ -49,6 +49,10 @@ type SessionSnapshot = {
 };
 
 const ROLE_SET = new Set<string>(UserRoleValues);
+const ALL_ROLES: ReadonlyArray<CanonicalRole> = [...UserRoleValues];
+const OWNER_ADMIN_ROLES: ReadonlyArray<CanonicalRole> = ALL_ROLES.filter(
+  (role): role is CanonicalRole => role === 'owner' || role === 'admin'
+);
 
 const extractSession = (authUser: unknown): SessionSnapshot => {
   const merged = {
@@ -176,7 +180,7 @@ export const save = mutation({
   },
   handler: async (ctx, args) => {
     const session = await ensureOrganizationAccess(ctx, args.organizationId);
-    ensureRole(session, UserRoleValues);
+    ensureRole(session, ALL_ROLES);
     const timestamp = now();
 
     const payload = MoneyMapSaveInputSchema.parse({
@@ -352,10 +356,7 @@ export const updateChangeRequestStatus = mutation({
       throw new Error('Change request not found');
     }
     const session = await ensureOrganizationAccess(ctx, request.organizationId);
-    ensureRole(
-      session,
-      UserRoleValues.filter((role) => role === 'owner' || role === 'admin')
-    );
+    ensureRole(session, OWNER_ADMIN_ROLES);
 
     const timestamp = now();
     await ctx.db.patch(args.requestId, {
@@ -374,7 +375,7 @@ export const listChangeRequests = query({
   },
   handler: async (ctx, args) => {
     const session = await ensureOrganizationAccess(ctx, args.organizationId);
-    ensureRole(session, UserRoleValues);
+    ensureRole(session, ALL_ROLES);
 
     let requests;
     if (args.status) {
