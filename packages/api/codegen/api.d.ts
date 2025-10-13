@@ -8,17 +8,24 @@
  * @module
  */
 
-import type * as auth from "../auth.js";
-import type * as betterAuth__generated_api from "../betterAuth/_generated/api.js";
-import type * as betterAuth__generated_server from "../betterAuth/_generated/server.js";
-import type * as betterAuth_adapter from "../betterAuth/adapter.js";
-import type * as betterAuth_auth from "../betterAuth/auth.js";
-import type * as http from "../http.js";
+import type * as core_auth_generated__generated_api from "../core/auth/generated/_generated/api.js";
+import type * as core_auth_generated__generated_server from "../core/auth/generated/_generated/server.js";
+import type * as core_auth_generated_adapter from "../core/auth/generated/adapter.js";
+import type * as core_auth_generated_auth from "../core/auth/generated/auth.js";
+import type * as core_auth_index from "../core/auth/index.js";
+import type * as core_auth_magicLinkEmail from "../core/auth/magicLinkEmail.js";
+import type * as core_config__generated_api from "../core/config/_generated/api.js";
+import type * as core_config__generated_server from "../core/config/_generated/server.js";
+import type * as domains_auth_index from "../domains/auth/index.js";
+import type * as domains_auth_mutations from "../domains/auth/mutations.js";
+import type * as domains_auth_services from "../domains/auth/services.js";
+import type * as domains_moneyMaps_index from "../domains/moneyMaps/index.js";
+import type * as domains_moneyMaps_mutations from "../domains/moneyMaps/mutations.js";
+import type * as domains_moneyMaps_queries from "../domains/moneyMaps/queries.js";
+import type * as domains_moneyMaps_services from "../domains/moneyMaps/services.js";
 import type * as index from "../index.js";
-import type * as magicLinkEmail from "../magicLinkEmail.js";
-import type * as moneyMaps from "../moneyMaps.js";
-import type * as signup from "../signup.js";
-import type * as smoke from "../smoke.js";
+import type * as routes_http from "../routes/http.js";
+import type * as schema_tables from "../schema/tables.js";
 
 import type {
   ApiFromModules,
@@ -35,17 +42,24 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  auth: typeof auth;
-  "betterAuth/_generated/api": typeof betterAuth__generated_api;
-  "betterAuth/_generated/server": typeof betterAuth__generated_server;
-  "betterAuth/adapter": typeof betterAuth_adapter;
-  "betterAuth/auth": typeof betterAuth_auth;
-  http: typeof http;
+  "core/auth/generated/_generated/api": typeof core_auth_generated__generated_api;
+  "core/auth/generated/_generated/server": typeof core_auth_generated__generated_server;
+  "core/auth/generated/adapter": typeof core_auth_generated_adapter;
+  "core/auth/generated/auth": typeof core_auth_generated_auth;
+  "core/auth/index": typeof core_auth_index;
+  "core/auth/magicLinkEmail": typeof core_auth_magicLinkEmail;
+  "core/config/_generated/api": typeof core_config__generated_api;
+  "core/config/_generated/server": typeof core_config__generated_server;
+  "domains/auth/index": typeof domains_auth_index;
+  "domains/auth/mutations": typeof domains_auth_mutations;
+  "domains/auth/services": typeof domains_auth_services;
+  "domains/moneyMaps/index": typeof domains_moneyMaps_index;
+  "domains/moneyMaps/mutations": typeof domains_moneyMaps_mutations;
+  "domains/moneyMaps/queries": typeof domains_moneyMaps_queries;
+  "domains/moneyMaps/services": typeof domains_moneyMaps_services;
   index: typeof index;
-  magicLinkEmail: typeof magicLinkEmail;
-  moneyMaps: typeof moneyMaps;
-  signup: typeof signup;
-  smoke: typeof smoke;
+  "routes/http": typeof routes_http;
+  "schema/tables": typeof schema_tables;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 

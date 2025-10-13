@@ -1,36 +1,40 @@
-## Usage
+# Frontend (SolidJS)
 
-Those templates dependencies are maintained via [pnpm](https://pnpm.io) via `pnpm up -Lri`.
+Solid application structured for clarity-first feature pods.
 
-This is the reason you see a `pnpm-lock.yaml`. That being said, any package manager will work. This file can be safely be removed once you clone a template.
+## Getting Started
 
 ```bash
-$ npm install # or pnpm install or yarn install
+pnpm install
+pnpm dev           # launches Vite dev server
+pnpm lint          # eslint solid/typescript rules
+pnpm typecheck     # tsc --noEmit
+pnpm build         # production build
 ```
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
+The combined workspace `pnpm dev` script (from the repo root) runs Convex + this client together.
 
-## Available Scripts
+## Directory Layout (`src/`)
 
-In the project directory, you can run:
+| Path | Description |
+| --- | --- |
+| `app/` | Bootstrapping: entry (`index.tsx`), router, providers, global styles (`styles/`). |
+| `features/` | One folder per feature (e.g. `auth`, `money-map`, `marketing`). Each pod uses `pages/`, `components/`, `state/`, `api/`, `utils/`, and optional `types/`. |
+| `shared/` | Cross-feature primitives (UI components, services, helpers shared by multiple features). |
 
-### `npm run dev` or `npm start`
+Feature pages are the router entry points. Views co-locate with their view-model or state hook; prefer a single descriptive file over scattering helpers.
 
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+## Conventions
 
-The page will reload if you make edits.<br>
+- Absolute imports use `~/*` (see `tsconfig.json`).
+- Wrap the app with `app/AppProviders.tsx` to ensure Auth/AppData/Shell contexts stay in sync.
+- Favor deletion over indirection: if logic is feature-specific, keep it inside that feature pod.
+- Components under `shared/components/ui` are the only globally reusable UI primitives; anything feature-specific lives inside that feature.
 
-### `npm run build`
+## Verification Flow
 
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
+1. `pnpm lint`
+2. `pnpm typecheck`
+3. `pnpm build`
 
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
-
-## Deployment
-
-You can deploy the `dist` folder to any static host provider (netlify, surge, now, etc.)
-
-## This project was created with the [Solid CLI](https://github.com/solidjs-community/solid-cli)
+Run these before shipping to ensure lint + type safety + build integrity.

@@ -11,8 +11,7 @@
     "typecheck": "pnpm -r --if-present run typecheck",
     "lint": "pnpm -r --if-present run lint",
     "build:frontend": "pnpm --filter @guap/frontend build",
-    "serve:frontend": "pnpm --filter @guap/frontend serve",
-    "smoke:auth-workspace": "node ./scripts/smoke-auth-workspace.mjs",
+    "serve:frontend": "pnpm --filter @guap/frontend preview",
     "codegen:sync": "node ./scripts/sync-convex-codegen.mjs && node ./scripts/update-better-auth-roles.mjs"
   }
 }

@@ -13,9 +13,9 @@ Goal: rebuild `apps/frontend` for radical simplicity, zero technical debt, and f
 - We have a local note of outstanding git changes (no blind resets).
 
 **Tasks**
-- [ ] Run `pnpm install` to ensure the lockfile is usable.
-- [ ] Record current `git status` and stash or commit unrelated work.
-- [ ] Note any sandbox constraints or env quirks that could affect later steps.
+- [x] Run `pnpm install` to ensure the lockfile is usable.
+- [x] Record current `git status` and stash or commit unrelated work.
+- [x] Note any sandbox constraints or env quirks that could affect later steps.
 
 ---
 
@@ -28,10 +28,10 @@ Goal: rebuild `apps/frontend` for radical simplicity, zero technical debt, and f
 - Docs are reduced to `apps/frontend/README.md` plus this plan.
 
 **Tasks**
-- [ ] Delete smoke-test scripts and configs (e.g. `pnpm smoke:auth-workspace`, associated files in `scripts/` or `apps/backend`).
-- [ ] Remove automated tests under `apps/frontend` (e.g. `*.test.ts`, `__tests__/`).
-- [ ] Purge extra docs under `.docs/` except `reorg-refactor.md` and required backend auth docs.
-- [ ] Update package scripts to drop references to removed commands.
+- [x] Delete smoke-test scripts and configs (e.g. `pnpm smoke:auth-workspace`, associated files in `scripts/` or `apps/backend`).
+- [x] Remove automated tests under `apps/frontend` (e.g. `*.test.ts`, `__tests__/`). *(none present)*
+- [x] Purge extra docs under `.docs/` except `reorg-refactor.md` and required backend auth docs.
+- [x] Update package scripts to drop references to removed commands.
 
 ---
 
@@ -44,11 +44,11 @@ Goal: rebuild `apps/frontend` for radical simplicity, zero technical debt, and f
 - Each pillar has a README.md describing what belongs inside.
 
 **Tasks**
-- [ ] Create `app/` and move bootstrapping files (`index.tsx`, providers, router, contexts, layouts) inside.
-- [ ] Create `shared/` with subfolders for `components/`, `services/`, `utils/`, `types/` as needed.
-- [ ] Move global stylesheets into `app/styles/` (global CSS entry, design tokens) and update imports.
-- [ ] Ensure Solid entry points (`AppProviders`, router) import via the new structure.
-- [ ] Add short README.md files in `app/`, `features/`, `shared/` clarifying boundaries.
+- [x] Create `app/` and move bootstrapping files (`index.tsx`, providers, router, contexts, layouts) inside.
+- [x] Create `shared/` with subfolders for `components/`, `services/`, `utils/`, `types/` as needed.
+- [x] Move global stylesheets into `app/styles/` (global CSS entry, design tokens) and update imports.
+- [x] Ensure Solid entry points (`AppProviders`, router) import via the new structure.
+- [x] Add short README.md files in `app/`, `features/`, `shared/` clarifying boundaries.
 
 ---
 
@@ -62,11 +62,11 @@ Goal: rebuild `apps/frontend` for radical simplicity, zero technical debt, and f
 - `routes` import money map pages via the feature barrel; there are no stray relative imports back into old paths.
 
 **Tasks**
-- [ ] Create subfolders (`pages/`, `components/`, `state/`, `api/`, `utils/`, `types/`) within `features/money-map`.
-- [ ] Move Canvas page + view-model into `pages/CanvasPage` (view + view-model co-located).
-- [ ] Move editor hook, simulation logic, history helpers into `state/` or `utils/` as appropriate.
-- [ ] Relocate money map API/cache helpers under `api/`, update imports accordingly.
-- [ ] Purge old folders once imports pass `pnpm typecheck`.
+- [x] Create subfolders (`pages/`, `components/`, `state/`, `api/`, `utils/`, `types/`) within `features/money-map`.
+- [x] Move Canvas page + view-model into `pages/CanvasPage` (view + view-model co-located).
+- [x] Move editor hook, simulation logic, history helpers into `state/` or `utils/` as appropriate.
+- [x] Relocate money map API/cache helpers under `api/`, update imports accordingly.
+- [x] Purge old folders once imports pass `pnpm typecheck`.
 
 ---
 
@@ -80,10 +80,10 @@ Goal: rebuild `apps/frontend` for radical simplicity, zero technical debt, and f
 - Feature barrels (`features/auth/index.ts`, etc.) export their page components for router consumption.
 
 **Tasks**
-- [ ] Move auth-related pages (sign-in, sign-up, verify, accept invite) into `features/auth/pages/`.
-- [ ] Relocate auth-only components (animations, onboarding flows) into `features/auth/components/`; share any marketing visuals through `shared/components/marketing`.
-- [ ] Repeat for onboarding flows and marketing pages.
-- [ ] Update router imports to use `~/features/...`.
+- [x] Move auth-related pages (sign-in, sign-up, verify, accept invite) into `features/auth/pages/`.
+- [x] Relocate auth-only components (animations, onboarding flows) into `features/auth/components/`; share any marketing visuals through `features/marketing/components/`.
+- [x] Repeat for onboarding flows and marketing pages.
+- [x] Update router imports to use `~/features/...`.
 
 ---
 
@@ -97,10 +97,10 @@ Goal: rebuild `apps/frontend` for radical simplicity, zero technical debt, and f
 - `routes/` directory only contains thin re-exporters (or is removed in favor of feature-managed route definitions).
 
 **Tasks**
-- [ ] Create feature folders for each surviving route (`dashboard`, `settings`, `tools`, etc.).
-- [ ] Co-locate any shared store/context under that feature’s `state/`.
-- [ ] Delete empty folders (`data/`, unused `services/`) once code is relocated.
-- [ ] Run `pnpm lint` and `pnpm typecheck` to verify imports and styles survive the move.
+- [x] Create feature folders for each surviving route (`dashboard`, `settings`, `tools`, etc.).
+- [x] Co-locate any shared store/context under that feature’s `state/`. *(Current contexts stay in `app/`; feature-specific hooks live under each feature.)*
+- [x] Delete empty folders (`data/`, unused `services/`) once code is relocated.
+- [x] Run `pnpm lint` and `pnpm typecheck` to verify imports and styles survive the move.
 
 ---
 
@@ -114,10 +114,10 @@ Goal: rebuild `apps/frontend` for radical simplicity, zero technical debt, and f
 - CI scripts and package.json commands align with the simplified structure.
 
 **Tasks**
-- [ ] Search repo for `components/canvas`, `domains/canvas`, `domains/moneyMap`, etc., and confirm zero hits.
-- [ ] Update lint/tsconfig path aliases if needed to mirror new folder layout.
-- [ ] Trim package scripts and workspace configuration to the minimum set we still use.
-- [ ] Document the finished structure in `apps/frontend/README.md`.
+- [x] Search repo for `components/canvas`, `domains/canvas`, `domains/moneyMap`, etc., and confirm zero hits.
+- [x] Update lint/tsconfig path aliases if needed to mirror new folder layout. *(Paths remain `~/* → src/*`; no changes required.)*
+- [x] Trim package scripts and workspace configuration to the minimum set we still use. *(Front-end package scripts reduced to `dev`, `build`, `preview`, `lint`, `typecheck`; root `serve:frontend` now calls `preview`.)*
+- [x] Document the finished structure in `apps/frontend/README.md`.
 
 ---
 
@@ -127,11 +127,12 @@ Goal: rebuild `apps/frontend` for radical simplicity, zero technical debt, and f
 
 **DoD**
 - `pnpm dev` launches the frontend without runtime errors.
-- Manual smoke of auth login, Money Map load/save, and settings navigation succeeds.
+- Manual walkthrough of auth login, Money Map load/save, and settings navigation succeeds (no automated smoke script).
 - Git history shows the entire transition in intentional, reviewable commits.
 
 **Tasks**
-- [ ] Run `pnpm dev` and exercise the main flows manually.
+- [ ] Run `pnpm dev` and exercise the main flows manually (auth, money map, settings).
+- [x] Workspace verification scripts: `pnpm lint`, `pnpm typecheck`, `pnpm build:shared`, `pnpm --filter @guap/frontend build` (backend build blocked offline by Convex telemetry pinging Sentry).
 - [ ] Capture before/after directory trees for documentation.
 - [ ] Prepare a final change log summarizing decisions for future contributors.
 

@@ -20,6 +20,9 @@ Thumbs.db
 # Misc
 pnpm-debug.log*
 
+# Browser automation
+.playwright-mcp/
+
 # Documentation screenshots
 .docs/get-sequence-screenshots/
 .env.local

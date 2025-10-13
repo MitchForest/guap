@@ -29,15 +29,15 @@ Shared Packages ──────────────┘
 - **Type Safety**: All cross-layer data must flow through `@guap/types` schemas. Convex schema enums derive from these arrays; frontend contexts import the same enums/types.
 - **API Access**: Frontend never calls `convex.query` directly; it uses `@guap/api` wrappers with runtime validation.
 - **Workspace Variants**: Convex tracks `{ householdId, variant: 'live' | 'sandbox' }`; frontend toggles via `AppPaths.app` vs sandbox state. All publish/reset/apply flows go through new mutations.
-- **Routing**: `src/router.tsx` defines the full tree and exports `AppPaths` + `AppRoutePath`. Navigation must use these constants (no string literals).
-- **Context Composition**: `src/AppProviders.tsx` wires Role → Auth → AppData → Shell. Reuse this wrapper for tests/stories to keep provider order consistent.
+- **Routing**: `src/app/router.tsx` defines the full tree and exports `AppPaths` + `AppRoutePath`. Navigation must use these constants (no string literals).
+- **Context Composition**: `src/app/AppProviders.tsx` wires Role → Auth → AppData → Shell. Reuse this wrapper for tests/stories to keep provider order consistent.
 - **Providers**: All external banking/brokerage syncs go through `packages/providers`. Backend provider module only interacts via the registry/queue exports.
 
 ### Directory Boundaries
 
 | Path | Responsibility | Key Dependencies |
 | ---- | -------------- | ---------------- |
-| `apps/frontend` | SolidJS UI, contexts, router, Money Map canvas, auth flows | SolidJS, TanStack Router, Tailwind v4, `@guap/api`, `@guap/types`, Better Auth client |
+| `apps/frontend` | SolidJS UI organized into `app/`, `features/`, `shared/` | SolidJS, TanStack Router, Tailwind v4, `@guap/api`, `@guap/types`, Better Auth client |
 | `apps/backend` | Convex schemas/functions, Better Auth server integration, provider queue | Convex, Better Auth (`@convex-dev/better-auth`), `@guap/types`, `packages/providers` |
 | `packages/types` | Zod schemas/enums, shared TypeScript types | Zod |
 | `packages/api` | Convex client wrapper with validation | Convex browser client, `@guap/types`, Zod |
@@ -50,7 +50,7 @@ Shared Packages ──────────────┘
 - Use `@guap/types` enums instead of duplicating literals.
 - Convex modules: keep per-domain files (`convex/workspaces.ts`, `convex/graph.ts`, etc.).
 - Provider integrations must go through `packages/providers` exports (no direct provider-specific code in frontend/backend).
-- Router updates require adding to `router.tsx` and updating `AppPaths`.
+- Router updates require adding to `app/router.tsx` and updating `app/routerPaths.ts`.
 
 ## Scripts & Tooling
 
@@ -67,8 +67,6 @@ Run from the repo root:
 | `pnpm lint` | Run lint/type-check on every package/app (commands delegated via workspace scripts). |
 | `pnpm typecheck` | Run `tsc --noEmit` for every package/app. |
 | `pnpm --filter @guap/backend generate` | Run Convex codegen (after schema changes). |
-| `pnpm smoke:auth-workspace` | Smoke test auth + workspace publish flow via Convex HTTP client (`.env.local` required). |
-| `pnpm smoke:provider` | Smoke test provider queue/diff helpers using the virtual adapter. |
 
 Each workspace also exposes package-specific scripts:
 
@@ -80,23 +78,7 @@ Each workspace also exposes package-specific scripts:
 - **Package manager**: pnpm (see `pnpm-workspace.yaml`).
 - **TypeScript**: strict mode, base config in `tsconfig.base.json`.
 - **Styling & UI**: Tailwind CSS v4 via `@tailwindcss/vite`; reusable primitives built on Kobalte + class-variance-authority with Solid Sonner for notifications.
-- **Testing**: Lint/typecheck across all packages plus targeted Vitest suites (`packages/providers`). Smoke scripts cover auth + provider pipelines.
-
-### Smoke Test Setup
-Create `.env.local` in the repo root (ignored by git) with credentials for the hosted Convex deployment:
-```
-SMOKE_AUTH_URL=https://<your-convex-deployment>.convex.site
-SMOKE_CONVEX_URL=https://<your-convex-deployment>.convex.cloud
-SMOKE_EMAIL=<smoke-user@your-domain>
-SMOKE_NAME=<Display Name>
-SMOKE_MAGIC_LINK_SECRET=<shared-secret-string>
-```
-Then run:
-```
-pnpm smoke:auth-workspace
-pnpm smoke:provider
-```
-Both commands should complete without errors before shipping.
+- **Testing**: Lint/typecheck across all packages plus targeted Vitest suites (`packages/providers`).
 
 ### Email (Resend)
 
@@ -109,16 +91,12 @@ Better Auth sends transactional email through [Resend](https://resend.com). Conf
 When no API key is present the backend simply logs the payload, which keeps local development friction-free.
 
 ## Canonical Docs
-- `.docs/plan.md` – current state, active work, handoff notes.
-- `.docs/convex.md` – Convex architecture reference.
-- `.docs/scenarios.md` – Product/UX scenarios.
-- `.docs/get-sequence-screenshots/README.md` – pointer to UX assets (restore PNGs from design drive when needed).
+- `.docs/reorg-refactor.md` – active plan for the frontend reorganization.
 
 ## Handoff Quickstart
 1. `pnpm install`
 2. `pnpm build:shared && pnpm --filter @guap/backend generate`
 3. `pnpm lint` (ensure workspace is clean)
-4. `pnpm typecheck` (known issues documented in `.docs/plan.md`)
-5. Read `.docs/plan.md` for current focus and TODOs.
+4. `pnpm typecheck`
 
 Keep router definitions, shared types, and provider abstractions in sync to maintain type safety across the stack.

@@ -1,19 +1,12 @@
-import { z } from 'zod';
-import { api } from '../codegen/api';
-import type { ConvexClientInstance } from './env';
-import type { BackendApi } from './types';
+import type { ConvexClientInstance } from './core/client';
+import { createConvexClient } from './core/client';
+import type { BackendApi } from './core/types';
 import {
-  MoneyMapChangeRequestRecordSchema,
-  MoneyMapChangeStatusSchema,
-  MoneyMapSnapshotSchema,
-  type MoneyMapChangeRequestRecord as MoneyMapChangeRequestRecordType,
-  type MoneyMapChangeStatus as MoneyMapChangeStatusType,
-  type MoneyMapSnapshot as MoneyMapSnapshotType,
-} from '@guap/types';
-import {
+  createMoneyMapsApi,
+  MoneyMapsApi,
+  MoneyMapSaveInputSchema,
   createMoneyMapSaveInput,
   workspaceGraphFromSnapshot,
-  MoneyMapSaveInputSchema,
   type MoneyMapDraft,
   type MoneyMapDraftFlowInput,
   type MoneyMapDraftNodeInput,
@@ -27,9 +20,28 @@ import {
   type MoneyMapNodeInput,
   type MoneyMapRuleInput,
   type MoneyMapSaveInput,
-} from './moneyMap';
+  type SubmitChangeRequestInput,
+  type UpdateChangeRequestStatusInput,
+} from './domains/moneyMaps';
+import {
+  createAuthApi,
+  AuthApi,
+  type AuthSignupRecordInput,
+  type AuthInviteRecordInput,
+  type AuthBootstrapResult,
+} from './domains/auth';
+import type {
+  MoneyMapChangeRequestRecord,
+  MoneyMapChangeStatus,
+  MoneyMapSnapshot,
+  MoneyMapNodeKind,
+  MoneyMapRuleTrigger,
+} from '@guap/types';
 
-export { createConvexClient } from './env';
+export { createConvexClient };
+export type { ConvexClientInstance };
+export type { BackendApi } from './core/types';
+
 export {
   createMoneyMapSaveInput,
   workspaceGraphFromSnapshot,
@@ -47,8 +59,14 @@ export {
   type MoneyMapEdgeInput,
   type MoneyMapRuleInput,
   type MoneyMapSaveInput,
-} from './moneyMap';
-export type { BackendApi } from './types';
+  type SubmitChangeRequestInput,
+  type UpdateChangeRequestStatusInput,
+} from './domains/moneyMaps';
+export {
+  type AuthSignupRecordInput,
+  type AuthInviteRecordInput,
+  type AuthBootstrapResult,
+} from './domains/auth';
 export type {
   HouseholdRecord,
   MembershipRecord,
@@ -63,59 +81,49 @@ export type {
   MoneyMapRuleTrigger,
 } from '@guap/types';
 
-type Client = ConvexClientInstance;
-
-const SubmitChangeRequestSchema = z.object({
-  mapId: z.string(),
-  organizationId: z.string(),
-  submitterId: z.string(),
-  summary: z.string().optional(),
-  payload: MoneyMapSaveInputSchema,
-});
-
-const UpdateChangeRequestStatusSchema = z.object({
-  requestId: z.string(),
-  status: MoneyMapChangeStatusSchema,
-});
-
-export type SubmitChangeRequestInput = z.infer<typeof SubmitChangeRequestSchema>;
-export type UpdateChangeRequestStatusInput = z.infer<typeof UpdateChangeRequestStatusSchema>;
-
 export class GuapApi {
-  constructor(private readonly client: Client) {}
+  readonly moneyMaps: MoneyMapsApi;
+  readonly auth: AuthApi;
 
-  async loadMoneyMap(organizationId: string): Promise<MoneyMapSnapshotType | null> {
-    const result = await this.client.query(api.moneyMaps.load, { organizationId });
-    return result ? MoneyMapSnapshotSchema.parse(result) : null;
+  constructor(private readonly client: ConvexClientInstance) {
+    this.moneyMaps = createMoneyMapsApi(client);
+    this.auth = createAuthApi(client);
   }
 
-  async saveMoneyMap(payload: MoneyMapSaveInput): Promise<MoneyMapSnapshotType> {
-    const parsed = MoneyMapSaveInputSchema.parse(payload);
-    const result = await this.client.mutation(api.moneyMaps.save, parsed);
-    return MoneyMapSnapshotSchema.parse(result);
+  async loadMoneyMap(organizationId: string): Promise<MoneyMapSnapshot | null> {
+    return this.moneyMaps.load(organizationId);
+  }
+
+  async saveMoneyMap(payload: MoneyMapSaveInput): Promise<MoneyMapSnapshot> {
+    return this.moneyMaps.save(payload);
   }
 
   async submitChangeRequest(input: SubmitChangeRequestInput): Promise<string> {
-    const parsed = SubmitChangeRequestSchema.parse(input);
-    const result = await this.client.mutation(api.moneyMaps.submitChangeRequest, parsed);
-    return z.string().parse(result);
+    return this.moneyMaps.submitChangeRequest(input);
   }
 
   async updateChangeRequestStatus(input: UpdateChangeRequestStatusInput): Promise<void> {
-    const parsed = UpdateChangeRequestStatusSchema.parse(input);
-    await this.client.mutation(api.moneyMaps.updateChangeRequestStatus, parsed);
+    await this.moneyMaps.updateChangeRequestStatus(input);
   }
 
   async listChangeRequests(
     organizationId: string,
-    status?: MoneyMapChangeStatusType
-  ): Promise<MoneyMapChangeRequestRecordType[]> {
-    const result = await this.client.query(api.moneyMaps.listChangeRequests, {
-      organizationId,
-      status,
-    });
-    return z.array(MoneyMapChangeRequestRecordSchema).parse(result);
+    status?: MoneyMapChangeStatus
+  ): Promise<MoneyMapChangeRequestRecord[]> {
+    return this.moneyMaps.listChangeRequests(organizationId, status);
+  }
+
+  async recordSignup(input: AuthSignupRecordInput): Promise<void> {
+    await this.auth.recordSignup(input);
+  }
+
+  async recordInvite(input: AuthInviteRecordInput): Promise<void> {
+    await this.auth.recordInvite(input);
+  }
+
+  async bootstrapSignup(): Promise<AuthBootstrapResult> {
+    return this.auth.bootstrap();
   }
 }
 
-export const createGuapApi = (client: Client) => new GuapApi(client);
+export const createGuapApi = (client: ConvexClientInstance) => new GuapApi(client);
