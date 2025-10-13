@@ -3,7 +3,7 @@ import {
   workspaceGraphFromSnapshot,
   type MoneyMapChangeRequestRecord,
   type MoneyMapChangeStatus,
-  type WorkspaceGraphDraft,
+  type MoneyMapDraft,
 } from '@guap/api';
 import { guapApi } from '~/services/guapApi';
 import {
@@ -28,7 +28,7 @@ export const loadMoneyMapGraph = async (householdId: string) => {
 
 export const saveMoneyMapGraph = async (params: {
   householdId: string;
-  draft: WorkspaceGraphDraft;
+  draft: MoneyMapDraft;
 }) => {
   const { householdId, draft } = params;
   const snapshot = getMoneyMapSnapshot(householdId);
@@ -54,7 +54,7 @@ export const saveMoneyMapGraph = async (params: {
 export const submitMoneyMapChangeRequest = async (params: {
   householdId: string;
   submitterId: string;
-  draft: WorkspaceGraphDraft;
+  draft: MoneyMapDraft;
   summary?: string;
 }) => {
   const { householdId, submitterId, draft, summary } = params;

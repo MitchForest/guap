@@ -11,39 +11,43 @@ import {
   type MoneyMapSnapshot as MoneyMapSnapshotType,
 } from '@guap/types';
 import {
-  createWorkspacePublishPayload,
   createMoneyMapSaveInput,
   workspaceGraphFromSnapshot,
   MoneyMapSaveInputSchema,
+  type MoneyMapDraft,
+  type MoneyMapDraftFlowInput,
+  type MoneyMapDraftNodeInput,
+  type MoneyMapDraftRuleInput,
+  type MoneyMapGraphAllocation,
+  type MoneyMapGraphData,
+  type MoneyMapGraphEdge,
+  type MoneyMapGraphNode,
+  type MoneyMapGraphRule,
   type MoneyMapEdgeInput,
   type MoneyMapNodeInput,
   type MoneyMapRuleInput,
   type MoneyMapSaveInput,
-  type WorkspaceGraphFlowInput,
-  type WorkspaceGraphNodeInput,
-  type WorkspaceGraphDraft,
-  type WorkspaceGraphPublishInput,
-  type WorkspaceGraphRuleInput,
-  type WorkspaceGraphData,
-} from './workspaces';
+} from './moneyMap';
 
 export { createConvexClient } from './env';
 export {
-  createWorkspacePublishPayload,
   createMoneyMapSaveInput,
   workspaceGraphFromSnapshot,
   MoneyMapSaveInputSchema,
-  type WorkspaceGraphNodeInput,
-  type WorkspaceGraphFlowInput,
-  type WorkspaceGraphRuleInput,
-  type WorkspaceGraphPublishInput,
-  type WorkspaceGraphDraft,
-  type WorkspaceGraphData,
+  type MoneyMapDraftNodeInput,
+  type MoneyMapDraftFlowInput,
+  type MoneyMapDraftRuleInput,
+  type MoneyMapDraft,
+  type MoneyMapGraphNode,
+  type MoneyMapGraphEdge,
+  type MoneyMapGraphRule,
+  type MoneyMapGraphAllocation,
+  type MoneyMapGraphData,
   type MoneyMapNodeInput,
   type MoneyMapEdgeInput,
   type MoneyMapRuleInput,
   type MoneyMapSaveInput,
-} from './workspaces';
+} from './moneyMap';
 export type { BackendApi } from './types';
 export type {
   HouseholdRecord,
@@ -57,12 +61,6 @@ export type {
   MoneyMapChangeRequestRecord,
   MoneyMapNodeKind,
   MoneyMapRuleTrigger,
-  WorkspaceRecord,
-  WorkspaceGraphRecord,
-  WorkspaceRuleAllocationRecord,
-  WorkspaceRuleRecord,
-  WorkspacePublishPayload,
-  WorkspacePublishResult,
 } from '@guap/types';
 
 type Client = ConvexClientInstance;

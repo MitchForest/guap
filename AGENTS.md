@@ -32,9 +32,10 @@ RULES:
 - In 99.9% of the time, use Better Auth defaults (tables, schemas, apis, hooks, naming conventions, orgs/users/roles/permissions, etc). There must be a very good reason to stray from this and explicit user approval. We use better auth names but internally our mapping is as follows. Org = Household. Owner = first to signup for a new org. Admin = othe parents/guardians invite in. Members = students.
 - Get user explicit approval before any database/schema changes
 - Use kobalte, tailwind, class variance authority for components
-- If we need to modularize domains, do so as follows: view → viewmodel → state → actions.
+- Follow established conventions/patterns for code organization (one long file is better than arbitraily splitting a file into a bunch of helpers that are hard to reason about; but even better than that is having a clean split per domain between view, view model, actions, and state if necessary)
 - ZERO backwards-compatibility, legacy shims, etc. This is another phrase for LAZY code and technical debt and we have ZERO tolerance for it.
 - Do not edit .env variables (or expected variables) without user explicit approval (and if backend ones are edited, use npx convex env set VAR_NAME value)
+- Follow established conventions/patterns for code organization (one long file is better than arbitraily splitting a file into a bunch of helpers that are hard to reason about; but even better than that is having a clean split per domain between view, view model, actions, and state if necessary)
 
 
 PRINCIPLES:

@@ -8,7 +8,7 @@ import {
 } from 'better-auth/client/plugins';
 import { convexClient } from '@convex-dev/better-auth/client/plugins';
 
-const baseURL = import.meta.env.VITE_AUTH_BASE_URL ?? undefined;
+const baseURL = import.meta.env.VITE_CONVEX_SITE_URL ?? undefined;
 
 export const authClient = createAuthClient({
   baseURL,

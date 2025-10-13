@@ -127,140 +127,9 @@ export const RequestRecordSchema = z.object({
   updatedAt: z.number(),
 });
 
-export const WorkspaceVariantValues = ['live', 'sandbox'] as const;
-export const WorkspaceVariantSchema = z.enum(WorkspaceVariantValues);
-
-export const WorkspaceRecordSchema = z.object({
-  _id: z.string(),
-  householdId: z.string(),
-  slug: z.string(),
-  name: z.string(),
-  variant: WorkspaceVariantSchema,
-  lastSyncedAt: z.number().nullable().optional(),
-  lastAppliedAt: z.number().nullable().optional(),
-  pendingRequestId: z.string().nullable().optional(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const WorkspaceNodeKindValues = ['income', 'account', 'pod', 'goal', 'liability'] as const;
-export const WorkspaceNodeKindSchema = z.enum(WorkspaceNodeKindValues);
-
-export const WorkspaceNodePositionSchema = z.object({
+export const MoneyMapPositionSchema = z.object({
   x: z.number(),
   y: z.number(),
-});
-
-export const WorkspaceNodeRecordSchema = z.object({
-  _id: z.string(),
-  workspaceId: z.string(),
-  type: WorkspaceNodeKindSchema,
-  label: z.string(),
-  icon: z.string().optional(),
-  accent: z.string().optional(),
-  balanceCents: z.number().optional(),
-  parentId: z.string().nullable().optional(),
-  position: WorkspaceNodePositionSchema,
-  metadata: z.record(z.string(), z.any()).optional(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const WorkspaceEdgeRecordSchema = z.object({
-  _id: z.string(),
-  workspaceId: z.string(),
-  sourceNodeId: z.string(),
-  targetNodeId: z.string(),
-  kind: z.enum(['manual', 'automation']).optional(),
-  ruleId: z.string().optional(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const WorkspaceRuleTriggerValues = ['incoming', 'scheduled'] as const;
-export const WorkspaceRuleTriggerSchema = z.enum(WorkspaceRuleTriggerValues);
-
-export const WorkspaceRuleRecordSchema = z.object({
-  _id: z.string(),
-  workspaceId: z.string(),
-  sourceNodeId: z.string(),
-  triggerType: WorkspaceRuleTriggerSchema,
-  triggerNodeId: z.string().optional(),
-  schedule: z
-    .object({
-      cadence: z.enum(['daily', 'weekly', 'monthly']),
-      day: z.number().optional(),
-    })
-    .optional(),
-  name: z.string().optional(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const WorkspaceRuleAllocationRecordSchema = z.object({
-  _id: z.string(),
-  ruleId: z.string(),
-  order: z.number(),
-  percentage: z.number(),
-  targetNodeId: z.string(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-});
-
-export const WorkspaceGraphRecordSchema = z.object({
-  workspace: WorkspaceRecordSchema,
-  nodes: z.array(WorkspaceNodeRecordSchema),
-  edges: z.array(WorkspaceEdgeRecordSchema),
-  rules: z.array(WorkspaceRuleRecordSchema),
-  allocations: z.array(WorkspaceRuleAllocationRecordSchema),
-});
-
-export const WorkspacePublishNodeSchema = z.object({
-  clientId: z.string(),
-  type: WorkspaceNodeKindSchema,
-  label: z.string(),
-  icon: z.string().optional(),
-  accent: z.string().optional(),
-  balanceCents: z.number().optional(),
-  position: WorkspaceNodePositionSchema,
-  parentClientId: z.string().nullable().optional(),
-  category: z.string().nullable().optional(),
-  metadata: z.record(z.string(), z.any()).optional(),
-});
-
-export const WorkspacePublishEdgeSchema = z.object({
-  clientId: z.string(),
-  sourceClientId: z.string(),
-  targetClientId: z.string(),
-  kind: z.enum(['manual', 'automation']).optional(),
-  ruleClientId: z.string().optional(),
-  metadata: z.record(z.string(), z.any()).optional(),
-});
-
-export const WorkspacePublishRuleSchema = z.object({
-  clientId: z.string(),
-  sourceClientId: z.string(),
-  trigger: WorkspaceRuleTriggerSchema,
-  triggerNodeClientId: z.string().nullable().optional(),
-  allocations: z.array(
-    z.object({
-      targetClientId: z.string(),
-      percentage: z.number(),
-    })
-  ),
-});
-
-export const WorkspacePublishPayloadSchema = z.object({
-  slug: z.string(),
-  nodes: z.array(WorkspacePublishNodeSchema),
-  edges: z.array(WorkspacePublishEdgeSchema),
-  rules: z.array(WorkspacePublishRuleSchema),
-});
-
-export const WorkspacePublishResultSchema = z.object({
-  nodes: z.record(z.string(), z.string()),
-  edges: z.record(z.string(), z.string()),
-  rules: z.record(z.string(), z.string()),
 });
 
 export const MoneyMapNodeKindValues = ['income', 'account', 'pod', 'goal', 'liability'] as const;
@@ -296,7 +165,7 @@ export const MoneyMapNodeMetadataSchema = z.object({
     })
     .nullable()
     .optional(),
-  position: WorkspaceNodePositionSchema.optional(),
+  position: MoneyMapPositionSchema.optional(),
   returnRate: z.number().nullable().optional(),
 });
 

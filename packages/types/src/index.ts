@@ -28,24 +28,13 @@ import {
   MoneyMapSaveRuleInputSchema,
   MoneyMapSaveInputSchema,
   MoneyMapSnapshotSchema,
+  MoneyMapPositionSchema,
   OrganizationKindSchema,
   ProfileRecordSchema,
   RequestKindSchema,
   RequestRecordSchema,
   RequestStateSchema,
   UserRoleSchema,
-  WorkspaceEdgeRecordSchema,
-  WorkspaceGraphRecordSchema,
-  WorkspaceNodeKindSchema,
-  WorkspaceNodePositionSchema,
-  WorkspaceNodeRecordSchema,
-  WorkspacePublishPayloadSchema,
-  WorkspacePublishResultSchema,
-  WorkspaceRecordSchema,
-  WorkspaceRuleAllocationRecordSchema,
-  WorkspaceRuleRecordSchema,
-  WorkspaceRuleTriggerSchema,
-  WorkspaceVariantSchema,
 } from './schemas';
 
 export * from './schemas';
@@ -69,18 +58,6 @@ export type IncomeRecord = typeof IncomeRecordSchema._type;
 export type RequestKind = typeof RequestKindSchema._type;
 export type RequestState = typeof RequestStateSchema._type;
 export type RequestRecord = typeof RequestRecordSchema._type;
-export type WorkspaceVariant = typeof WorkspaceVariantSchema._type;
-export type WorkspaceRecord = typeof WorkspaceRecordSchema._type;
-export type WorkspaceNodeKind = typeof WorkspaceNodeKindSchema._type;
-export type WorkspaceNodePosition = typeof WorkspaceNodePositionSchema._type;
-export type WorkspaceNodeRecord = typeof WorkspaceNodeRecordSchema._type;
-export type WorkspaceEdgeRecord = typeof WorkspaceEdgeRecordSchema._type;
-export type WorkspaceRuleTrigger = typeof WorkspaceRuleTriggerSchema._type;
-export type WorkspaceRuleRecord = typeof WorkspaceRuleRecordSchema._type;
-export type WorkspaceRuleAllocationRecord = typeof WorkspaceRuleAllocationRecordSchema._type;
-export type WorkspaceGraphRecord = typeof WorkspaceGraphRecordSchema._type;
-export type WorkspacePublishPayload = typeof WorkspacePublishPayloadSchema._type;
-export type WorkspacePublishResult = typeof WorkspacePublishResultSchema._type;
 export type MoneyMapRecord = typeof MoneyMapRecordSchema._type;
 export type MoneyMapNodeRecord = typeof MoneyMapNodeRecordSchema._type;
 export type MoneyMapEdgeRecord = typeof MoneyMapEdgeRecordSchema._type;
@@ -97,3 +74,4 @@ export type MoneyMapSaveNodeInput = typeof MoneyMapSaveNodeInputSchema._type;
 export type MoneyMapSaveEdgeInput = typeof MoneyMapSaveEdgeInputSchema._type;
 export type MoneyMapSaveRuleInput = typeof MoneyMapSaveRuleInputSchema._type;
 export type MoneyMapSaveInput = typeof MoneyMapSaveInputSchema._type;
+export type MoneyMapPosition = typeof MoneyMapPositionSchema._type;
