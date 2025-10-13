@@ -1,6 +1,12 @@
 import { createAuthClient } from 'better-auth/solid';
-import { adminClient, magicLinkClient, organizationClient } from 'better-auth/client/plugins';
-import { convexClient, crossDomainClient } from '@convex-dev/better-auth/client/plugins';
+import {
+  adminClient,
+  magicLinkClient,
+  organizationClient,
+  oneTimeTokenClient,
+  jwtClient,
+} from 'better-auth/client/plugins';
+import { convexClient } from '@convex-dev/better-auth/client/plugins';
 
 const baseURL = import.meta.env.VITE_AUTH_BASE_URL ?? undefined;
 
@@ -8,10 +14,11 @@ export const authClient = createAuthClient({
   baseURL,
   plugins: [
     convexClient(),
-    crossDomainClient(),
     magicLinkClient(),
     organizationClient(),
     adminClient(),
+    oneTimeTokenClient(),
+    jwtClient(),
   ],
 });
 
@@ -42,6 +49,11 @@ export const refreshBetterAuthSession = async () => {
 };
 
 export const fetchConvexAuthToken = async () => {
-  const result = await authClient.convex.token();
+  const client = authClient as unknown as {
+    convex?: {
+      token?: () => Promise<{ data?: { token?: string | null } | null } | null>;
+    };
+  };
+  const result = await client.convex?.token?.();
   return result?.data?.token ?? null;
 };

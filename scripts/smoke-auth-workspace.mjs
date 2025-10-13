@@ -10,13 +10,12 @@
  *   SMOKE_CONVEX_URL          → Convex deployment URL (e.g. http://localhost:3000)
  *   SMOKE_EMAIL               → Email used for the smoke user
  *   SMOKE_NAME                → Display name to seed the profile (used on first sign up)
- *   SMOKE_MAGIC_LINK_SECRET   → Shared secret that allows the smoke harness to capture magic link tokens
+ *   SMOKE_MAGIC_LINK_SECRET   → Shared secret used by the smoke harness when requesting helper queries
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const currentFile = fileURLToPath(import.meta.url);
@@ -135,13 +134,9 @@ async function authFetch(path, options = {}) {
   return res;
 }
 
-async function requestMagicLink({ key }) {
+async function requestMagicLink() {
   const response = await authFetch('/api/auth/sign-in/magic-link', {
     method: 'POST',
-    headers: {
-      'x-smoke-magic-link-key': key,
-      'x-smoke-magic-link-secret': smokeMagicLinkSecret,
-    },
     body: JSON.stringify({
       email,
       name: displayName,
@@ -157,27 +152,17 @@ async function requestMagicLink({ key }) {
   }
 }
 
-async function fetchMagicLinkToken(key) {
-  const response = await authFetch('/api/smoke/magic-link-token', {
-    method: 'POST',
-    body: JSON.stringify({
-      key,
-      secret: smokeMagicLinkSecret,
-    }),
+const unsignedConvexClient = new ConvexHttpClient(convexBase);
+
+async function fetchMagicLinkToken() {
+  const result = await unsignedConvexClient.query('smoke:latestMagicLinkToken', {
+    email,
+    secret: smokeMagicLinkSecret,
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Magic link token fetch failed: ${response.status} ${text}`);
-  }
-
-  const data = await response.json();
-  if (!data?.token) {
-    throw new Error('Magic link token missing in response');
-  }
-
-  return data.token;
+  return result?.token ?? null;
 }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function verifyMagicLink(token) {
   const params = new URLSearchParams({
@@ -197,9 +182,16 @@ async function verifyMagicLink(token) {
 }
 
 async function ensureSignedIn() {
-  const key = randomUUID();
-  await requestMagicLink({ key });
-  const token = await fetchMagicLinkToken(key);
+  await requestMagicLink();
+  let token = null;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    token = await fetchMagicLinkToken();
+    if (token) break;
+    await sleep(500);
+  }
+  if (!token) {
+    throw new Error('Magic link token unavailable for smoke user');
+  }
   await verifyMagicLink(token);
   return { email };
 }

@@ -17,7 +17,6 @@ export const tables = {
     banned: v.optional(v.union(v.null(), v.boolean())),
     banReason: v.optional(v.union(v.null(), v.string())),
     banExpires: v.optional(v.union(v.null(), v.number())),
-    stripeCustomerId: v.optional(v.union(v.null(), v.string())),
     userId: v.optional(v.union(v.null(), v.string())),
   })
     .index("email_name", ["email","name"])
@@ -31,8 +30,8 @@ export const tables = {
     ipAddress: v.optional(v.union(v.null(), v.string())),
     userAgent: v.optional(v.union(v.null(), v.string())),
     userId: v.string(),
-    impersonatedBy: v.optional(v.union(v.null(), v.string())),
     activeOrganizationId: v.optional(v.union(v.null(), v.string())),
+    impersonatedBy: v.optional(v.union(v.null(), v.string())),
   })
     .index("expiresAt", ["expiresAt"])
     .index("expiresAt_userId", ["expiresAt","userId"])
@@ -96,6 +95,11 @@ export const tables = {
     .index("role", ["role"])
     .index("status", ["status"])
     .index("inviterId", ["inviterId"]),
+  jwks: defineTable({
+    publicKey: v.string(),
+    privateKey: v.string(),
+    createdAt: v.number(),
+  }),
 };
 
 const schema = defineSchema(tables);

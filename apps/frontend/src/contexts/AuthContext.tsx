@@ -8,13 +8,8 @@ import {
   type Component,
   type JSX,
 } from 'solid-js';
-import {
-  BetterAuthSessionSchema,
-  UserRoleSchema,
-  type BetterAuthSessionUser,
-  type OrganizationKind,
-  type UserRole,
-} from '@guap/types';
+import { api } from '@guap/api/codegen/api';
+import { UserRoleSchema, type OrganizationKind, type UserRole } from '@guap/types';
 import {
   authClient,
   fetchConvexAuthToken,
@@ -22,12 +17,10 @@ import {
   refreshBetterAuthSession,
   type BetterAuthSession,
 } from '~/lib/authClient';
-import { clearConvexAuthToken, setConvexAuthToken } from '~/services/convexClient';
-import { useRole } from '~/contexts/RoleContext';
+import { convex, clearConvexAuthToken, setConvexAuthToken } from '~/services/convexClient';
 import { recordAuthFailure, recordAuthSignOut, resetAuthTelemetry } from '~/services/telemetry';
 import { toast } from 'solid-sonner';
 import { AppPaths } from '~/routerPaths';
-import { getPendingInvite, clearPendingInvite } from '~/lib/pendingInvite';
 
 type SignUpRequest = {
   email: string;
@@ -37,7 +30,19 @@ type SignUpRequest = {
   organizationKind?: OrganizationKind;
 };
 
-type PendingSignup = Partial<SignUpRequest> & { email: string };
+type SessionUserPayload = Record<string, unknown> & {
+  id?: string;
+  email?: string;
+  name?: string;
+  role?: string;
+  activeOrganizationId?: string;
+  organizationId?: string;
+  householdId?: string;
+  profileId?: string;
+  organizationMembershipId?: string | null;
+};
+
+type SessionInfo = { raw: BetterAuthSession; user: SessionUserPayload };
 
 export type AuthUser = {
   authId: string;
@@ -63,64 +68,24 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue>();
 
-const generateSlug = (seed: string) => {
-  const base = seed.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') || 'household';
-  const suffix =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID().slice(0, 8)
-      : Math.random().toString(36).slice(2, 10);
-  return `${base}-${suffix}`;
-};
-
 const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
-  const { setRole } = useRole();
   const [user, setUser] = createSignal<AuthUser | null>(null);
   const [isLoading, setIsLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   let hydrating = false;
 
-  const getPendingSignup = () => {
-    if (typeof window === 'undefined') return null;
-    const raw = window.sessionStorage.getItem('pendingSignup');
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as PendingSignup;
-      if (parsed?.role && !UserRoleSchema.safeParse(parsed.role).success) {
-        delete (parsed as Partial<PendingSignup>).role;
-      }
-      return parsed?.email ? parsed : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const setPendingSignup = (payload: SignUpRequest) => {
-    if (typeof window === 'undefined') return;
-    window.sessionStorage.setItem('pendingSignup', JSON.stringify(payload));
-  };
-
-  const clearPendingSignup = () => {
-    if (typeof window === 'undefined') return;
-    window.sessionStorage.removeItem('pendingSignup');
-  };
-
-  const parseSessionUser = (session: BetterAuthSession | null) => {
+  const parseSessionUser = (session: BetterAuthSession | null): SessionInfo | null => {
     if (!session) {
       return null;
     }
-    const parsed = BetterAuthSessionSchema.safeParse(session);
-    if (!parsed.success) {
-      console.error('Unable to parse Better Auth session payload', parsed.error);
-      throw new Error('Invalid session payload from Better Auth');
-    }
-    const merged: BetterAuthSessionUser = {
-      ...parsed.data.user,
-      ...(parsed.data.session?.user ?? {}),
+    const merged: SessionUserPayload = {
+      ...session.user,
+      ...(session.session?.user ?? {}),
     };
-    return { raw: parsed.data, user: merged };
+    return { raw: session, user: merged };
   };
 
-  const refreshSessionUser = async () => {
+  const refreshSessionUser = async (): Promise<SessionInfo | null> => {
     const refreshed = await refreshBetterAuthSession().catch((error) => {
       console.warn('Better Auth session refresh failed', error);
       return null;
@@ -131,85 +96,12 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     return parseSessionUser(refreshed);
   };
 
-  const resolveMembershipRole = async (
-    organizationId: string,
-    userId: string
-  ): Promise<UserRole | null> => {
+  const bootstrapSignup = async (): Promise<boolean> => {
     try {
-      const result = await authClient.organization.listMembers({
-        query: { organizationId },
-      });
-      if (result.error) {
-        return null;
-      }
-      const dataset = Array.isArray(result.data) ? result.data : [];
-      const match = dataset.find((entry: Record<string, unknown>) => {
-        const candidate = entry.userId ?? entry.profileId ?? entry.memberId;
-        return candidate && String(candidate) === userId;
-      });
-      const parsed = UserRoleSchema.safeParse(match?.role);
-      return parsed.success ? parsed.data : null;
+      const result = await convex.mutation(api.signup.bootstrap, {});
+      return Boolean(result?.shouldRefresh);
     } catch (error) {
-      console.warn('Failed to resolve membership role', error);
-      return null;
-    }
-  };
-
-  const ensureOwnerOrganization = async (
-    pending: PendingSignup,
-    sessionUser: BetterAuthSessionUser
-  ) => {
-    if (pending.role !== 'owner') {
-      return sessionUser;
-    }
-
-    const hasOrganization =
-      !!sessionUser.activeOrganizationId ||
-      !!sessionUser.organizationId ||
-      !!sessionUser.householdId;
-
-    if (hasOrganization) {
-      return sessionUser;
-    }
-
-    if (!pending.organizationName) {
-      throw new Error('Organization name is required to finish admin onboarding.');
-    }
-
-    const kind: OrganizationKind = pending.organizationKind ?? 'family';
-    const organizationType = kind === 'institution' ? 'school' : 'household';
-    const slug = generateSlug(pending.organizationName);
-    const result = await authClient.organization.create({
-      name: pending.organizationName,
-      slug,
-      metadata: {
-        type: organizationType,
-      },
-      userId: sessionUser.id,
-    });
-    if (result.error) {
-      throw new Error(result.error.message ?? 'Unable to create organization');
-    }
-    toast.success('Organization created! Invite your team from the roster page.');
-    const refreshed = await refreshSessionUser();
-    return refreshed?.user ?? sessionUser;
-  };
-
-  const processPendingInvite = async (pending: ReturnType<typeof getPendingInvite>) => {
-    if (!pending?.invitationId) return false;
-    try {
-      const result = await authClient.organization.acceptInvitation({
-        invitationId: pending.invitationId,
-      });
-      if (result.error) {
-        throw new Error(result.error.message ?? 'Unable to accept invite');
-      }
-      clearPendingInvite();
-      toast.success('Invite accepted! Your account has been linked.');
-      return true;
-    } catch (error) {
-      console.error('Pending invite acceptance failed', error);
-      toast.error('We could not accept that invite. You can try again from the Invitations page.');
+      console.warn('Signup bootstrap failed', error);
       return false;
     }
   };
@@ -221,21 +113,12 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     if (!token) return;
 
     try {
-      const crossDomain = (authClient as {
-        crossDomain?: {
-          oneTimeToken?: { verify?: (args: { token: string }) => Promise<any> };
-          updateSession?: () => void;
-        };
-      }).crossDomain;
-
-      const verify = crossDomain?.oneTimeToken?.verify;
-      if (typeof verify !== 'function') {
-        console.warn('Better Auth cross-domain verify handler unavailable');
+      if (!authClient.oneTimeToken) {
+        console.warn('Better Auth one-time token client unavailable');
         return;
       }
-
-      await verify({ token });
-      crossDomain?.updateSession?.();
+      await authClient.oneTimeToken.verify({ token });
+      await authClient.getSession({ query: { disableCookieCache: true } });
     } catch (error) {
       console.error('Failed to redeem Better Auth one-time token', error);
     } finally {
@@ -264,10 +147,7 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
 
       let sessionUser = sessionInfo.user;
       const baseName = sessionUser.name ?? sessionUser.email ?? 'Member';
-      const pending = getPendingSignup();
-      if (pending && sessionUser.email && pending.email && pending.email !== sessionUser.email) {
-        clearPendingSignup();
-      }
+
       const accessToken = await fetchConvexAuthToken().catch((error) => {
         console.warn('Failed to fetch Convex auth token', error);
         return null;
@@ -279,81 +159,62 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         clearConvexAuthToken();
       }
 
-      const pendingInvite = getPendingInvite();
-
-      let forcedRole: UserRole | null = null;
-
-      if (pending) {
-        let processedPending = false;
-        try {
-          sessionUser = await ensureOwnerOrganization(pending, sessionUser);
-          processedPending = true;
-        } catch (pendingError) {
-          console.error('Pending signup completion failed', pendingError);
-          toast.error(
-            pendingError instanceof Error
-              ? pendingError.message
-              : 'We were unable to finish onboarding automatically.'
-          );
-        }
-
-        if (processedPending) {
-          if (pending.role === 'owner') {
-            forcedRole = 'owner';
-          } else if (pending.role === 'admin' || pending.role === 'member') {
-            forcedRole = pending.role;
-          }
-          clearPendingSignup();
-        } else {
-          clearPendingSignup();
-        }
-      }
-
-      const acceptedInvite = await processPendingInvite(pendingInvite);
-      if (acceptedInvite) {
+      const bootstrapped = await bootstrapSignup();
+      if (bootstrapped) {
         const refreshed = await refreshSessionUser();
         if (refreshed) {
           sessionUser = refreshed.user;
         }
       }
 
+
       const organizationId =
-        sessionUser.activeOrganizationId ?? sessionUser.organizationId ?? null;
+        typeof sessionUser.activeOrganizationId === 'string'
+          ? sessionUser.activeOrganizationId
+          : typeof sessionUser.organizationId === 'string'
+            ? sessionUser.organizationId
+            : null;
       let resolvedRole: UserRole = 'member';
-      if (organizationId && sessionUser.id) {
-        const membershipRole = await resolveMembershipRole(organizationId, sessionUser.id);
-        if (membershipRole) {
-          resolvedRole = membershipRole;
-        }
-      }
-      if (resolvedRole === 'member') {
-        const parsedRole = UserRoleSchema.safeParse(sessionUser.role);
-        if (parsedRole.success) {
-          resolvedRole = parsedRole.data;
-        }
-      }
-      if (forcedRole) {
-        resolvedRole = forcedRole;
+      const parsedRole = UserRoleSchema.safeParse(sessionUser.role);
+      if (parsedRole.success) {
+        resolvedRole = parsedRole.data;
       }
       sessionUser = {
         ...sessionUser,
         role: resolvedRole,
       };
-      const householdId = sessionUser.householdId ?? organizationId;
+      const householdId =
+        typeof sessionUser.householdId === 'string'
+          ? sessionUser.householdId
+          : organizationId;
+
+      const authId = typeof sessionUser.id === 'string' ? sessionUser.id : null;
+      if (!authId) {
+        throw new Error('Session is missing user id');
+      }
+
+      const profileId =
+        typeof sessionUser.profileId === 'string' ? sessionUser.profileId : authId;
+
+      const organizationMembershipId =
+        typeof sessionUser.organizationMembershipId === 'string'
+          ? sessionUser.organizationMembershipId
+          : null;
+
+      const email = typeof sessionUser.email === 'string' ? sessionUser.email : undefined;
 
       const active: AuthUser = {
-        authId: sessionUser.id,
-        profileId: sessionUser.profileId ?? sessionUser.id,
+        authId,
+        profileId,
         householdId,
         organizationId,
-        organizationMembershipId: sessionUser.organizationMembershipId ?? null,
-        email: sessionUser.email,
+        organizationMembershipId,
+        email,
         displayName: baseName,
         role: resolvedRole,
       };
 
       setUser(active);
-      setRole(active.role);
       setError(null);
       resetAuthTelemetry();
     } catch (error) {
@@ -420,22 +281,32 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
   const signUp = async (payload: SignUpRequest) => {
     setIsLoading(true);
     try {
-      setPendingSignup(payload);
+      const trimmedEmail = payload.email.trim();
+      const trimmedName = payload.name.trim();
+      await convex
+        .mutation(api.signup.record, {
+          email: trimmedEmail,
+          role: payload.role,
+          organizationName: payload.organizationName?.trim() || null,
+          organizationKind: payload.organizationKind ?? 'family',
+        })
+        .catch((error) => {
+          console.error('Signup record mutation failed', error);
+          throw new Error('Unable to prepare signup');
+        });
       const result = await authClient.signIn.magicLink({
-        email: payload.email,
-        name: payload.name,
+        email: trimmedEmail,
+        name: trimmedName,
         callbackURL: AppPaths.app,
         newUserCallbackURL: AppPaths.app,
         errorCallbackURL: AppPaths.signIn,
       });
       if (result.error) {
-        clearPendingSignup();
         throw new Error(result.error.message ?? 'Sign up failed');
       }
       setError(null);
       toast.success('Magic link sent! Check your email to finish signing up.');
     } catch (err) {
-      clearPendingSignup();
       const message = err instanceof Error ? err.message : 'Unable to sign up';
       setError(message);
       throw err;
@@ -452,7 +323,6 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     }
     clearConvexAuthToken();
     setUser(null);
-    setRole('member');
     setError(null);
     recordAuthSignOut();
     toast.success('Signed out. See you soon!');

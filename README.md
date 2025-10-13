@@ -98,6 +98,18 @@ pnpm smoke:provider
 ```
 Both commands should complete without errors before shipping.
 
+### Email (Resend)
+
+Better Auth sends transactional email through [Resend](https://resend.com). Configure these environment variables for production and local development:
+
+- `RESEND_API_KEY` – default API key (used when no override is provided).
+- `MAGIC_LINK_FROM_EMAIL` – from-address for magic links (e.g. `Guap <no-reply@guap.app>`).
+- `MAGIC_LINK_RESEND_API_KEY` – optional override for magic link emails (falls back to `RESEND_API_KEY`).
+- `INVITE_RESEND_API_KEY` – optional override for organization invitation emails.
+- `INVITE_FROM_EMAIL` – optional from-address for invitations (falls back to `MAGIC_LINK_FROM_EMAIL`).
+
+When no API key is present the backend simply logs the payload, which keeps local development friction-free.
+
 ## Canonical Docs
 - `.docs/plan.md` – current state, active work, handoff notes.
 - `.docs/convex.md` – Convex architecture reference.

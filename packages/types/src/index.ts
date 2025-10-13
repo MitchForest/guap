@@ -1,4 +1,3 @@
-import type { z } from 'zod';
 import {
   AccountKindSchema,
   AccountRecordSchema,
@@ -48,11 +47,6 @@ import {
   WorkspaceRuleTriggerSchema,
   WorkspaceVariantSchema,
 } from './schemas';
-import {
-  BetterAuthSessionSchema,
-  BetterAuthSessionUserSchema,
-} from './auth';
-export { BetterAuthSessionSchema, BetterAuthSessionUserSchema } from './auth';
 
 export * from './schemas';
 
@@ -103,5 +97,3 @@ export type MoneyMapSaveNodeInput = typeof MoneyMapSaveNodeInputSchema._type;
 export type MoneyMapSaveEdgeInput = typeof MoneyMapSaveEdgeInputSchema._type;
 export type MoneyMapSaveRuleInput = typeof MoneyMapSaveRuleInputSchema._type;
 export type MoneyMapSaveInput = typeof MoneyMapSaveInputSchema._type;
-export type BetterAuthSession = z.infer<typeof BetterAuthSessionSchema>;
-export type BetterAuthSessionUser = z.infer<typeof BetterAuthSessionUserSchema>;

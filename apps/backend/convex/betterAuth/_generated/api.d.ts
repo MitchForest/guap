@@ -47,7 +47,6 @@ export type Mounts = {
                 image?: null | string;
                 name: string;
                 role?: null | string;
-                stripeCustomerId?: null | string;
                 updatedAt: number;
                 userId?: null | string;
               };
@@ -123,6 +122,14 @@ export type Mounts = {
                 status: string;
               };
               model: "invitation";
+            }
+          | {
+              data: {
+                createdAt: number;
+                privateKey: string;
+                publicKey: string;
+              };
+              model: "jwks";
             };
         onCreateHandle?: string;
         select?: Array<string>;
@@ -149,7 +156,6 @@ export type Mounts = {
                   | "banned"
                   | "banReason"
                   | "banExpires"
-                  | "stripeCustomerId"
                   | "userId"
                   | "_id";
                 operator?:
@@ -185,8 +191,8 @@ export type Mounts = {
                   | "ipAddress"
                   | "userAgent"
                   | "userId"
-                  | "impersonatedBy"
                   | "activeOrganizationId"
+                  | "impersonatedBy"
                   | "_id";
                 operator?:
                   | "lt"
@@ -355,6 +361,32 @@ export type Mounts = {
                   | "expiresAt"
                   | "inviterId"
                   | "_id";
+                operator?:
+                  | "lt"
+                  | "lte"
+                  | "gt"
+                  | "gte"
+                  | "eq"
+                  | "in"
+                  | "not_in"
+                  | "ne"
+                  | "contains"
+                  | "starts_with"
+                  | "ends_with";
+                value:
+                  | string
+                  | number
+                  | boolean
+                  | Array<string>
+                  | Array<number>
+                  | null;
+              }>;
+            }
+          | {
+              model: "jwks";
+              where?: Array<{
+                connector?: "AND" | "OR";
+                field: "publicKey" | "privateKey" | "createdAt" | "_id";
                 operator?:
                   | "lt"
                   | "lte"
@@ -408,7 +440,6 @@ export type Mounts = {
                   | "banned"
                   | "banReason"
                   | "banExpires"
-                  | "stripeCustomerId"
                   | "userId"
                   | "_id";
                 operator?:
@@ -444,8 +475,8 @@ export type Mounts = {
                   | "ipAddress"
                   | "userAgent"
                   | "userId"
-                  | "impersonatedBy"
                   | "activeOrganizationId"
+                  | "impersonatedBy"
                   | "_id";
                 operator?:
                   | "lt"
@@ -634,6 +665,32 @@ export type Mounts = {
                   | Array<number>
                   | null;
               }>;
+            }
+          | {
+              model: "jwks";
+              where?: Array<{
+                connector?: "AND" | "OR";
+                field: "publicKey" | "privateKey" | "createdAt" | "_id";
+                operator?:
+                  | "lt"
+                  | "lte"
+                  | "gt"
+                  | "gte"
+                  | "eq"
+                  | "in"
+                  | "not_in"
+                  | "ne"
+                  | "contains"
+                  | "starts_with"
+                  | "ends_with";
+                value:
+                  | string
+                  | number
+                  | boolean
+                  | Array<string>
+                  | Array<number>
+                  | null;
+              }>;
             };
         onDeleteHandle?: string;
       },
@@ -651,7 +708,8 @@ export type Mounts = {
           | "verification"
           | "organization"
           | "member"
-          | "invitation";
+          | "invitation"
+          | "jwks";
         offset?: number;
         paginationOpts: {
           cursor: string | null;
@@ -699,7 +757,8 @@ export type Mounts = {
           | "verification"
           | "organization"
           | "member"
-          | "invitation";
+          | "invitation"
+          | "jwks";
         select?: Array<string>;
         where?: Array<{
           connector?: "AND" | "OR";
@@ -744,7 +803,6 @@ export type Mounts = {
                 image?: null | string;
                 name?: string;
                 role?: null | string;
-                stripeCustomerId?: null | string;
                 updatedAt?: number;
                 userId?: null | string;
               };
@@ -761,7 +819,6 @@ export type Mounts = {
                   | "banned"
                   | "banReason"
                   | "banExpires"
-                  | "stripeCustomerId"
                   | "userId"
                   | "_id";
                 operator?:
@@ -808,8 +865,8 @@ export type Mounts = {
                   | "ipAddress"
                   | "userAgent"
                   | "userId"
-                  | "impersonatedBy"
                   | "activeOrganizationId"
+                  | "impersonatedBy"
                   | "_id";
                 operator?:
                   | "lt"
@@ -1020,6 +1077,37 @@ export type Mounts = {
                   | "expiresAt"
                   | "inviterId"
                   | "_id";
+                operator?:
+                  | "lt"
+                  | "lte"
+                  | "gt"
+                  | "gte"
+                  | "eq"
+                  | "in"
+                  | "not_in"
+                  | "ne"
+                  | "contains"
+                  | "starts_with"
+                  | "ends_with";
+                value:
+                  | string
+                  | number
+                  | boolean
+                  | Array<string>
+                  | Array<number>
+                  | null;
+              }>;
+            }
+          | {
+              model: "jwks";
+              update: {
+                createdAt?: number;
+                privateKey?: string;
+                publicKey?: string;
+              };
+              where?: Array<{
+                connector?: "AND" | "OR";
+                field: "publicKey" | "privateKey" | "createdAt" | "_id";
                 operator?:
                   | "lt"
                   | "lte"
@@ -1070,7 +1158,6 @@ export type Mounts = {
                 image?: null | string;
                 name?: string;
                 role?: null | string;
-                stripeCustomerId?: null | string;
                 updatedAt?: number;
                 userId?: null | string;
               };
@@ -1087,7 +1174,6 @@ export type Mounts = {
                   | "banned"
                   | "banReason"
                   | "banExpires"
-                  | "stripeCustomerId"
                   | "userId"
                   | "_id";
                 operator?:
@@ -1134,8 +1220,8 @@ export type Mounts = {
                   | "ipAddress"
                   | "userAgent"
                   | "userId"
-                  | "impersonatedBy"
                   | "activeOrganizationId"
+                  | "impersonatedBy"
                   | "_id";
                 operator?:
                   | "lt"
@@ -1346,6 +1432,37 @@ export type Mounts = {
                   | "expiresAt"
                   | "inviterId"
                   | "_id";
+                operator?:
+                  | "lt"
+                  | "lte"
+                  | "gt"
+                  | "gte"
+                  | "eq"
+                  | "in"
+                  | "not_in"
+                  | "ne"
+                  | "contains"
+                  | "starts_with"
+                  | "ends_with";
+                value:
+                  | string
+                  | number
+                  | boolean
+                  | Array<string>
+                  | Array<number>
+                  | null;
+              }>;
+            }
+          | {
+              model: "jwks";
+              update: {
+                createdAt?: number;
+                privateKey?: string;
+                publicKey?: string;
+              };
+              where?: Array<{
+                connector?: "AND" | "OR";
+                field: "publicKey" | "privateKey" | "createdAt" | "_id";
                 operator?:
                   | "lt"
                   | "lte"

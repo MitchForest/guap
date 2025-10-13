@@ -4,6 +4,8 @@ import {
   MoneyMapChangeStatusValues,
   MoneyMapNodeKindValues,
   MoneyMapRuleTriggerValues,
+  OrganizationKindValues,
+  UserRoleValues,
 } from '@guap/types';
 
 const moneyMapNodeKind = v.union(
@@ -143,4 +145,21 @@ export default defineSchema({
   })
     .index('by_map_status', ['mapId', 'status'])
     .index('by_organization_status', ['organizationId', 'status']),
+
+  signupRequests: defineTable({
+    email: v.string(),
+    role: v.union(...UserRoleValues.map((value) => v.literal(value))),
+    organizationName: v.optional(v.string()),
+    organizationKind: v.union(...OrganizationKindValues.map((value) => v.literal(value))),
+    createdAt: v.number(),
+    processedAt: v.optional(v.number()),
+  }).index('by_email', ['email']),
+
+  pendingInvites: defineTable({
+    invitationId: v.string(),
+    email: v.optional(v.string()),
+    createdAt: v.number(),
+    processedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+  }).index('by_invitation', ['invitationId']).index('by_email', ['email']),
 });

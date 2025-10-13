@@ -1,9 +1,11 @@
 import { z } from 'zod';
-export const UserRoleValues = ['owner', 'admin', 'member'] as const;
-export const UserRoleSchema = z.enum(UserRoleValues);
+import { BetterAuthRoleValues } from './generated/betterAuthRoles';
 
-export const MembershipRoleValues = ['owner', 'admin', 'member'] as const;
-export const MembershipRoleSchema = z.enum(MembershipRoleValues);
+export const UserRoleValues = BetterAuthRoleValues;
+export const UserRoleSchema = z.enum([...UserRoleValues]);
+
+export const MembershipRoleValues = UserRoleValues;
+export const MembershipRoleSchema = UserRoleSchema;
 
 export const MembershipStatusValues = ['active', 'invited', 'pending'] as const;
 export const MembershipStatusSchema = z.enum(MembershipStatusValues);

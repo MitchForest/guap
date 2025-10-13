@@ -9,7 +9,6 @@
  */
 
 import type * as auth from "../auth.js";
-import type * as authorization from "../authorization.js";
 import type * as betterAuth__generated_api from "../betterAuth/_generated/api.js";
 import type * as betterAuth__generated_server from "../betterAuth/_generated/server.js";
 import type * as betterAuth_adapter from "../betterAuth/adapter.js";
@@ -18,6 +17,8 @@ import type * as http from "../http.js";
 import type * as index from "../index.js";
 import type * as magicLinkEmail from "../magicLinkEmail.js";
 import type * as moneyMaps from "../moneyMaps.js";
+import type * as signup from "../signup.js";
+import type * as smoke from "../smoke.js";
 
 import type {
   ApiFromModules,
@@ -35,7 +36,6 @@ import type {
  */
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
-  authorization: typeof authorization;
   "betterAuth/_generated/api": typeof betterAuth__generated_api;
   "betterAuth/_generated/server": typeof betterAuth__generated_server;
   "betterAuth/adapter": typeof betterAuth_adapter;
@@ -44,6 +44,8 @@ declare const fullApi: ApiFromModules<{
   index: typeof index;
   magicLinkEmail: typeof magicLinkEmail;
   moneyMaps: typeof moneyMaps;
+  signup: typeof signup;
+  smoke: typeof smoke;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 
@@ -75,7 +77,6 @@ export declare const components: {
                   image?: null | string;
                   name: string;
                   role?: null | string;
-                  stripeCustomerId?: null | string;
                   updatedAt: number;
                   userId?: null | string;
                 };
@@ -151,6 +152,14 @@ export declare const components: {
                   status: string;
                 };
                 model: "invitation";
+              }
+            | {
+                data: {
+                  createdAt: number;
+                  privateKey: string;
+                  publicKey: string;
+                };
+                model: "jwks";
               };
           onCreateHandle?: string;
           select?: Array<string>;
@@ -177,7 +186,6 @@ export declare const components: {
                     | "banned"
                     | "banReason"
                     | "banExpires"
-                    | "stripeCustomerId"
                     | "userId"
                     | "_id";
                   operator?:
@@ -213,8 +221,8 @@ export declare const components: {
                     | "ipAddress"
                     | "userAgent"
                     | "userId"
-                    | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "impersonatedBy"
                     | "_id";
                   operator?:
                     | "lt"
@@ -383,6 +391,32 @@ export declare const components: {
                     | "expiresAt"
                     | "inviterId"
                     | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "jwks";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field: "publicKey" | "privateKey" | "createdAt" | "_id";
                   operator?:
                     | "lt"
                     | "lte"
@@ -436,7 +470,6 @@ export declare const components: {
                     | "banned"
                     | "banReason"
                     | "banExpires"
-                    | "stripeCustomerId"
                     | "userId"
                     | "_id";
                   operator?:
@@ -472,8 +505,8 @@ export declare const components: {
                     | "ipAddress"
                     | "userAgent"
                     | "userId"
-                    | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "impersonatedBy"
                     | "_id";
                   operator?:
                     | "lt"
@@ -662,6 +695,32 @@ export declare const components: {
                     | Array<number>
                     | null;
                 }>;
+              }
+            | {
+                model: "jwks";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field: "publicKey" | "privateKey" | "createdAt" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
               };
           onDeleteHandle?: string;
         },
@@ -679,7 +738,8 @@ export declare const components: {
             | "verification"
             | "organization"
             | "member"
-            | "invitation";
+            | "invitation"
+            | "jwks";
           offset?: number;
           paginationOpts: {
             cursor: string | null;
@@ -727,7 +787,8 @@ export declare const components: {
             | "verification"
             | "organization"
             | "member"
-            | "invitation";
+            | "invitation"
+            | "jwks";
           select?: Array<string>;
           where?: Array<{
             connector?: "AND" | "OR";
@@ -772,7 +833,6 @@ export declare const components: {
                   image?: null | string;
                   name?: string;
                   role?: null | string;
-                  stripeCustomerId?: null | string;
                   updatedAt?: number;
                   userId?: null | string;
                 };
@@ -789,7 +849,6 @@ export declare const components: {
                     | "banned"
                     | "banReason"
                     | "banExpires"
-                    | "stripeCustomerId"
                     | "userId"
                     | "_id";
                   operator?:
@@ -836,8 +895,8 @@ export declare const components: {
                     | "ipAddress"
                     | "userAgent"
                     | "userId"
-                    | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "impersonatedBy"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1048,6 +1107,37 @@ export declare const components: {
                     | "expiresAt"
                     | "inviterId"
                     | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "jwks";
+                update: {
+                  createdAt?: number;
+                  privateKey?: string;
+                  publicKey?: string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field: "publicKey" | "privateKey" | "createdAt" | "_id";
                   operator?:
                     | "lt"
                     | "lte"
@@ -1098,7 +1188,6 @@ export declare const components: {
                   image?: null | string;
                   name?: string;
                   role?: null | string;
-                  stripeCustomerId?: null | string;
                   updatedAt?: number;
                   userId?: null | string;
                 };
@@ -1115,7 +1204,6 @@ export declare const components: {
                     | "banned"
                     | "banReason"
                     | "banExpires"
-                    | "stripeCustomerId"
                     | "userId"
                     | "_id";
                   operator?:
@@ -1162,8 +1250,8 @@ export declare const components: {
                     | "ipAddress"
                     | "userAgent"
                     | "userId"
-                    | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "impersonatedBy"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1374,6 +1462,37 @@ export declare const components: {
                     | "expiresAt"
                     | "inviterId"
                     | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "jwks";
+                update: {
+                  createdAt?: number;
+                  privateKey?: string;
+                  publicKey?: string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field: "publicKey" | "privateKey" | "createdAt" | "_id";
                   operator?:
                     | "lt"
                     | "lte"

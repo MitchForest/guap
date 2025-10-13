@@ -13,6 +13,6 @@
     "build:frontend": "pnpm --filter @guap/frontend build",
     "serve:frontend": "pnpm --filter @guap/frontend serve",
     "smoke:auth-workspace": "node ./scripts/smoke-auth-workspace.mjs",
-    "codegen:sync": "node ./scripts/sync-convex-codegen.mjs"
+    "codegen:sync": "node ./scripts/sync-convex-codegen.mjs && node ./scripts/update-better-auth-roles.mjs"
   }
 }

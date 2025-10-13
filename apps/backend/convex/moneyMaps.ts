@@ -6,13 +6,14 @@ import {
   MoneyMapNodeKindValues,
   MoneyMapRuleTriggerValues,
   MoneyMapSaveInputSchema,
+  UserRoleValues,
 } from '@guap/types';
 import type {
   MoneyMapChangeStatus,
   MoneyMapNodeKind,
   MoneyMapRuleTrigger,
 } from '@guap/types';
-import { ensureOrganizationAccess, ensureRole } from './authorization';
+import { authComponent } from './auth';
 
 const now = () => Date.now();
 
@@ -39,6 +40,76 @@ const ruleInputArg = v.object({
 });
 
 const changeStatusArg = enumArg(MoneyMapChangeStatusValues);
+
+type CanonicalRole = (typeof UserRoleValues)[number];
+type SessionSnapshot = {
+  activeOrganizationId: string | null;
+  role: CanonicalRole | null;
+  userId: string | null;
+};
+
+const ROLE_SET = new Set<string>(UserRoleValues);
+
+const extractSession = (authUser: unknown): SessionSnapshot => {
+  const merged = {
+    ...((authUser as any)?.user ?? {}),
+    ...(((authUser as any)?.session?.user) ?? {}),
+  } as Record<string, unknown>;
+
+  const activeOrganizationId =
+    typeof merged.activeOrganizationId === 'string'
+      ? (merged.activeOrganizationId as string)
+      : typeof merged.organizationId === 'string'
+        ? (merged.organizationId as string)
+        : null;
+
+  const role =
+    typeof merged.role === 'string' && ROLE_SET.has(merged.role)
+      ? (merged.role as CanonicalRole)
+      : null;
+
+  const userId = typeof merged.id === 'string' ? (merged.id as string) : null;
+
+  return {
+    activeOrganizationId,
+    role,
+    userId,
+  };
+};
+
+const requireSession = async (ctx: unknown): Promise<SessionSnapshot> => {
+  const authUser = await authComponent.getAuthUser(ctx as any);
+  if (!authUser) {
+    throw new Error('Authentication required');
+  }
+  return extractSession(authUser);
+};
+
+const ensureOrganizationAccess = async (
+  ctx: unknown,
+  organizationId: string
+): Promise<SessionSnapshot> => {
+  if (!organizationId) {
+    throw new Error('Organization id is required');
+  }
+  const session = await requireSession(ctx);
+  if (session.activeOrganizationId && session.activeOrganizationId !== organizationId) {
+    throw new Error('Access denied for organization');
+  }
+  return session;
+};
+
+const ensureRole = (
+  session: SessionSnapshot,
+  allowedRoles: ReadonlyArray<CanonicalRole>
+) => {
+  if (!allowedRoles.length) {
+    return;
+  }
+  if (!session.role || !allowedRoles.includes(session.role)) {
+    throw new Error('Insufficient permissions');
+  }
+};
 
 const scrubMetadata = (metadata: Record<string, unknown> | undefined) => {
   if (!metadata) return undefined;
@@ -105,7 +176,7 @@ export const save = mutation({
   },
   handler: async (ctx, args) => {
     const session = await ensureOrganizationAccess(ctx, args.organizationId);
-    ensureRole(session, ['owner', 'admin', 'member']);
+    ensureRole(session, UserRoleValues);
     const timestamp = now();
 
     const payload = MoneyMapSaveInputSchema.parse({
@@ -281,7 +352,10 @@ export const updateChangeRequestStatus = mutation({
       throw new Error('Change request not found');
     }
     const session = await ensureOrganizationAccess(ctx, request.organizationId);
-    ensureRole(session, ['owner', 'admin']);
+    ensureRole(
+      session,
+      UserRoleValues.filter((role) => role === 'owner' || role === 'admin')
+    );
 
     const timestamp = now();
     await ctx.db.patch(args.requestId, {
@@ -300,7 +374,7 @@ export const listChangeRequests = query({
   },
   handler: async (ctx, args) => {
     const session = await ensureOrganizationAccess(ctx, args.organizationId);
-    ensureRole(session, ['owner', 'admin', 'member']);
+    ensureRole(session, UserRoleValues);
 
     let requests;
     if (args.status) {
