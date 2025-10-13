@@ -23,6 +23,7 @@ import type * as domains_moneyMaps_index from "../domains/moneyMaps/index.js";
 import type * as domains_moneyMaps_mutations from "../domains/moneyMaps/mutations.js";
 import type * as domains_moneyMaps_queries from "../domains/moneyMaps/queries.js";
 import type * as domains_moneyMaps_services from "../domains/moneyMaps/services.js";
+import type * as http from "../http.js";
 import type * as index from "../index.js";
 import type * as routes_http from "../routes/http.js";
 import type * as schema_tables from "../schema/tables.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   "domains/moneyMaps/mutations": typeof domains_moneyMaps_mutations;
   "domains/moneyMaps/queries": typeof domains_moneyMaps_queries;
   "domains/moneyMaps/services": typeof domains_moneyMaps_services;
+  http: typeof http;
   index: typeof index;
   "routes/http": typeof routes_http;
   "schema/tables": typeof schema_tables;

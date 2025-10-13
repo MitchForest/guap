@@ -26,6 +26,11 @@ Convex (apps/backend) ────────┤
 Shared Packages ──────────────┘
 ```
 
+- **Runtime topology**: `pnpm dev` starts `convex dev`, which hot-syncs code from `apps/backend/convex` into the remote dev deployment (`dev:original-platypus-829`) while Solid runs locally on `http://localhost:3001`. The frontend always talks to that hosted Convex deployment, even during local development.
+- **Better Auth surface**: Backend routes register Better Auth’s HTTP handlers (magic links, sessions, invitations); the Solid client uses `better-auth/solid` with Convex plugins to mint and cache tokens automatically.
+- **Environment sources**: Any key needed by Convex in the cloud must be set with `npx convex env set`. Local `.env.local` mirrors those values for Solid and CLI tooling; Convex-managed keys like `CONVEX_SITE_URL` are built-in and cannot be overridden.
+- **Going fully local**: If you need an offline sandbox, run `CONVEX_DEPLOYMENT=` (or `convex dev --local`) to spin up an in-memory deployment; update `VITE_CONVEX_URL` / `VITE_CONVEX_SITE_URL` temporarily so the frontend points at the local instance.
+
 - **Type Safety**: All cross-layer data must flow through `@guap/types` schemas. Convex schema enums derive from these arrays; frontend contexts import the same enums/types.
 - **API Access**: Frontend never calls `convex.query` directly; it uses `@guap/api` wrappers with runtime validation.
 - **Workspace Variants**: Convex tracks `{ householdId, variant: 'live' | 'sandbox' }`; frontend toggles via `AppPaths.app` vs sandbox state. All publish/reset/apply flows go through new mutations.

@@ -9,6 +9,12 @@ Guap is a pnpm workspace with two apps (frontend, backend) plus shared packages 
 - `pnpm build` – rebuild shared packages, run Convex codegen, compile frontend.
 - `pnpm lint` / `pnpm typecheck` – enforce linting and strict types.
 
+# Runtime Topology
+- `pnpm dev` launches `convex dev`, which hot-syncs backend code to the hosted dev deployment (`dev:original-platypus-829`) while Solid runs locally on `http://localhost:3001`; the frontend always calls that remote Convex URL.
+- Better Auth HTTP routes are registered inside Convex; the Solid client uses `better-auth/solid` + Convex plugins to fetch session data and Convex auth tokens automatically.
+- Cloud env vars live in Convex via `npx convex env set`; `.env.local` mirrors the same values for local tooling. Built-in keys like `CONVEX_SITE_URL` come from Convex and cannot be overridden.
+- To work fully offline, start Convex with `convex dev --local` (or clear `CONVEX_DEPLOYMENT`) and point `VITE_CONVEX_URL` / `VITE_CONVEX_SITE_URL` at the local URL temporarily.
+
 # apps/frontend
 - `app/` contains bootstrapping: entry (`index.tsx`), providers, router, and global styles.
 - `features/` houses feature pods—each should expose `pages/`, `components/`, `state/`, `api/`, `utils/`, optional `types/`. `legacy/` is temporary until refactors land.

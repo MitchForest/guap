@@ -1,21 +1,46 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
-import { convex } from '@convex-dev/better-auth/plugins';
+import { convex, crossDomain } from '@convex-dev/better-auth/plugins';
 import { components } from '@guap/api/codegen/api';
 import type { DataModel } from '@guap/api/codegen/dataModel';
 import { query } from '@guap/api/codegen/server';
 import { betterAuth } from 'better-auth';
-import { admin, magicLink, organization, jwt } from 'better-auth/plugins';
-import { oneTimeToken } from 'better-auth/plugins/one-time-token';
+import { admin, magicLink, organization, jwt, oneTimeToken } from 'better-auth/plugins';
 import authSchema from './generated/schema';
 import { sendMagicLinkEmail, sendOrganizationInvitationEmail } from './magicLinkEmail';
 
 const convexSiteUrl = process.env.CONVEX_SITE_URL ?? '';
+const resolvedConvexSiteUrl = convexSiteUrl || 'http://localhost:3000';
 const frontendSiteUrl = process.env.SITE_URL ?? (convexSiteUrl || 'http://localhost:3001');
+
+const toOrigin = (value: string | null | undefined) => {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
+
+const trustedOriginsSet = new Set<string>();
+const resolvedBaseOrigin = toOrigin(resolvedConvexSiteUrl);
+const frontendOrigin = toOrigin(frontendSiteUrl);
+if (resolvedBaseOrigin) trustedOriginsSet.add(resolvedBaseOrigin);
+if (frontendOrigin) trustedOriginsSet.add(frontendOrigin);
+
+if (process.env.NODE_ENV !== 'production') {
+  ['http://localhost:3001', 'http://127.0.0.1:3001'].forEach((value) => {
+    const origin = toOrigin(value);
+    if (origin) trustedOriginsSet.add(origin);
+  });
+}
+
+const trustedOrigins = Array.from(trustedOriginsSet);
 
 export const authComponent = createClient<DataModel, typeof authSchema>(components.betterAuth, {
   local: {
     schema: authSchema,
   },
+  verbose: true,
 });
 
 const buildAuthOptions = (
@@ -25,7 +50,8 @@ const buildAuthOptions = (
   logger: {
     disabled: optionsOnly,
   },
-  baseURL: convexSiteUrl,
+  baseURL: resolvedConvexSiteUrl,
+  trustedOrigins,
   database: authComponent.adapter(ctx),
   plugins: [
     magicLink({
@@ -33,6 +59,7 @@ const buildAuthOptions = (
         await sendMagicLinkEmail({ email, url, token });
       },
     }),
+    oneTimeToken(),
     organization({
       sendInvitationEmail: async ({ email, id, role, organization: org, inviter }) => {
         const base = frontendSiteUrl || convexSiteUrl || 'http://localhost:3001';
@@ -71,8 +98,10 @@ const buildAuthOptions = (
       },
     }),
     admin(),
-    oneTimeToken(),
     jwt(),
+    crossDomain({
+      siteUrl: frontendSiteUrl,
+    }),
     convex(),
   ],
 });

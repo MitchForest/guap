@@ -117,7 +117,21 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         console.warn('Better Auth one-time token client unavailable');
         return;
       }
-      await authClient.oneTimeToken.verify({ token });
+      const crossDomainVerify = (authClient as unknown as {
+        crossDomain?: {
+          oneTimeToken?: { verify?: typeof authClient.oneTimeToken.verify };
+          updateSession?: () => void;
+        };
+      }).crossDomain?.oneTimeToken?.verify;
+
+      if (typeof crossDomainVerify === 'function') {
+        await crossDomainVerify({ token });
+        (authClient as unknown as {
+          crossDomain?: { updateSession?: () => void };
+        }).crossDomain?.updateSession?.();
+      } else {
+        await authClient.oneTimeToken.verify({ token });
+      }
       await authClient.getSession({ query: { disableCookieCache: true } });
     } catch (error) {
       console.error('Failed to redeem Better Auth one-time token', error);
