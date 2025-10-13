@@ -8,7 +8,10 @@ import { authClient } from '~/lib/authClient';
 const OrganizationRosterPage: Component = () => {
   const { user } = useAuth();
   const organizationId = createMemo(() => user()?.organizationId ?? null);
-  const canManage = createMemo(() => user()?.role === 'guardian');
+  const canManage = createMemo(() => {
+    const currentRole = user()?.role;
+    return currentRole === 'owner' || currentRole === 'admin';
+  });
 
   const [members] = createResource(organizationId, async (id) => {
     if (!id) return [];
@@ -91,7 +94,7 @@ const OrganizationRosterPage: Component = () => {
       <header class="space-y-2">
         <h1 class="text-2xl font-bold text-slate-900">Organization roster</h1>
         <p class="text-sm text-slate-600">
-          Manage who can access this program. Seats are billed per child; guardians are included for free.
+          Manage who can access this program. Seats are billed per member; admins are included for free.
         </p>
       </header>
 
@@ -119,8 +122,11 @@ const OrganizationRosterPage: Component = () => {
         </section>
 
         <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Invite guardians or children</h2>
-          <Show when={canManage()} fallback={<p class="mt-3 text-sm text-slate-500">Only guardians can invite members.</p>}>
+          <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Invite admins or members</h2>
+          <Show
+            when={canManage()}
+            fallback={<p class="mt-3 text-sm text-slate-500">Only owners and admins can invite members.</p>}
+          >
             <form class="mt-4 space-y-3" onSubmit={handleInvite}>
               <div class="space-y-2">
                 <label class="text-sm font-medium text-slate-700">Email</label>
@@ -130,7 +136,7 @@ const OrganizationRosterPage: Component = () => {
                   value={inviteEmail()}
                   onInput={(event) => setInviteEmail(event.currentTarget.value)}
                   class="h-12 rounded-2xl border border-slate-300 text-base placeholder:text-slate-400 focus:border-slate-900"
-                  placeholder="child@school.com"
+                  placeholder="member@school.com"
                 />
               </div>
               <div class="space-y-2">

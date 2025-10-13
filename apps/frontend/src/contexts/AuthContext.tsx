@@ -85,6 +85,9 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw) as PendingSignup;
+      if (parsed?.role && !UserRoleSchema.safeParse(parsed.role).success) {
+        delete (parsed as Partial<PendingSignup>).role;
+      }
       return parsed?.email ? parsed : null;
     } catch {
       return null;
@@ -128,11 +131,35 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     return parseSessionUser(refreshed);
   };
 
-  const ensureGuardianOrganization = async (
+  const resolveMembershipRole = async (
+    organizationId: string,
+    userId: string
+  ): Promise<UserRole | null> => {
+    try {
+      const result = await authClient.organization.listMembers({
+        query: { organizationId },
+      });
+      if (result.error) {
+        return null;
+      }
+      const dataset = Array.isArray(result.data) ? result.data : [];
+      const match = dataset.find((entry: Record<string, unknown>) => {
+        const candidate = entry.userId ?? entry.profileId ?? entry.memberId;
+        return candidate && String(candidate) === userId;
+      });
+      const parsed = UserRoleSchema.safeParse(match?.role);
+      return parsed.success ? parsed.data : null;
+    } catch (error) {
+      console.warn('Failed to resolve membership role', error);
+      return null;
+    }
+  };
+
+  const ensureOwnerOrganization = async (
     pending: PendingSignup,
     sessionUser: BetterAuthSessionUser
   ) => {
-    if (pending.role !== 'guardian') {
+    if (pending.role !== 'owner') {
       return sessionUser;
     }
 
@@ -187,6 +214,36 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     }
   };
 
+  const redeemOneTimeToken = async () => {
+    if (typeof window === 'undefined') return;
+    const currentUrl = new URL(window.location.href);
+    const token = currentUrl.searchParams.get('ott');
+    if (!token) return;
+
+    try {
+      const crossDomain = (authClient as {
+        crossDomain?: {
+          oneTimeToken?: { verify?: (args: { token: string }) => Promise<any> };
+          updateSession?: () => void;
+        };
+      }).crossDomain;
+
+      const verify = crossDomain?.oneTimeToken?.verify;
+      if (typeof verify !== 'function') {
+        console.warn('Better Auth cross-domain verify handler unavailable');
+        return;
+      }
+
+      await verify({ token });
+      crossDomain?.updateSession?.();
+    } catch (error) {
+      console.error('Failed to redeem Better Auth one-time token', error);
+    } finally {
+      currentUrl.searchParams.delete('ott');
+      window.history.replaceState({}, '', currentUrl.toString());
+    }
+  };
+
   const hydrateFromSession = async (options?: { refresh?: boolean }) => {
     if (hydrating) return;
     hydrating = true;
@@ -224,10 +281,12 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
 
       const pendingInvite = getPendingInvite();
 
+      let forcedRole: UserRole | null = null;
+
       if (pending) {
         let processedPending = false;
         try {
-          sessionUser = await ensureGuardianOrganization(pending, sessionUser);
+          sessionUser = await ensureOwnerOrganization(pending, sessionUser);
           processedPending = true;
         } catch (pendingError) {
           console.error('Pending signup completion failed', pendingError);
@@ -239,6 +298,11 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         }
 
         if (processedPending) {
+          if (pending.role === 'owner') {
+            forcedRole = 'owner';
+          } else if (pending.role === 'admin' || pending.role === 'member') {
+            forcedRole = pending.role;
+          }
           clearPendingSignup();
         } else {
           clearPendingSignup();
@@ -253,10 +317,28 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         }
       }
 
-      const roleResult = UserRoleSchema.safeParse(sessionUser.role);
-      const resolvedRole: UserRole = roleResult.success ? roleResult.data : 'child';
       const organizationId =
         sessionUser.activeOrganizationId ?? sessionUser.organizationId ?? null;
+      let resolvedRole: UserRole = 'member';
+      if (organizationId && sessionUser.id) {
+        const membershipRole = await resolveMembershipRole(organizationId, sessionUser.id);
+        if (membershipRole) {
+          resolvedRole = membershipRole;
+        }
+      }
+      if (resolvedRole === 'member') {
+        const parsedRole = UserRoleSchema.safeParse(sessionUser.role);
+        if (parsedRole.success) {
+          resolvedRole = parsedRole.data;
+        }
+      }
+      if (forcedRole) {
+        resolvedRole = forcedRole;
+      }
+      sessionUser = {
+        ...sessionUser,
+        role: resolvedRole,
+      };
       const householdId = sessionUser.householdId ?? organizationId;
 
       const active: AuthUser = {
@@ -291,7 +373,10 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
   };
 
   onMount(() => {
-    void hydrateFromSession();
+    void (async () => {
+      await redeemOneTimeToken();
+      await hydrateFromSession();
+    })();
     if (typeof window !== 'undefined') {
       const handleFocus = () => void hydrateFromSession({ refresh: true });
       const handleVisibility = () => {
@@ -367,7 +452,7 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     }
     clearConvexAuthToken();
     setUser(null);
-    setRole('child');
+    setRole('member');
     setError(null);
     recordAuthSignOut();
     toast.success('Signed out. See you soon!');

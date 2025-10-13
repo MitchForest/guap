@@ -5,6 +5,7 @@ import type { DataModel } from '@guap/api/codegen/dataModel';
 import { query } from '@guap/api/codegen/server';
 import { betterAuth } from 'better-auth';
 import { admin, magicLink, organization } from 'better-auth/plugins';
+import { createAuthMiddleware } from 'better-auth/api';
 import Stripe from 'stripe';
 import { stripe as stripePlugin } from '@better-auth/stripe';
 import { sendMagicLinkEmail } from './magicLinkEmail';
@@ -43,6 +44,17 @@ export const authComponent = createClient<DataModel, typeof authSchema>(componen
 
 const trustedOrigins = [frontendUrl].filter(Boolean) as string[];
 
+const CANONICAL_ROLES = ['owner', 'admin', 'member'] as const;
+type CanonicalRole = (typeof CANONICAL_ROLES)[number];
+const CANONICAL_ROLE_SET = new Set<CanonicalRole>(CANONICAL_ROLES);
+
+const toCanonicalRole = (value: unknown): CanonicalRole | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  return CANONICAL_ROLE_SET.has(value as CanonicalRole) ? (value as CanonicalRole) : null;
+};
+
 type CreateAuthArgs = {
   ctx?: GenericCtx<DataModel>;
   optionsOnly?: boolean;
@@ -65,6 +77,73 @@ const createAuthOptions = ({ ctx, optionsOnly = false }: CreateAuthArgs) => {
   const adapterCtx = ctx ?? ({} as GenericCtx<DataModel>);
   const database = authComponent.adapter(adapterCtx);
 
+  const roleSyncHook =
+    optionsOnly === false
+      ? createAuthMiddleware(async (ctx) => {
+          const newSession = ctx.context.newSession;
+          if (!newSession) {
+            return;
+          }
+
+          const user = (newSession.user ?? {}) as Record<string, unknown>;
+          const sessionUser = (newSession.session?.user ?? {}) as Record<string, unknown>;
+          const userId = typeof user.id === 'string' ? (user.id as string) : null;
+          if (!userId) {
+            return;
+          }
+
+          const primaryRole =
+            toCanonicalRole(sessionUser.role) ?? toCanonicalRole(user.role) ?? null;
+
+          let targetRole: CanonicalRole | null = primaryRole;
+
+          const activeOrganizationId =
+            (typeof sessionUser.activeOrganizationId === 'string'
+              ? sessionUser.activeOrganizationId
+              : undefined) ??
+            (typeof sessionUser.organizationId === 'string'
+              ? sessionUser.organizationId
+              : undefined) ??
+            null;
+
+          if (!targetRole && activeOrganizationId) {
+            try {
+              const membership = await (ctx.context.internalAdapter as any)?.findMemberByOrgId?.({
+                userId,
+                organizationId: activeOrganizationId,
+              });
+              const membershipRole = toCanonicalRole(membership?.role);
+              if (membershipRole) {
+                targetRole = membershipRole;
+              }
+            } catch (error) {
+              console.warn('[auth] Unable to determine membership role', error);
+            }
+          }
+
+          if (!targetRole) {
+            targetRole = 'member';
+          }
+
+          const existingRole = toCanonicalRole(user.role);
+          if (existingRole === targetRole) {
+            return;
+          }
+
+          try {
+            await (ctx.context.internalAdapter as any)?.updateUser?.(
+              userId,
+              {
+                role: targetRole,
+              },
+              ctx
+            );
+          } catch (error) {
+            console.error('[auth] Failed to synchronize Better Auth user role', error);
+          }
+        })
+      : null;
+
   return {
     logger: {
       disabled: optionsOnly,
@@ -72,6 +151,10 @@ const createAuthOptions = ({ ctx, optionsOnly = false }: CreateAuthArgs) => {
     baseURL: convexSiteUrl,
     trustedOrigins,
     database,
+    session: {
+      expiresIn: 60 * 60 * 24 * 30,
+      updateAge: 60 * 60 * 24,
+    },
     user: {
       additionalFields: {
         userId: {
@@ -81,6 +164,7 @@ const createAuthOptions = ({ ctx, optionsOnly = false }: CreateAuthArgs) => {
       },
     },
     plugins: optionsOnly ? basePlugins : [...basePlugins, convex()],
+    hooks: roleSyncHook ? { after: roleSyncHook } : undefined,
   };
 };
 

@@ -5,6 +5,7 @@ import {
   MoneyMapChangeStatusValues,
   MoneyMapNodeKindValues,
   MoneyMapRuleTriggerValues,
+  MoneyMapSaveInputSchema,
 } from '@guap/types';
 import type {
   MoneyMapChangeStatus,
@@ -38,6 +39,17 @@ const ruleInputArg = v.object({
 });
 
 const changeStatusArg = enumArg(MoneyMapChangeStatusValues);
+
+const scrubMetadata = (metadata: Record<string, unknown> | undefined) => {
+  if (!metadata) return undefined;
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value !== null && value !== undefined) {
+      cleaned[key] = value;
+    }
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+};
 
 const loadSnapshot = async (db: any, mapId: Id<'moneyMaps'>) => {
   const map = await db.get(mapId);
@@ -93,8 +105,21 @@ export const save = mutation({
   },
   handler: async (ctx, args) => {
     const session = await ensureOrganizationAccess(ctx, args.organizationId);
-    ensureRole(session, ['guardian', 'child']);
+    ensureRole(session, ['owner', 'admin', 'member']);
     const timestamp = now();
+
+    const payload = MoneyMapSaveInputSchema.parse({
+      organizationId: args.organizationId,
+      name: args.name,
+      description: args.description ?? undefined,
+      nodes: args.nodes,
+      edges: args.edges,
+      rules: args.rules,
+    });
+
+    if (payload.organizationId !== args.organizationId) {
+      throw new Error('Money map organization mismatch');
+    }
 
     const existing = await ctx.db
       .query('moneyMaps')
@@ -107,16 +132,16 @@ export const save = mutation({
         throw new Error('Money map organization mismatch');
       }
       await ctx.db.patch(existing._id, {
-        name: args.name,
-        description: args.description ?? undefined,
+        name: payload.name,
+        description: payload.description ?? undefined,
         updatedAt: timestamp,
       });
       mapId = existing._id;
     } else {
       mapId = await ctx.db.insert('moneyMaps', {
         organizationId: args.organizationId,
-        name: args.name,
-        description: args.description ?? undefined,
+        name: payload.name,
+        description: payload.description ?? undefined,
         createdAt: timestamp,
         updatedAt: timestamp,
       });
@@ -146,35 +171,39 @@ export const save = mutation({
       await ctx.db.delete(record._id);
     }
 
-    for (const node of args.nodes) {
+    for (const node of payload.nodes) {
       await ctx.db.insert('moneyMapNodes', {
         mapId,
         key: node.key,
         kind: node.kind as MoneyMapNodeKind,
         label: node.label,
-        metadata: node.metadata ?? undefined,
+        metadata: scrubMetadata(node.metadata ?? undefined),
         createdAt: timestamp,
         updatedAt: timestamp,
       });
     }
 
-    for (const edge of args.edges) {
+    for (const edge of payload.edges) {
       await ctx.db.insert('moneyMapEdges', {
         mapId,
         sourceKey: edge.sourceKey,
         targetKey: edge.targetKey,
-        metadata: edge.metadata ?? undefined,
+        metadata: scrubMetadata(edge.metadata ?? undefined),
         createdAt: timestamp,
         updatedAt: timestamp,
       });
     }
 
-    for (const rule of args.rules) {
+    for (const rule of payload.rules) {
+      const config = { ...rule.config } as Record<string, unknown>;
+      if (config.triggerNodeId === null) {
+        delete config.triggerNodeId;
+      }
       await ctx.db.insert('moneyMapRules', {
         mapId,
         key: rule.key,
         trigger: rule.trigger as MoneyMapRuleTrigger,
-        config: rule.config,
+        config,
         createdAt: timestamp,
         updatedAt: timestamp,
       });
@@ -190,16 +219,40 @@ export const submitChangeRequest = mutation({
     organizationId: v.string(),
     submitterId: v.string(),
     summary: v.optional(v.string()),
-    payload: v.record(v.string(), v.any()),
+    payload: v.any(),
   },
   handler: async (ctx, args) => {
     const session = await ensureOrganizationAccess(ctx, args.organizationId);
-    ensureRole(session, ['child']);
+    ensureRole(session, ['member']);
 
     const map = await ctx.db.get(args.mapId);
     if (!map || map.organizationId !== args.organizationId) {
       throw new Error('Money map not found for organization');
     }
+
+    const parsedPayload = MoneyMapSaveInputSchema.parse(args.payload);
+    if (parsedPayload.organizationId !== args.organizationId) {
+      throw new Error('Money map payload organization mismatch');
+    }
+
+    const normalizedPayload = {
+      ...parsedPayload,
+      nodes: parsedPayload.nodes.map((node) => ({
+        ...node,
+        metadata: scrubMetadata(node.metadata ?? undefined),
+      })),
+      edges: parsedPayload.edges.map((edge) => ({
+        ...edge,
+        metadata: scrubMetadata(edge.metadata ?? undefined),
+      })),
+      rules: parsedPayload.rules.map((rule) => {
+        const config = { ...rule.config } as Record<string, unknown>;
+        if (config.triggerNodeId === null) {
+          delete config.triggerNodeId;
+        }
+        return { ...rule, config };
+      }),
+    };
 
     const timestamp = now();
 
@@ -207,9 +260,9 @@ export const submitChangeRequest = mutation({
       mapId: args.mapId,
       organizationId: args.organizationId,
       submitterId: args.submitterId,
-      status: 'awaiting_guardian',
+      status: 'awaiting_admin',
       summary: args.summary ?? undefined,
-      payload: args.payload,
+      payload: normalizedPayload,
       createdAt: timestamp,
       resolvedAt: undefined,
       updatedAt: timestamp,
@@ -228,7 +281,7 @@ export const updateChangeRequestStatus = mutation({
       throw new Error('Change request not found');
     }
     const session = await ensureOrganizationAccess(ctx, request.organizationId);
-    ensureRole(session, ['guardian']);
+    ensureRole(session, ['owner', 'admin']);
 
     const timestamp = now();
     await ctx.db.patch(args.requestId, {
@@ -247,7 +300,7 @@ export const listChangeRequests = query({
   },
   handler: async (ctx, args) => {
     const session = await ensureOrganizationAccess(ctx, args.organizationId);
-    ensureRole(session, ['guardian', 'child']);
+    ensureRole(session, ['owner', 'admin', 'member']);
 
     let requests;
     if (args.status) {

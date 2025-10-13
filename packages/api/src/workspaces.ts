@@ -1,10 +1,15 @@
 import { z } from 'zod';
 import {
+  MoneyMapNodeMetadataSchema as MoneyMapNodeMetadataSchemaFromTypes,
+  MoneyMapEdgeMetadataSchema as MoneyMapEdgeMetadataSchemaFromTypes,
+  MoneyMapRuleConfigSchema as MoneyMapRuleConfigSchemaFromTypes,
+  MoneyMapSaveInputSchema as MoneyMapSaveInputSchemaFromTypes,
   MoneyMapNodeKindSchema,
   MoneyMapRuleTriggerSchema,
-  MoneyMapNodeMetadataSchema,
-  MoneyMapEdgeMetadataSchema,
-  MoneyMapRuleConfigSchema,
+  type MoneyMapSaveInput as MoneyMapSaveInputType,
+  type MoneyMapSaveNodeInput,
+  type MoneyMapSaveEdgeInput,
+  type MoneyMapSaveRuleInput,
   type MoneyMapSnapshot,
   WorkspacePublishPayloadSchema,
   type WorkspacePublishPayload,
@@ -58,53 +63,93 @@ export type WorkspaceGraphDraft = {
   rules: WorkspaceGraphRuleInput[];
 };
 
-const MoneyMapNodeInputSchema = z.object({
-  key: z.string(),
-  kind: MoneyMapNodeKindSchema,
-  label: z.string(),
-  metadata: MoneyMapNodeMetadataSchema.optional(),
-});
-
-const MoneyMapEdgeInputSchema = z.object({
-  sourceKey: z.string(),
-  targetKey: z.string(),
-  metadata: MoneyMapEdgeMetadataSchema.optional(),
-});
-
-const MoneyMapRuleInputSchema = z.object({
-  key: z.string(),
-  trigger: MoneyMapRuleTriggerSchema,
-  config: MoneyMapRuleConfigSchema,
-});
-
-export const MoneyMapSaveInputSchema = z.object({
-  organizationId: z.string(),
-  name: z.string(),
-  description: z.string().optional(),
-  nodes: z.array(MoneyMapNodeInputSchema),
-  edges: z.array(MoneyMapEdgeInputSchema),
-  rules: z.array(MoneyMapRuleInputSchema),
-});
-
-export type MoneyMapNodeInput = z.infer<typeof MoneyMapNodeInputSchema>;
-export type MoneyMapEdgeInput = z.infer<typeof MoneyMapEdgeInputSchema>;
-export type MoneyMapRuleInput = z.infer<typeof MoneyMapRuleInputSchema>;
-export type MoneyMapSaveInput = z.infer<typeof MoneyMapSaveInputSchema>;
+export type MoneyMapNodeInput = MoneyMapSaveNodeInput;
+export type MoneyMapEdgeInput = MoneyMapSaveEdgeInput;
+export type MoneyMapRuleInput = MoneyMapSaveRuleInput;
+export type MoneyMapSaveInput = MoneyMapSaveInputType;
 
 const toCents = (value?: number) =>
   typeof value === 'number' && Number.isFinite(value) ? Math.round(value * 100) : undefined;
 
+const MoneyMapNodeMetadataSchema = MoneyMapNodeMetadataSchemaFromTypes;
+const MoneyMapEdgeMetadataSchema = MoneyMapEdgeMetadataSchemaFromTypes;
+const MoneyMapRuleConfigSchema = MoneyMapRuleConfigSchemaFromTypes;
+export const MoneyMapSaveInputSchema = MoneyMapSaveInputSchemaFromTypes;
+
 const normalizeMetadata = (
   node: WorkspaceGraphNodeInput
 ): PublishNodeSchema['metadata'] | undefined => {
-  const metadata: Record<string, unknown> = node.metadata ? { ...node.metadata } : {};
-  if (node.podType) {
-    metadata.podType = node.podType;
+  const source = (node.metadata ?? {}) as Record<string, unknown>;
+  const metadata: Record<string, unknown> = {};
+
+  const assign = (key: string, value: unknown) => {
+    if (value !== undefined && value !== null) {
+      metadata[key] = value;
+    }
+  };
+
+  assign('id', typeof source.id === 'string' ? source.id : undefined);
+
+  const category = node.category ?? (typeof source.category === 'string' ? source.category : undefined);
+  assign('category', category);
+
+  const parentId = node.parentId ?? (typeof source.parentId === 'string' ? source.parentId : undefined);
+  assign('parentId', parentId);
+
+  const podType = node.podType ?? (typeof source.podType === 'string' ? source.podType : undefined);
+  assign('podType', podType);
+
+  assign('icon', node.icon ?? (typeof source.icon === 'string' ? source.icon : undefined));
+  assign('accent', node.accent ?? (typeof source.accent === 'string' ? source.accent : undefined));
+
+  if (Object.prototype.hasOwnProperty.call(source, 'balanceCents') && typeof source.balanceCents === 'number') {
+    assign('balanceCents', source.balanceCents);
+  } else if (node.balance !== undefined) {
+    const cents = toCents(node.balance);
+    if (cents !== undefined) assign('balanceCents', cents);
   }
-  if (node.inflow) {
-    metadata.inflow = node.inflow;
+
+  const inflow = node.inflow ?? (source.inflow && typeof source.inflow === 'object' ? source.inflow : undefined);
+  assign('inflow', inflow);
+
+  metadata.position = node.position;
+
+  if (Object.prototype.hasOwnProperty.call(source, 'returnRate') && typeof source.returnRate === 'number') {
+    assign('returnRate', source.returnRate);
+  } else if (
+    node.metadata &&
+    Object.prototype.hasOwnProperty.call(node.metadata, 'returnRate') &&
+    typeof (node.metadata as Record<string, unknown>).returnRate === 'number'
+  ) {
+    assign('returnRate', (node.metadata as Record<string, unknown>).returnRate);
   }
+
   return Object.keys(metadata).length > 0 ? MoneyMapNodeMetadataSchema.parse(metadata) : undefined;
+};
+
+const normalizeEdgeMetadata = (
+  flow: WorkspaceGraphFlowInput
+): PublishEdgeSchema['metadata'] | undefined => {
+  const source = (flow.metadata ?? {}) as Record<string, unknown>;
+  const metadata: Record<string, unknown> = {};
+
+  const assign = (key: string, value: unknown) => {
+    if (value !== undefined && value !== null) {
+      metadata[key] = value;
+    }
+  };
+
+  assign('id', typeof source.id === 'string' ? source.id : undefined);
+  assign('ruleId', flow.ruleId ?? (typeof source.ruleId === 'string' ? source.ruleId : undefined));
+
+  if (Object.prototype.hasOwnProperty.call(source, 'amountCents') && typeof source.amountCents === 'number') {
+    assign('amountCents', source.amountCents);
+  }
+
+  assign('tag', typeof source.tag === 'string' ? source.tag : undefined);
+  assign('note', typeof source.note === 'string' ? source.note : undefined);
+
+  return Object.keys(metadata).length > 0 ? MoneyMapEdgeMetadataSchema.parse(metadata) : undefined;
 };
 
 export const createWorkspacePublishPayload = (
@@ -130,7 +175,7 @@ export const createWorkspacePublishPayload = (
       targetClientId: flow.targetId,
       kind: flow.ruleId ? 'automation' : 'manual',
       ruleClientId: flow.ruleId,
-      metadata: flow.metadata ? MoneyMapEdgeMetadataSchema.parse(flow.metadata) : undefined,
+      metadata: normalizeEdgeMetadata(flow),
     })),
     rules: input.rules.map((rule) => ({
       clientId: rule.id,
@@ -176,54 +221,84 @@ export const createMoneyMapSaveInput = (options: {
   const description = mapMeta?.description ?? fallbackDescription;
 
   const nodes = draft.nodes.map((node) => {
-    const metadata: Record<string, unknown> = {
-      ...(node.metadata ?? {}),
-      id: node.id,
-      category: node.category ?? null,
-      parentId: node.parentId ?? null,
-      podType: node.podType ?? null,
-      icon: node.icon ?? null,
-      accent: node.accent ?? null,
-      balanceCents: toCents(node.balance ?? undefined),
-      inflow: node.inflow ?? null,
-      position: node.position,
+    const metadata: Record<string, unknown> = {};
+    const assign = (key: string, value: unknown) => {
+      if (value !== undefined && value !== null) {
+        metadata[key] = value;
+      }
     };
 
-    if (metadata.returnRate === undefined && node.metadata && 'returnRate' in node.metadata) {
-      metadata.returnRate = (node.metadata as Record<string, unknown>).returnRate;
+    assign('id', node.id);
+    assign('category', node.category);
+    assign('parentId', node.parentId);
+    assign('podType', node.podType);
+    assign('icon', node.icon);
+    assign('accent', node.accent);
+
+    const cents = toCents(node.balance ?? undefined);
+    if (cents !== undefined) assign('balanceCents', cents);
+
+    if (node.inflow) assign('inflow', node.inflow);
+
+    metadata.position = node.position;
+
+    if (node.metadata && Object.prototype.hasOwnProperty.call(node.metadata, 'returnRate')) {
+      const value = (node.metadata as Record<string, unknown>).returnRate;
+      if (typeof value === 'number') assign('returnRate', value);
     }
 
     return {
       key: node.id,
       kind: mapNodeKind(node.kind),
       label: node.label,
-      metadata,
+      metadata: MoneyMapNodeMetadataSchema.parse(metadata),
     };
   });
 
   const edges = draft.flows.map((flow) => {
-    const metadata: Record<string, unknown> = {
-      ...(flow.metadata ?? {}),
-      id: flow.id,
-      ruleId: flow.ruleId ?? null,
+    const metadata: Record<string, unknown> = {};
+    const assign = (key: string, value: unknown) => {
+      if (value !== undefined && value !== null) {
+        metadata[key] = value;
+      }
     };
+
+    assign('id', flow.id);
+    assign('ruleId', flow.ruleId);
+
+    if (flow.metadata) {
+      const source = flow.metadata as Record<string, unknown>;
+      if (typeof source.amountCents === 'number') assign('amountCents', source.amountCents);
+      if (typeof source.tag === 'string') assign('tag', source.tag);
+      if (typeof source.note === 'string') assign('note', source.note);
+    }
+
     return {
       sourceKey: flow.sourceId,
       targetKey: flow.targetId,
-      metadata,
+      metadata:
+        Object.keys(metadata).length > 0 ? MoneyMapEdgeMetadataSchema.parse(metadata) : undefined,
     };
   });
 
-  const rules = draft.rules.map((rule) => ({
-    key: rule.id,
-    trigger: mapRuleTrigger(rule.trigger),
-    config: {
+  const rules = draft.rules.map((rule) => {
+    const config = MoneyMapRuleConfigSchema.parse({
       ruleId: rule.id,
       sourceNodeId: rule.sourceNodeId,
-      triggerNodeId: rule.triggerNodeId ?? null,
+      triggerNodeId: rule.triggerNodeId ?? undefined,
       allocations: rule.allocations,
-    },
-  }));
+    });
+
+    if (config.triggerNodeId === undefined || config.triggerNodeId === null) {
+      delete (config as { triggerNodeId?: string }).triggerNodeId;
+    }
+
+    return {
+      key: rule.id,
+      trigger: mapRuleTrigger(rule.trigger),
+      config,
+    };
+  });
 
   return MoneyMapSaveInputSchema.parse({
     organizationId,

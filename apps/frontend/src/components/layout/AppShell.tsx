@@ -52,8 +52,8 @@ const AppShell: Component<AppShellProps> = (props) => {
     return currentPath() === path || currentPath().startsWith(`${path}/`);
   };
 
-  const activeRole = createMemo(() => user()?.role ?? 'child');
-  const requestsLabel = createMemo(() => (activeRole() === 'child' ? 'Requests' : 'Approvals'));
+  const activeRole = createMemo(() => user()?.role ?? 'member');
+  const requestsLabel = createMemo(() => (activeRole() === 'member' ? 'Requests' : 'Approvals'));
   const activeHouseholdName = createMemo(() => activeHousehold()?.name ?? 'Household');
   const totalBalance = createMemo(() => accounts().reduce((sum, account) => sum + account.balanceCents, 0));
   const activeRequestsCount = createMemo(() => requests().filter((item) => item.state === 'pending').length);
@@ -63,7 +63,7 @@ const AppShell: Component<AppShellProps> = (props) => {
       { label: 'Billing', path: AppPaths.appSettingsBilling, icon: '💳' },
     ];
     const role = user()?.role;
-    if (role === 'guardian') {
+    if (role === 'owner' || role === 'admin') {
       items.push({ label: 'Org roster', path: AppPaths.appSettingsOrganization, icon: '🏫' });
     }
     return items;

@@ -72,7 +72,7 @@ const SubmitChangeRequestSchema = z.object({
   organizationId: z.string(),
   submitterId: z.string(),
   summary: z.string().optional(),
-  payload: z.record(z.string(), z.any()),
+  payload: MoneyMapSaveInputSchema,
 });
 
 const UpdateChangeRequestStatusSchema = z.object({

@@ -1,6 +1,4 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, on } from 'solid-js';
-import { Motion } from 'solid-motionone';
-import { createStore } from 'solid-js/store';
 import CanvasViewport, { DragPayload, ViewportControls } from '../components/canvas/CanvasViewport';
 import type { NodeAllocationStatus, IncomingAllocationInfo } from '../components/canvas/NodeCard';
 import { CanvasFlow, CanvasNode, CanvasInflow, CanvasInflowCadence, CanvasPodType } from '../types/graph';
@@ -11,18 +9,17 @@ import { NODE_CARD_HEIGHT, NODE_CARD_WIDTH } from '../components/canvas/NodeCard
 import { buildEdgePath, getAnchorPoint } from '../components/canvas/EdgeLayer';
 import EmptyHero from '../components/empty/EmptyHero';
 import NodeContextMenu from '../components/nodes/NodeContextMenu';
-import NodeDrawer from '../components/nodes/NodeDrawer';
 import IncomeSourceModal from '../components/create/IncomeSourceModal';
 import PodModal from '../components/create/PodModal';
 import AccountTypeModal, { AccountOption } from '../components/create/AccountTypeModal';
-import { Button } from '~/components/ui/button';
-import { createHistory } from '~/domains/canvas/history';
 import { useCanvasSimulation, simulationHorizonOptions } from '~/domains/canvas/useCanvasSimulation';
 import { SimulationPanel } from '~/components/canvas/SimulationPanel';
 import { useFlowComposer } from '~/domains/canvas/useFlowComposer';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '~/components/ui/dropdown-menu';
 import { useAppData } from '~/contexts/AppDataContext';
 import { useAuth } from '~/contexts/AuthContext';
+import { CanvasDrawerPanel, CanvasScene, CanvasToolbar, createCanvasEditor } from '~/features/money-map';
+import type { AllocationHealth, AllocationIssue, RuleRecord } from '~/features/money-map';
 import {
   clearMoneyMapCache,
   loadMoneyMapGraph,
@@ -34,13 +31,6 @@ import { toast } from 'solid-sonner';
 
 const GRID_SIZE = 28;
 const snapToGrid = (value: number) => Math.round(value / GRID_SIZE) * GRID_SIZE;
-
-type Snapshot = {
-  nodes: CanvasNode[];
-  flows: CanvasFlow[];
-  rules: RuleRecord[];
-  selectedIds: string[];
-};
 
 const HISTORY_CAP = 50;
 
@@ -131,33 +121,12 @@ const createId = () =>
     ? globalThis.crypto.randomUUID()
     : Math.random().toString(36).slice(2);
 
-type DragState = {
-  nodeIds: string[];
-  startPositions: Record<string, { x: number; y: number }>;
-  delta: { x: number; y: number };
-};
-
-type RuleAllocationRecord = {
-  id: string;
-  targetNodeId: string;
-  percentage: number;
-};
-
-type RuleRecord = {
-  id: string;
+type RuleDraftInput = {
+  id?: string;
   sourceNodeId: string;
   trigger: 'incoming' | 'scheduled';
   triggerNodeId: string | null;
-  allocations: RuleAllocationRecord[];
-};
-
-type AllocationHealth = 'missing' | 'under' | 'over' | 'complete';
-
-type AllocationIssue = {
-  nodeId: string;
-  label: string;
-  total: number;
-  state: AllocationHealth;
+  allocations: Array<{ id: string; percentage: number; targetNodeId: string }>;
 };
 
 const ALLOCATION_TOLERANCE = 0.001;
@@ -190,16 +159,37 @@ const CanvasPage: Component = () => {
     if (!ts) return null;
     return new Date(ts).toLocaleString();
   });
+  const mapTitle = createMemo(
+    () => lastSnapshot()?.map?.name ?? activeHousehold()?.name ?? 'Money Map'
+  );
   let drawerContainerRef: HTMLDivElement | undefined;
   let shareStatusTimeout: number | undefined;
 
-  const [graph, setGraph] = createStore<{ nodes: CanvasNode[]; flows: CanvasFlow[] }>({
-    nodes: [],
-    flows: [],
+  const {
+    graph,
+    setGraph,
+    rules,
+    setRules,
+    selectedIds,
+    setSelectedIds,
+    selectedIdSet,
+    ensureSelection,
+    snapshotGraph,
+    resetGraphState: resetEditorState,
+    onSnapshotApplied,
+    clearSelection: clearSelectionBase,
+    drag,
+    marquee,
+    placement,
+    history: { hasChanges, setHasChanges, pushHistory, replaceHistory, undo, redo },
+  } = createCanvasEditor({
+    historyCap: HISTORY_CAP,
+    snapToGrid,
+    gridSize: GRID_SIZE,
+    nodeCardWidth: NODE_CARD_WIDTH,
+    nodeCardHeight: NODE_CARD_HEIGHT,
   });
-  const [selectedIds, setSelectedIds] = createSignal<string[]>([]);
   const [scalePercent, setScalePercent] = createSignal(100);
-  const [dragState, setDragState] = createSignal<DragState | null>(null);
   const [viewportState, setViewportState] = createSignal({ scale: 1, translate: { x: 0, y: 0 } });
   const [drawerNodeId, setDrawerNodeId] = createSignal<string | null>(null);
   const [contextMenu, setContextMenu] = createSignal<{ nodeId: string; x: number; y: number } | null>(
@@ -207,27 +197,16 @@ const CanvasPage: Component = () => {
   );
   const [createModal, setCreateModal] = createSignal<'income' | 'pod' | 'account' | null>(null);
   const [podParentId, setPodParentId] = createSignal<string | null>(null);
-  const [rules, setRules] = createSignal<RuleRecord[]>([]);
   const [showHero, setShowHero] = createSignal(true);
   const [loading, setLoading] = createSignal(true);
   const [actionsMenuOpen, setActionsMenuOpen] = createSignal(false);
   const [shareStatus, setShareStatus] = createSignal<'copied' | 'error' | null>(null);
-  const [marquee, setMarquee] = createSignal<
-    | null
-    | {
-        originLocal: { x: number; y: number };
-        currentLocal: { x: number; y: number };
-        originWorld: { x: number; y: number };
-        currentWorld: { x: number; y: number };
-      }
-  >(null);
-  const [placementIndex, setPlacementIndex] = createSignal(0);
 
   const loadMoneyMapState = async ({ primeHistory = false }: { primeHistory?: boolean } = {}) => {
     const id = householdId();
     if (!id || !isAuthenticated()) {
       clearMoneyMapCache();
-      resetGraphState();
+      resetCanvasState();
       setLastSnapshot(null);
       setHasChanges(false);
       setShowHero(true);
@@ -244,13 +223,13 @@ const CanvasPage: Component = () => {
         hydrateGraph(graph, { primeHistory });
         setShowHero(false);
       } else {
-        resetGraphState();
+        resetCanvasState();
         setShowHero(true);
       }
       setHasChanges(false);
     } catch (error) {
       console.error('Failed to load Money Map', error);
-      resetGraphState();
+      resetCanvasState();
       toast.error('Unable to load Money Map data.');
     } finally {
       setLoading(false);
@@ -289,50 +268,6 @@ const CanvasPage: Component = () => {
     }
   });
 
-  const cloneSnapshot = (snap: Snapshot): Snapshot => ({
-    nodes: snap.nodes.map((node) => ({ ...node, position: { ...node.position } })),
-    flows: snap.flows.map((flow) => ({ ...flow })),
-    rules: snap.rules.map((rule) => ({
-      ...rule,
-      allocations: rule.allocations.map((alloc) => ({ ...alloc })),
-    })),
-    selectedIds: [...snap.selectedIds],
-  });
-
-  const snapshotGraph = (): Snapshot =>
-    cloneSnapshot({
-      nodes: graph.nodes,
-      flows: graph.flows,
-      rules: rules(),
-      selectedIds: selectedIds(),
-    });
-
-  const applySnapshot = (snap: Snapshot) => {
-    const clone = cloneSnapshot(snap);
-    setGraph('nodes', () => clone.nodes);
-    setGraph('flows', () => clone.flows);
-    setRules(clone.rules);
-    setSelectedIds(clone.selectedIds);
-    setDrawerNodeId(null);
-    setMarquee(null);
-    exitFlowMode();
-  };
-
-  const {
-    historyIndex,
-    hasChanges,
-    setHasChanges,
-    pushHistory,
-    replaceHistory,
-    undo,
-    redo,
-    resetHistory,
-  } = createHistory<Snapshot>({
-    snapshotSource: snapshotGraph,
-    applySnapshot,
-    cloneSnapshot,
-    cap: HISTORY_CAP,
-  });
   const {
     flowComposer,
     hoveredAnchor,
@@ -355,59 +290,24 @@ const CanvasPage: Component = () => {
     buildEdgePath,
   });
 
-
-function resetGraphState() {
-    setGraph('nodes', () => []);
-    setGraph('flows', () => []);
-    setRules([]);
-    setSelectedIds([]);
+  const removeSnapshotListener = onSnapshotApplied(() => {
     setDrawerNodeId(null);
-    setMarquee(null);
+    marquee.clear();
+    drag.reset();
     exitFlowMode();
-    setPlacementIndex(0);
-    resetHistory();
+  });
+  onCleanup(removeSnapshotListener);
+
+
+  function resetCanvasState() {
+    resetEditorState();
+    setDrawerNodeId(null);
+    marquee.clear();
+    drag.reset();
+    exitFlowMode();
     setShowHero(true);
   }
 
-  createEffect(() => {
-    if (historyIndex() === -1) {
-      replaceHistory(snapshotGraph());
-    }
-  });
-
-  const rectsIntersect = (
-    a: { x: number; y: number; width: number; height: number },
-    b: { x: number; y: number; width: number; height: number },
-  ) =>
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y;
-
-  const computeWorldRect = (origin: { x: number; y: number }, current: { x: number; y: number }) => {
-    const x = Math.min(origin.x, current.x);
-    const y = Math.min(origin.y, current.y);
-    const width = Math.abs(origin.x - current.x);
-    const height = Math.abs(origin.y - current.y);
-    return { x, y, width, height };
-  };
-
-  const updateSelectionFromMarquee = (
-    originWorld: { x: number; y: number },
-    currentWorld: { x: number; y: number },
-  ) => {
-    const rect = computeWorldRect(originWorld, currentWorld);
-    const selected = graph.nodes
-      .filter((node) =>
-        rectsIntersect(
-          { x: node.position.x, y: node.position.y, width: NODE_CARD_WIDTH, height: NODE_CARD_HEIGHT },
-          rect,
-        ),
-      )
-      .map((node) => node.id);
-    setSelectedIds(selected);
-  };
-  const selectedIdSet = createMemo(() => new Set(selectedIds()));
   const hasNodes = createMemo(() => graph.nodes.length > 0);
   const drawerNode = createMemo(() => {
     const id = drawerNodeId();
@@ -656,7 +556,7 @@ function resetGraphState() {
       ({ id, authed }) => {
         if (!id || !authed) {
           clearMoneyMapCache();
-          resetGraphState();
+          resetCanvasState();
           setLastSnapshot(null);
           setHasChanges(false);
           setShowHero(true);
@@ -751,7 +651,7 @@ function resetGraphState() {
   setGraph('flows', flows);
   setRules(ruleRecords);
   setShowHero(nodes.length === 0);
-  setPlacementIndex(nodes.length);
+  placement.set(nodes.length);
   if (options.primeHistory) {
     const initialSelection = nodes.length ? [nodes[0].id] : [];
     replaceHistory({
@@ -815,21 +715,6 @@ function resetGraphState() {
   let viewportControls: ViewportControls | undefined;
   let viewportElement: HTMLDivElement | undefined;
 
-  const livePositions = createMemo(() => {
-    const state = dragState();
-    if (!state) return null;
-    const overrides = new Map<string, { x: number; y: number }>();
-    const { delta, startPositions } = state;
-    state.nodeIds.forEach((id) => {
-      const start = startPositions[id];
-      if (!start) return;
-      overrides.set(id, {
-        x: start.x + delta.x,
-        y: start.y + delta.y,
-      });
-    });
-    return overrides;
-  });
   const accountNodes = createMemo(() =>
     graph.nodes.filter(
       (node) =>
@@ -841,27 +726,13 @@ function resetGraphState() {
   );
   const flows = createMemo(() => graph.flows);
 
-  const ensureSelection = (nodeId: string, additive: boolean) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (additive) {
-        if (next.has(nodeId)) next.delete(nodeId);
-        else next.add(nodeId);
-      } else {
-        next.clear();
-        next.add(nodeId);
-      }
-      return [...next];
-    });
-  };
-
   const clearSelection = () => {
     if (flowComposer().stage !== 'idle') {
       console.log('[flow] clearSelection cancels active flow');
       exitFlowMode();
       return;
     }
-    setSelectedIds([]);
+    clearSelectionBase();
   };
 
   const handleNodeSelect = (event: PointerEvent, nodeId: string) => {
@@ -899,58 +770,10 @@ function resetGraphState() {
     setContextMenu({ nodeId, x, y });
   };
 
-  const handleNodeDrag = async (payload: DragPayload) => {
-    const { nodeId, delta, phase } = payload;
-    if (phase === 'start') {
-      let idsToMove = new Set(selectedIds());
-      if (!idsToMove.has(nodeId)) {
-        idsToMove = new Set([nodeId]);
-        setSelectedIds([...idsToMove]);
-      }
-      const startPositions: Record<string, { x: number; y: number }> = {};
-      idsToMove.forEach((id) => {
-        const node = graph.nodes.find((n) => n.id === id);
-        if (node) {
-          startPositions[id] = { x: node.position.x, y: node.position.y };
-        }
-      });
-      setDragState({ nodeIds: Array.from(idsToMove), startPositions, delta: { x: 0, y: 0 } });
-      return;
-    }
-
-    const state = dragState();
-    if (!state) return;
-
-    if (phase === 'move') {
-      setDragState((prev) => (prev ? { ...prev, delta: { x: delta.x, y: delta.y } } : prev));
-      return;
-    }
-
-    if (phase === 'end') {
-      const finalDelta = state.delta;
-      let moved = false;
-      state.nodeIds.forEach((id) => {
-        const start = state.startPositions[id];
-        if (!start) return;
-        const nextPosition = {
-          x: snapToGrid(start.x + finalDelta.x),
-          y: snapToGrid(start.y + finalDelta.y),
-        };
-        const index = graph.nodes.findIndex((node) => node.id === id);
-        if (index >= 0) {
-          const current = graph.nodes[index].position;
-          if (current.x !== nextPosition.x || current.y !== nextPosition.y) {
-            moved = true;
-            setGraph('nodes', index, 'position', nextPosition);
-          }
-        }
-      });
-      setDragState(null);
-      if (moved) {
-        pushHistory();
-      }
-    }
+  const handleNodeDrag = (payload: DragPayload) => {
+    drag.handleNodeDrag(payload);
   };
+
 
   function translateClientToWorld(clientX: number, clientY: number) {
     if (!viewportElement) return null;
@@ -965,57 +788,34 @@ function resetGraphState() {
     local: { x: number; y: number };
     world: { x: number; y: number };
   }) => {
-    setMarquee({
-      originLocal: payload.local,
-      currentLocal: payload.local,
-      originWorld: payload.world,
-      currentWorld: payload.world,
-    });
-    setSelectedIds([]);
+    marquee.start(payload);
   };
 
   const handleMarqueeUpdate = (payload: {
     local: { x: number; y: number };
     world: { x: number; y: number };
   }) => {
-    setMarquee((prev) => {
-      if (!prev) return prev;
-      const next = {
-        ...prev,
-        currentLocal: payload.local,
-        currentWorld: payload.world,
-      };
-      updateSelectionFromMarquee(next.originWorld, next.currentWorld);
-      return next;
-    });
+    marquee.update(payload);
   };
 
   const handleMarqueeEnd = (payload: {
     local: { x: number; y: number };
     world: { x: number; y: number };
   }) => {
-    setMarquee((prev) => {
-      if (!prev) return null;
-      updateSelectionFromMarquee(prev.originWorld, payload.world);
-      return null;
-    });
+    marquee.end(payload);
   };
 
   const marqueeOverlay = createMemo(() => {
-    const data = marquee();
-    if (!data) return null;
-    const left = Math.min(data.originLocal.x, data.currentLocal.x);
-    const top = Math.min(data.originLocal.y, data.currentLocal.y);
-    const width = Math.abs(data.originLocal.x - data.currentLocal.x);
-    const height = Math.abs(data.originLocal.y - data.currentLocal.y);
+    const rect = marquee.overlayRect();
+    if (!rect) return null;
     return (
       <div
         class="pointer-events-none absolute rounded-2xl border-2 border-sky-400/70 bg-sky-400/10"
         style={{
-          left: `${left}px`,
-          top: `${top}px`,
-          width: `${width}px`,
-          height: `${height}px`,
+          left: `${rect.left}px`,
+          top: `${rect.top}px`,
+          width: `${rect.width}px`,
+          height: `${rect.height}px`,
         }}
       />
     );
@@ -1069,7 +869,7 @@ function resetGraphState() {
       y: (rect.height / 2 - translate.y) / scale,
     };
 
-    const placementCursor = placementIndex();
+    const placementCursor = placement.index();
     const worldOrigin = {
       x: (-translate.x) / scale,
       y: (-translate.y) / scale,
@@ -1214,7 +1014,7 @@ function resetGraphState() {
     setGraph('nodes', (nodes) => [...nodes, newNode]);
     setSelectedIds([newNode.id]);
     setShowHero(false);
-    setPlacementIndex(placementCursor + 1);
+    placement.set(placementCursor + 1);
     pushHistory();
     return newNodeId;
   };
@@ -1275,7 +1075,7 @@ function resetGraphState() {
     setGraph('nodes', (nodes) => [...nodes, newNode]);
     setSelectedIds([newNode.id]);
     pushHistory();
-    setPlacementIndex((prev) => prev + 1);
+    placement.increment();
   };
 
   const updateNodeBalance = (nodeId: string, balance: number | null) => {
@@ -1355,13 +1155,66 @@ function resetGraphState() {
     pushHistory();
   };
 
+  const handleSaveRule = (ruleDraft: RuleDraftInput) => {
+    const fallbackId = `rule-${createId()}`;
+    const ruleId = ruleDraft.id ?? rulesBySource().get(ruleDraft.sourceNodeId)?.id ?? fallbackId;
+    const record: RuleRecord = {
+      id: ruleId,
+      sourceNodeId: ruleDraft.sourceNodeId,
+      trigger: ruleDraft.trigger,
+      triggerNodeId: ruleDraft.triggerNodeId ?? ruleDraft.sourceNodeId,
+      allocations: ruleDraft.allocations.map((alloc) => ({ ...alloc })),
+    };
+    setRules((existing) => [
+      ...existing.filter((r) => r.sourceNodeId !== ruleDraft.sourceNodeId),
+      record,
+    ]);
+    setGraph('flows', (flows) => {
+      const targets = new Set(ruleDraft.allocations.map((alloc) => alloc.targetNodeId));
+      const next = flows
+        .map((flow) => {
+          if (flow.sourceId !== ruleDraft.sourceNodeId) return flow;
+          if (targets.has(flow.targetId)) {
+            return {
+              ...flow,
+              ruleId,
+              tag: flow.tag ?? 'Flow',
+            };
+          }
+          if (flow.ruleId === ruleId) {
+            return null;
+          }
+          return flow.ruleId ? null : flow;
+        })
+        .filter((flow): flow is CanvasFlow => flow !== null);
+
+      targets.forEach((targetId) => {
+        const existingFlow = next.find(
+          (flow) => flow.sourceId === ruleDraft.sourceNodeId && flow.targetId === targetId,
+        );
+        if (!existingFlow) {
+          next.push({
+            id: `flow-${createId()}`,
+            sourceId: ruleDraft.sourceNodeId,
+            targetId,
+            ruleId,
+            tag: 'Flow',
+          });
+        }
+      });
+
+      return next;
+    });
+    pushHistory();
+  };
+
   const deleteNode = (nodeId: string, options: { skipHistory?: boolean } = {}) => {
     if (editingLocked()) return;
     setGraph('nodes', (nodes) => {
       const filtered = nodes.filter((node) => node.id !== nodeId);
       if (filtered.length === 0) setShowHero(true);
       if (filtered.length === 0) {
-        setPlacementIndex(0);
+        placement.set(0);
       }
       return filtered;
     });
@@ -1480,7 +1333,7 @@ function resetGraphState() {
         },
       });
       setHasChanges(false);
-      toast.success('Submitted for guardian approval.');
+      toast.success('Submitted for admin approval.');
     } catch (error) {
       console.error('Failed to submit Money Map change request', error);
       toast.error('Unable to submit changes for approval.');
@@ -1497,64 +1350,27 @@ function resetGraphState() {
     }
   };
 
-  return (
-    <div
-      class="relative h-full w-full"
-      classList={{ 'pr-[360px]': drawerOpen(), 'pl-[360px]': simulationPanelOpen() }}
-    >
-      <div class="pointer-events-none absolute left-6 top-6 z-40 flex items-center gap-2">
-        <Show
-          when={!initializingMap()}
-          fallback={
-            <span class="pointer-events-auto rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
-              Loading…
-            </span>
-          }
-        >
-          <div class="pointer-events-auto flex flex-wrap items-center gap-3 rounded-full border border-slate-200/70 bg-white/85 px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur">
-            <span class="flex items-center gap-2 text-sm text-slate-800">
-              {lastSnapshot()?.map?.name ?? activeHousehold()?.name ?? 'Money Map'}
-              <Show when={lastUpdatedLabel()}>
-                {(label) => (
-                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-                    Last saved {label()}
-                  </span>
-                )}
-              </Show>
-            </span>
-            <div class="flex items-center gap-2">
-              <Button type="button" variant="secondary" size="xs" onClick={handleShareMoneyMap}>
-                Share
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="xs"
-                class="rounded-full"
-                disabled={!canSave()}
-                title={saveDisabledReason() ?? undefined}
-                onClick={() => void handleSave()}
-              >
-                {saving() ? 'Saving…' : 'Save'}
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                size="xs"
-                class="rounded-full"
-                disabled={!canSubmitChangeRequest()}
-                title={submitDisabledReason() ?? undefined}
-                onClick={() => void handleSubmitChangeRequest()}
-              >
-                {submittingChangeRequest() ? 'Submitting…' : 'Request Approval'}
-              </Button>
-            </div>
-          </div>
-        </Show>
-      </div>
-      <CanvasViewport
+  const toolbar = (
+    <CanvasToolbar
+      initializing={initializingMap}
+      title={mapTitle}
+      lastUpdatedLabel={lastUpdatedLabel}
+      canSave={canSave}
+      saving={saving}
+      saveDisabledReason={saveDisabledReason}
+      onSave={() => void handleSave()}
+      canSubmit={canSubmitChangeRequest}
+      submitting={submittingChangeRequest}
+      submitDisabledReason={submitDisabledReason}
+      onSubmit={() => void handleSubmitChangeRequest()}
+      onShare={() => void handleShareMoneyMap()}
+    />
+  );
+
+  const viewport = (
+    <CanvasViewport
         nodes={graph.nodes}
-        positions={livePositions()}
+        positions={drag.livePositions()}
         flows={flows()}
         selectedNodeIds={selectedIdSet()}
         onBackgroundPointerDown={clearSelection}
@@ -1587,274 +1403,197 @@ function resetGraphState() {
         incomingAllocations={incomingAllocationsMap()}
       >
         {connectingPreview()}
-      </CanvasViewport>
-      <Show when={!loading() && showHero() && !hasNodes()}>
-        <div class="absolute inset-0 pointer-events-none">
-          <div class="pointer-events-auto h-full w-full">
-            <EmptyHero
-              onCreate={() => {
-                if (editingLocked()) return;
-                setShowHero(false);
-                setCreateModal('income');
-              }}
-            />
-          </div>
+    </CanvasViewport>
+  );
+
+  const heroOverlay = (
+    <Show when={!loading() && showHero() && !hasNodes()}>
+      <div class="absolute inset-0 pointer-events-none">
+        <div class="pointer-events-auto h-full w-full">
+          <EmptyHero
+            onCreate={() => {
+              if (editingLocked()) return;
+              setShowHero(false);
+              setCreateModal('income');
+            }}
+          />
         </div>
-      </Show>
-      <div class="pointer-events-none absolute right-6 top-6 z-10 flex flex-col items-end gap-1.5">
-        <div class="pointer-events-auto flex items-center gap-2">
-          <Show when={simulationError()}>
-            {(message) => (
-              <span class="pointer-events-auto rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm">
-                {message()}
-              </span>
-            )}
-          </Show>
-          <DropdownMenu open={simulationMenuOpen()} onOpenChange={setSimulationMenuOpen}>
-            <DropdownMenuTrigger
-              as="button"
-              type="button"
-              class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
-            >
-              ▶ Simulate
-              <ChevronDownIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent class="w-56">
-              <div class="py-1">
-                <For each={[5, 10, 20, 30, 40, 50]}>
-                  {(years) => (
-                    <DropdownMenuItem
-                      class="px-4 py-3 text-sm font-semibold text-slate-700"
-                      onSelect={() => runSimulation(years)}
-                    >
-                      {years} Years
-                    </DropdownMenuItem>
-                  )}
-                </For>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu open={actionsMenuOpen()} onOpenChange={setActionsMenuOpen}>
-            <DropdownMenuTrigger
-              as="button"
-              type="button"
-              class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
-            >
-              Actions
-              <ChevronDownIcon />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent class="w-60">
-              <DropdownMenuItem
-                class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={!canSave()}
-                onSelect={() => {
-                  if (!canSave()) return;
-                  setActionsMenuOpen(false);
-                  void handleSave();
-                }}
-              >
-                <SaveIcon />
-                <span>{saving() ? 'Saving…' : 'Save Money Map'}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                class="px-3 py-2 text-sm font-semibold text-slate-700"
-                disabled={!canSubmitChangeRequest()}
-                onSelect={() => {
-                  if (!canSubmitChangeRequest()) return;
-                  setActionsMenuOpen(false);
-                  void handleSubmitChangeRequest();
-                }}
-              >
-                <DuplicateIcon />
-                <span>{submittingChangeRequest() ? 'Submitting…' : 'Request Approval'}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                class="px-3 py-2 text-sm font-semibold text-slate-700"
-                onSelect={() => {
-                  setActionsMenuOpen(false);
-                  void handleShareMoneyMap();
-                }}
-              >
-                <ShareIcon />
-                <span>Share</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                class="px-3 py-2 text-sm font-semibold text-slate-700"
-                onSelect={() => {
-                  setActionsMenuOpen(false);
-                  handleExit();
-                }}
-              >
-                <ExitIcon />
-                <span>Exit</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <Show when={shareStatus()}>
-          {(status) => (
-            <span
-              class="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-floating"
-              classList={{
-                'bg-emerald-500': status() === 'copied',
-                'bg-rose-500': status() === 'error',
-              }}
-            >
-              {status() === 'copied' ? 'Link copied to clipboard' : 'Unable to copy link'}
+      </div>
+    </Show>
+  );
+
+  const topRight = (
+    <>
+      <div class="pointer-events-auto flex items-center gap-2">
+        <Show when={simulationError()}>
+          {(message) => (
+            <span class="pointer-events-auto rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm">
+              {message()}
             </span>
           )}
         </Show>
+        <DropdownMenu open={simulationMenuOpen()} onOpenChange={setSimulationMenuOpen}>
+          <DropdownMenuTrigger
+            as="button"
+            type="button"
+            class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
+          >
+            ▶ Simulate
+            <ChevronDownIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent class="w-56">
+            <div class="py-1">
+              <For each={[5, 10, 20, 30, 40, 50]}>
+                {(years) => (
+                  <DropdownMenuItem
+                    class="px-4 py-3 text-sm font-semibold text-slate-700"
+                    onSelect={() => runSimulation(years)}
+                  >
+                    {years} Years
+                  </DropdownMenuItem>
+                )}
+              </For>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu open={actionsMenuOpen()} onOpenChange={setActionsMenuOpen}>
+          <DropdownMenuTrigger
+            as="button"
+            type="button"
+            class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
+          >
+            Actions
+            <ChevronDownIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent class="w-60">
+            <DropdownMenuItem
+              class="px-3 py-2 text-sm font-semibold text-slate-700"
+              disabled={!canSave()}
+              onSelect={() => {
+                if (!canSave()) return;
+                setActionsMenuOpen(false);
+                void handleSave();
+              }}
+            >
+              <SaveIcon />
+              <span>{saving() ? 'Saving…' : 'Save Money Map'}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="px-3 py-2 text-sm font-semibold text-slate-700"
+              disabled={!canSubmitChangeRequest()}
+              onSelect={() => {
+                if (!canSubmitChangeRequest()) return;
+                setActionsMenuOpen(false);
+                void handleSubmitChangeRequest();
+              }}
+            >
+              <DuplicateIcon />
+              <span>{submittingChangeRequest() ? 'Submitting…' : 'Request Approval'}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="px-3 py-2 text-sm font-semibold text-slate-700"
+              onSelect={() => {
+                setActionsMenuOpen(false);
+                void handleShareMoneyMap();
+              }}
+            >
+              <ShareIcon />
+              <span>Share</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              class="px-3 py-2 text-sm font-semibold text-slate-700"
+              onSelect={() => {
+                setActionsMenuOpen(false);
+                handleExit();
+              }}
+            >
+              <ExitIcon />
+              <span>Exit</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-      <Show when={contextMenu()}>
-        {(menu) => (
-          <div class="absolute z-30" style={{ left: `${menu().x}px`, top: `${menu().y}px` }}>
-            <NodeContextMenu
-              onOpenDrawer={() => handleContextMenuAction('details')}
-              onDuplicate={() => handleContextMenuAction('duplicate')}
-              onDelete={() => handleContextMenuAction('delete')}
-            />
-          </div>
+      <Show when={shareStatus()}>
+        {(status) => (
+          <span
+            class="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-floating"
+            classList={{
+              'bg-emerald-500': status() === 'copied',
+              'bg-rose-500': status() === 'error',
+            }}
+          >
+            {status() === 'copied' ? 'Link copied to clipboard' : 'Unable to copy link'}
+          </span>
         )}
       </Show>
-      <div
-        class="absolute right-0 top-0 z-40 h-full w-[360px]"
-        classList={{ 'pointer-events-none': !drawerOpen() }}
-      >
-        <Motion.div
-          class="h-full border-l border-slate-200/70 bg-white shadow-xl"
-          initial={{ x: 360, opacity: 0 }}
-          animate={{ x: drawerOpen() ? 0 : 360, opacity: drawerOpen() ? 1 : 0.4 }}
-          transition={{ duration: 0.2, easing: [0.16, 1, 0.3, 1] }}
-          ref={(el) => (drawerContainerRef = el)}
-        >
-          <Show when={drawerNode()}>
-            {(node) => (
-              (() => {
-                const selected = node();
-                const lookup = nodeLookup();
-                const outbound = flows()
-                  .filter((flow) => flow.sourceId === selected.id)
-          .map((flow) => ({
-            id: flow.id,
-            partnerNodeId: flow.targetId,
-            partnerLabel: lookup.get(flow.targetId)?.label ?? 'Unknown',
-            hasRule: Boolean(flow.ruleId),
-            tag: flow.tag,
-          }));
-                    const inbound = flows()
-                      .filter((flow) => flow.targetId === selected.id)
-                      .map((flow) => ({
-                        id: flow.id,
-                        partnerNodeId: flow.sourceId,
-                        partnerLabel: lookup.get(flow.sourceId)?.label ?? 'Unknown',
-                        hasRule: Boolean(flow.ruleId),
-                        tag: flow.tag,
-                      }));
-                const rule = rulesBySource().get(selected.id) ?? null;
-                const allocationDetails = rule
-                  ? rule.allocations.map((alloc) => ({
-                      id: alloc.id,
-                      percentage: alloc.percentage,
-                      targetLabel: lookup.get(alloc.targetNodeId)?.label ?? 'Unknown',
-                      targetNodeId: alloc.targetNodeId,
-                    }))
-                  : [];
-                const allocationStatus = allocationStatuses().get(selected.id) ?? null;
-                return (
-                  <NodeDrawer
-                    open={drawerOpen()}
-                    node={node()}
-                    nodes={graph.nodes}
-                    onClose={() => setDrawerNodeId(null)}
-                    outbound={outbound}
-                    inbound={inbound}
-                    allocations={allocationDetails}
-                    allocationStatus={allocationStatus}
-                    initialRule={rule}
-                    onSaveRule={(ruleDraft) => {
-                      const fallbackId = `rule-${createId()}`;
-                      const ruleId = ruleDraft.id ?? rulesBySource().get(ruleDraft.sourceNodeId)?.id ?? fallbackId;
-                      const record: RuleRecord = {
-                        id: ruleId,
-                        sourceNodeId: ruleDraft.sourceNodeId,
-                        trigger: ruleDraft.trigger,
-                        triggerNodeId: ruleDraft.triggerNodeId ?? ruleDraft.sourceNodeId,
-                        allocations: ruleDraft.allocations.map((alloc) => ({ ...alloc })),
-                      };
-                      setRules((existing) => [
-                        ...existing.filter((r) => r.sourceNodeId !== ruleDraft.sourceNodeId),
-                        record,
-                      ]);
-                      setGraph('flows', (flows) => {
-                        const targets = new Set(ruleDraft.allocations.map((alloc) => alloc.targetNodeId));
-                        const next = flows
-                          .map((flow) => {
-                            if (flow.sourceId !== ruleDraft.sourceNodeId) return flow;
-                            if (targets.has(flow.targetId)) {
-                              return {
-                                ...flow,
-                                ruleId,
-                                tag: flow.tag ?? 'Flow',
-                              };
-                            }
-                            if (flow.ruleId === ruleId) {
-                              return null;
-                            }
-                            return flow.ruleId ? null : flow;
-                          })
-                          .filter((flow): flow is CanvasFlow => flow !== null);
+    </>
+  );
 
-                        targets.forEach((targetId) => {
-                          const existingFlow = next.find(
-                            (flow) => flow.sourceId === ruleDraft.sourceNodeId && flow.targetId === targetId,
-                          );
-                          if (!existingFlow) {
-                            next.push({
-                              id: `flow-${createId()}`,
-                              sourceId: ruleDraft.sourceNodeId,
-                              targetId,
-                              ruleId,
-                              tag: 'Flow',
-                            });
-                          }
-                        });
+  const contextMenuOverlay = (
+    <Show when={contextMenu()}>
+      {(menu) => (
+        <div class="absolute z-30" style={{ left: `${menu().x}px`, top: `${menu().y}px` }}>
+          <NodeContextMenu
+            onOpenDrawer={() => handleContextMenuAction('details')}
+            onDuplicate={() => handleContextMenuAction('duplicate')}
+            onDelete={() => handleContextMenuAction('delete')}
+          />
+        </div>
+      )}
+    </Show>
+  );
 
-                        return next;
-                      });
-                      pushHistory();
-                    }}
-                    onUpdateBalance={updateNodeBalance}
-                    onUpdateInflow={updateNodeInflow}
-                    onUpdatePodType={updateNodePodType}
-                    onUpdateReturnRate={updateNodeReturnRate}
-                  />
-                );
-              })()
-            )}
-          </Show>
-        </Motion.div>
-      </div>
-      <BottomDock
-        onAddIncome={handleAddIncome}
-        onAddAccount={handleAddAccount}
-        onAddPod={handleAddPod}
-        onStartFlow={handleStartFlow}
-      />
-      <ZoomPad
-        zoomPercent={scalePercent()}
-        onZoomIn={() => viewportControls?.zoomIn()}
-        onZoomOut={() => viewportControls?.zoomOut()}
-        onReset={() => viewportControls?.reset()}
-      />
-      <SimulationPanel
-        open={simulationPanelOpen}
-        result={simulationResult}
-        settings={simulationSettings}
-        horizonOptions={simulationHorizonOptions}
-        onRun={runSimulation}
-        onClose={clearSimulation}
-        getNodeLabel={(id) => nodeLookup().get(id)?.label ?? 'Unknown node'}
-      />
+  const drawerPanel = (
+    <CanvasDrawerPanel
+      open={drawerOpen}
+      node={drawerNode}
+      nodes={() => graph.nodes}
+      flows={flows}
+      nodeLookup={nodeLookup}
+      allocationStatuses={allocationStatuses}
+      rulesBySource={rulesBySource}
+      registerContainer={(el) => (drawerContainerRef = el)}
+      onClose={() => setDrawerNodeId(null)}
+      onSaveRule={handleSaveRule}
+      onUpdateBalance={updateNodeBalance}
+      onUpdateInflow={updateNodeInflow}
+      onUpdatePodType={updateNodePodType}
+      onUpdateReturnRate={updateNodeReturnRate}
+    />
+  );
+
+  const bottomDockSection = (
+    <BottomDock
+      onAddIncome={handleAddIncome}
+      onAddAccount={handleAddAccount}
+      onAddPod={handleAddPod}
+      onStartFlow={handleStartFlow}
+    />
+  );
+
+  const zoomPadControl = (
+    <ZoomPad
+      zoomPercent={scalePercent()}
+      onZoomIn={() => viewportControls?.zoomIn()}
+      onZoomOut={() => viewportControls?.zoomOut()}
+      onReset={() => viewportControls?.reset()}
+    />
+  );
+
+  const simulationPanelSection = (
+    <SimulationPanel
+      open={simulationPanelOpen}
+      result={simulationResult}
+      settings={simulationSettings}
+      horizonOptions={simulationHorizonOptions}
+      onRun={runSimulation}
+      onClose={clearSimulation}
+      getNodeLabel={(id) => nodeLookup().get(id)?.label ?? 'Unknown node'}
+    />
+  );
+
+  const modals = (
+    <>
       <IncomeSourceModal
         open={createModal() === 'income'}
         onClose={() => setCreateModal(null)}
@@ -1908,7 +1647,24 @@ function resetGraphState() {
           if (id) setDrawerNodeId(id);
         }}
       />
-    </div>
+    </>
+  );
+
+  return (
+    <CanvasScene
+      drawerOpen={drawerOpen}
+      simulationPanelOpen={simulationPanelOpen}
+      toolbar={toolbar}
+      viewport={viewport}
+      heroOverlay={heroOverlay}
+      topRight={topRight}
+      contextMenu={contextMenuOverlay}
+      drawer={drawerPanel}
+      bottomDock={bottomDockSection}
+      zoomPad={zoomPadControl}
+      simulationPanel={simulationPanelSection}
+      modals={modals}
+    />
   );
 };
 

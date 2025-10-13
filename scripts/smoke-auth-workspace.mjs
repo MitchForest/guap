@@ -2,7 +2,8 @@
 
 /**
  * Smoke test: sign in (or sign up) via Better Auth, obtain a Convex access token,
- * ensure a workspace exists, publish a minimal graph, and verify the persisted record.
+ * ensure the Money Map exists for the active organization, publish a minimal graph,
+ * and verify the persisted record.
  *
  * Requires a running backend with Better Auth + Convex and the following env vars:
  *   SMOKE_AUTH_URL            → Better Auth HTTP endpoint (e.g. http://localhost:3000)
@@ -216,30 +217,39 @@ async function fetchConvexToken() {
   return data.data.token;
 }
 
-function createWorkspacePayload(slug) {
+function createMoneyMapPayload({ organizationId, name }) {
   const now = Date.now();
+  const incomeId = `income-smoke-${now}`;
+  const accountId = `account-smoke-${now}`;
+
   return {
-    slug,
+    organizationId,
+    name,
     nodes: [
       {
-        clientId: 'income-smoke',
-        type: 'income',
+        key: incomeId,
+        kind: 'income',
         label: `Smoke Income ${now}`,
-        position: { x: 0, y: 0 },
+        metadata: {
+          id: incomeId,
+          position: { x: 0, y: 0 },
+        },
       },
       {
-        clientId: 'account-smoke',
-        type: 'account',
+        key: accountId,
+        kind: 'account',
         label: `Smoke Account ${now}`,
-        position: { x: 240, y: 0 },
+        metadata: {
+          id: accountId,
+          position: { x: 280, y: 0 },
+        },
       },
     ],
     edges: [
       {
-        clientId: 'edge-smoke',
-        sourceClientId: 'income-smoke',
-        targetClientId: 'account-smoke',
-        kind: 'manual',
+        sourceKey: incomeId,
+        targetKey: accountId,
+        metadata: {},
       },
     ],
     rules: [],
@@ -259,24 +269,34 @@ async function main() {
     console.log('🔑 Using Convex JWT from cookie…');
   }
 
-  const slug = `smoke-${Date.now()}`;
   const client = new ConvexHttpClient(convexBase);
   client.setAuth(token);
 
-  console.log(`🛠️  Ensuring workspace '${slug}'…`);
-  await client.mutation('workspaces:ensure', { slug, name: `Smoke Workspace ${slug}` });
+  console.log('📡 Fetching active organization…');
+  const authUser = await client.query('auth:getCurrentAuthUser', {});
+  const organizationId =
+    authUser?.session?.user?.activeOrganizationId ??
+    authUser?.session?.user?.organizationId ??
+    authUser?.user?.activeOrganizationId ??
+    authUser?.user?.organizationId ??
+    null;
 
-  console.log('🧭 Publishing minimal graph…');
-  const publishPayload = createWorkspacePayload(slug);
-  await client.mutation('graph:publish', publishPayload);
-
-  console.log('🔎 Verifying workspace persisted…');
-  const workspace = await client.query('workspaces:getBySlug', { slug });
-  if (!workspace) {
-    throw new Error('Workspace not found after publish');
+  if (!organizationId) {
+    throw new Error('Active organization not found in Better Auth session');
   }
 
-  console.log(`🎉 Smoke test complete. Workspace ${workspace._id} (${workspace.slug}) verified.`);
+  const mapName = `Smoke Money Map ${Date.now()}`;
+  console.log(`🧭 Publishing minimal Money Map for organization ${organizationId}…`);
+  const publishPayload = createMoneyMapPayload({ organizationId, name: mapName });
+  await client.mutation('moneyMaps:save', publishPayload);
+
+  console.log('🔎 Verifying Money Map persisted…');
+  const snapshot = await client.query('moneyMaps:load', { organizationId });
+  if (!snapshot || !snapshot.map) {
+    throw new Error('Money Map not found after publish');
+  }
+
+  console.log(`🎉 Smoke test complete. Money Map ${snapshot.map._id} verified.`);
 }
 
 main().catch((error) => {

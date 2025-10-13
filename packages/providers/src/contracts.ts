@@ -45,7 +45,7 @@ export const ProviderUserSchema = z.object({
   providerUserId: z.string(),
   displayName: z.string(),
   email: z.string().email().optional(),
-  role: UserRoleSchema.default('child'),
+  role: UserRoleSchema.default('member'),
   metadata: z.record(z.string(), z.any()).optional(),
 });
 

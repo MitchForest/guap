@@ -7,6 +7,7 @@ type SessionInfo = {
   role: string | null;
   activeOrganizationId: string | null;
   profileId: string | null;
+  userId?: string | null;
 };
 
 const extractValue = (value: unknown, key: string): any => {
@@ -40,11 +41,42 @@ export const getSessionInfo = async (ctx: GenericCtx<DataModel>): Promise<Sessio
     extractValue(baseUser, 'profileId') ??
     null;
 
+  const userId =
+    extractValue(sessionUser, 'id') ??
+    extractValue(sessionUser, 'userId') ??
+    extractValue(baseUser, 'id') ??
+    extractValue(baseUser, 'userId') ??
+    null;
+
+  let resolvedRole = typeof role === 'string' ? role : null;
+  const canonicalRoles = new Set(['owner', 'admin', 'member']);
+
+  if (
+    (!resolvedRole || !canonicalRoles.has(resolvedRole)) &&
+    activeOrganizationId &&
+    userId &&
+    'db' in ctx
+  ) {
+    try {
+      const memberships = await (ctx.db as any)
+        .query('member')
+        .withIndex('userId', (q: any) => q.eq('userId', userId))
+        .collect();
+      const match = memberships.find((entry: any) => entry.organizationId === activeOrganizationId);
+      if (match && typeof match.role === 'string' && canonicalRoles.has(match.role)) {
+        resolvedRole = match.role;
+      }
+    } catch (error) {
+      console.warn('Failed to resolve membership role from Better Auth', error);
+    }
+  }
+
   return {
     authUser,
-    role: typeof role === 'string' ? role : null,
+    role: resolvedRole && canonicalRoles.has(resolvedRole) ? resolvedRole : null,
     activeOrganizationId: typeof activeOrganizationId === 'string' ? activeOrganizationId : null,
     profileId: typeof profileId === 'string' ? profileId : null,
+    userId: typeof userId === 'string' ? userId : null,
   };
 };
 

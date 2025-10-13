@@ -12,7 +12,7 @@ const SignUpPage: Component = () => {
   const { signUp, isAuthenticated, isLoading } = useAuth();
   const [name, setName] = createSignal('');
   const [email, setEmail] = createSignal('');
-  const [role, setRole] = createSignal<UserRole>('child');
+  const [role, setRole] = createSignal<UserRole>('member');
   const [organizationName, setOrganizationName] = createSignal('');
   const [organizationKind, setOrganizationKind] = createSignal<OrganizationKind>('family');
   const [agreedToTerms, setAgreedToTerms] = createSignal(false);
@@ -27,7 +27,7 @@ const SignUpPage: Component = () => {
 
   createEffect(() => {
     const currentRole = role();
-    if (currentRole !== 'guardian') {
+    if (currentRole !== 'owner') {
       setOrganizationName('');
     }
   });
@@ -58,10 +58,10 @@ const SignUpPage: Component = () => {
         role: currentRole,
       };
 
-      if (currentRole === 'guardian') {
+      if (currentRole === 'owner') {
         const orgName = organizationName().trim();
         if (!orgName) {
-          setError('Organization name is required for guardians');
+          setError('Organization name is required for household owners');
           return;
         }
         payload.organizationName = orgName;
@@ -139,12 +139,12 @@ const SignUpPage: Component = () => {
                   value={role()}
                   onChange={(event) => setRole(event.currentTarget.value as UserRole)}
                 >
-                  <option value="child">Child</option>
-                  <option value="guardian">Parent / Guardian</option>
+                  <option value="member">Child</option>
+                  <option value="owner">Parent / Guardian</option>
                 </select>
             </div>
 
-              {role() === 'guardian' && (
+              {role() === 'owner' && (
                 <div class="space-y-4 rounded-2xl bg-slate-50 p-4">
                   <div class="space-y-2">
                     <label class="text-sm font-medium text-slate-700">Organization name</label>
@@ -169,8 +169,8 @@ const SignUpPage: Component = () => {
                     </select>
                   </div>
                   <p class="text-sm text-slate-500">
-                    We'll generate a short organization ID and access code so you can invite guardians
-                    and children after you confirm your email.
+                    We'll generate a short organization ID and access code so you can invite admins
+                    and members after you confirm your email.
                   </p>
                 </div>
               )}

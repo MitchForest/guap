@@ -1,8 +1,8 @@
 import { z } from 'zod';
-export const UserRoleValues = ['guardian', 'child'] as const;
+export const UserRoleValues = ['owner', 'admin', 'member'] as const;
 export const UserRoleSchema = z.enum(UserRoleValues);
 
-export const MembershipRoleValues = ['guardian', 'child'] as const;
+export const MembershipRoleValues = ['owner', 'admin', 'member'] as const;
 export const MembershipRoleSchema = z.enum(MembershipRoleValues);
 
 export const MembershipStatusValues = ['active', 'invited', 'pending'] as const;
@@ -232,6 +232,7 @@ export const WorkspacePublishEdgeSchema = z.object({
   targetClientId: z.string(),
   kind: z.enum(['manual', 'automation']).optional(),
   ruleClientId: z.string().optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const WorkspacePublishRuleSchema = z.object({
@@ -266,7 +267,7 @@ export const MoneyMapNodeKindSchema = z.enum(MoneyMapNodeKindValues);
 export const MoneyMapRuleTriggerValues = ['incoming', 'scheduled'] as const;
 export const MoneyMapRuleTriggerSchema = z.enum(MoneyMapRuleTriggerValues);
 
-export const MoneyMapChangeStatusValues = ['draft', 'awaiting_guardian', 'approved', 'rejected'] as const;
+export const MoneyMapChangeStatusValues = ['draft', 'awaiting_admin', 'approved', 'rejected'] as const;
 export const MoneyMapChangeStatusSchema = z.enum(MoneyMapChangeStatusValues);
 
 export const MoneyMapRecordSchema = z.object({
@@ -295,7 +296,7 @@ export const MoneyMapNodeMetadataSchema = z.object({
     .optional(),
   position: WorkspaceNodePositionSchema.optional(),
   returnRate: z.number().nullable().optional(),
-}).passthrough();
+});
 
 export const MoneyMapNodeRecordSchema = z.object({
   _id: z.string(),
@@ -316,7 +317,7 @@ export const MoneyMapEdgeMetadataSchema = z
     tag: z.string().nullable().optional(),
     note: z.string().nullable().optional(),
   })
-  .passthrough();
+  .strict();
 
 export const MoneyMapEdgeRecordSchema = z.object({
   _id: z.string(),
@@ -342,7 +343,7 @@ export const MoneyMapRuleConfigSchema = z
       )
       .optional(),
   })
-  .passthrough();
+  .strict();
 
 export const MoneyMapRuleRecordSchema = z.object({
   _id: z.string(),
@@ -352,6 +353,34 @@ export const MoneyMapRuleRecordSchema = z.object({
   config: MoneyMapRuleConfigSchema,
   createdAt: z.number(),
   updatedAt: z.number(),
+});
+
+export const MoneyMapSaveNodeInputSchema = z.object({
+  key: z.string(),
+  kind: MoneyMapNodeKindSchema,
+  label: z.string(),
+  metadata: MoneyMapNodeMetadataSchema.optional(),
+});
+
+export const MoneyMapSaveEdgeInputSchema = z.object({
+  sourceKey: z.string(),
+  targetKey: z.string(),
+  metadata: MoneyMapEdgeMetadataSchema.optional(),
+});
+
+export const MoneyMapSaveRuleInputSchema = z.object({
+  key: z.string(),
+  trigger: MoneyMapRuleTriggerSchema,
+  config: MoneyMapRuleConfigSchema,
+});
+
+export const MoneyMapSaveInputSchema = z.object({
+  organizationId: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  nodes: z.array(MoneyMapSaveNodeInputSchema),
+  edges: z.array(MoneyMapSaveEdgeInputSchema),
+  rules: z.array(MoneyMapSaveRuleInputSchema),
 });
 
 export const MoneyMapSnapshotSchema = z.object({
@@ -368,7 +397,7 @@ export const MoneyMapChangeRequestRecordSchema = z.object({
   submitterId: z.string(),
   status: MoneyMapChangeStatusSchema,
   summary: z.string().optional(),
-  payload: z.record(z.string(), z.any()),
+  payload: MoneyMapSaveInputSchema,
   createdAt: z.number(),
   resolvedAt: z.number().optional(),
   updatedAt: z.number(),

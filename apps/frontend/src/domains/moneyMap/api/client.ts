@@ -3,23 +3,23 @@ import {
   workspaceGraphFromSnapshot,
   type MoneyMapChangeRequestRecord,
   type MoneyMapChangeStatus,
-  type MoneyMapSnapshot,
   type WorkspaceGraphDraft,
 } from '@guap/api';
 import { guapApi } from '~/services/guapApi';
+import {
+  clearMoneyMapSnapshotCache,
+  getMoneyMapSnapshot,
+  loadMoneyMapSnapshot,
+  organizationIdFor,
+  setMoneyMapSnapshot,
+} from './cache';
 
-const snapshotCache = new Map<string, MoneyMapSnapshot | null>();
-
-const organizationIdFor = (householdId: string) => householdId;
-
-export const clearMoneyMapCache = () => {
-  snapshotCache.clear();
-};
+export const clearMoneyMapCache = clearMoneyMapSnapshotCache;
 
 export const loadMoneyMapGraph = async (householdId: string) => {
-  const organizationId = organizationIdFor(householdId);
-  const snapshot = await guapApi.loadMoneyMap(organizationId);
-  snapshotCache.set(householdId, snapshot ?? null);
+  const snapshot = await loadMoneyMapSnapshot(householdId, (organizationId) =>
+    guapApi.loadMoneyMap(organizationId),
+  );
   return {
     snapshot: snapshot ?? null,
     graph: workspaceGraphFromSnapshot(snapshot ?? null),
@@ -31,7 +31,7 @@ export const saveMoneyMapGraph = async (params: {
   draft: WorkspaceGraphDraft;
 }) => {
   const { householdId, draft } = params;
-  const snapshot = snapshotCache.get(householdId) ?? null;
+  const snapshot = getMoneyMapSnapshot(householdId);
   const organizationId = organizationIdFor(householdId);
 
   const payload = createMoneyMapSaveInput({
@@ -43,7 +43,7 @@ export const saveMoneyMapGraph = async (params: {
   });
 
   const result = await guapApi.saveMoneyMap(payload);
-  snapshotCache.set(householdId, result);
+  setMoneyMapSnapshot(householdId, result);
 
   return {
     snapshot: result,
@@ -58,7 +58,7 @@ export const submitMoneyMapChangeRequest = async (params: {
   summary?: string;
 }) => {
   const { householdId, submitterId, draft, summary } = params;
-  const snapshot = snapshotCache.get(householdId);
+  const snapshot = getMoneyMapSnapshot(householdId);
   if (!snapshot) {
     throw new Error('No Money Map snapshot available for submission.');
   }

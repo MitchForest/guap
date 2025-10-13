@@ -46,7 +46,7 @@ const previousResult: ProviderSyncResult = {
     {
       providerUserId: 'user-1',
       displayName: 'Guardian One',
-      role: 'guardian',
+      role: 'admin',
     },
   ],
 };
@@ -88,12 +88,12 @@ describe('diffProviderSync', () => {
         {
           providerUserId: 'user-1',
           displayName: 'Guardian One',
-          role: 'guardian',
+          role: 'admin',
         },
         {
           providerUserId: 'user-2',
           displayName: 'Child Two',
-          role: 'child',
+          role: 'member',
         },
       ],
     };

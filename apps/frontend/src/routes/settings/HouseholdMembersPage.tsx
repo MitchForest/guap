@@ -7,7 +7,7 @@ import { useAuth } from '~/contexts/AuthContext';
 import { toast } from 'solid-sonner';
 import { authClient } from '~/lib/authClient';
 import type { MembershipRecord, ProfileRecord } from '@guap/api';
-import { MembershipRecordSchema, ProfileRecordSchema } from '@guap/types';
+import { MembershipRecordSchema, ProfileRecordSchema, UserRoleSchema } from '@guap/types';
 
 const HouseholdMembersPage: Component = () => {
   const { activeHousehold } = useAppData();
@@ -27,6 +27,11 @@ const HouseholdMembersPage: Component = () => {
       const dataset = Array.isArray(result.data) ? result.data : [];
       return dataset
         .map((entry: Record<string, unknown>) => {
+          const rawRole =
+            typeof entry.role === 'string' ? (entry.role as string) : 'member';
+          const parsedRole = UserRoleSchema.safeParse(rawRole);
+          const normalizedRole = parsedRole.success ? parsedRole.data : 'member';
+
           const userInfo = ProfileRecordSchema.pick({
             _id: true,
             displayName: true,
@@ -41,7 +46,7 @@ const HouseholdMembersPage: Component = () => {
               _id: String(entry.profileId ?? entry.userId ?? ''),
               displayName: String(entry.name ?? entry.displayName ?? ''),
               email: entry.email ? String(entry.email) : undefined,
-              role: entry.role === 'admin' ? 'guardian' : 'child',
+              role: normalizedRole,
               authId: String(entry.userId ?? ''),
             });
 
@@ -53,7 +58,7 @@ const HouseholdMembersPage: Component = () => {
               membershipId: z.string().optional(),
             })
             .safeParse({
-              role: entry.role === 'admin' ? 'guardian' : 'child',
+              role: normalizedRole,
               status: 'active',
               membershipId: entry.memberId ? String(entry.memberId) : undefined,
             });
@@ -113,7 +118,9 @@ const HouseholdMembersPage: Component = () => {
   const [submitting, setSubmitting] = createSignal(false);
 
   const canManage = createMemo(() => {
-    if (user()?.role === 'child') return false;
+    const currentRole = user()?.role;
+    if (!currentRole) return false;
+    if (currentRole === 'member') return false;
     return Boolean(linkedOrganizationId());
   });
 
@@ -174,7 +181,9 @@ const HouseholdMembersPage: Component = () => {
     <div class="space-y-8">
       <header class="space-y-2">
         <h1 class="text-2xl font-bold text-slate-900">Household members</h1>
-        <p class="text-sm text-slate-600">Manage the guardians and children who can collaborate on this money map.</p>
+        <p class="text-sm text-slate-600">
+          Manage the admins and members who can collaborate on this money map.
+        </p>
       </header>
 
       <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -200,12 +209,12 @@ const HouseholdMembersPage: Component = () => {
       </section>
 
       <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Invite someone</h2>
+        <h2 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Invite admins or members</h2>
         <Show
           when={canManage()}
           fallback={
             <p class="mt-3 text-sm text-slate-500">
-              Link this household to an organization (and sign in as a guardian/admin) to send invitations.
+              Link this household to an organization (and sign in as an owner or admin) to send invitations.
             </p>
           }
         >
@@ -218,7 +227,7 @@ const HouseholdMembersPage: Component = () => {
                 value={inviteEmail()}
                 onInput={(event) => setInviteEmail(event.currentTarget.value)}
                 class="h-12 rounded-2xl border border-slate-300 text-base placeholder:text-slate-400 focus:border-slate-900"
-                  placeholder="child@family.com"
+                  placeholder="member@family.com"
               />
             </div>
             <div class="space-y-2">

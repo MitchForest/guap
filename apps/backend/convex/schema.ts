@@ -18,24 +18,19 @@ const moneyMapChangeStatus = v.union(
   ...MoneyMapChangeStatusValues.map((value) => v.literal(value))
 );
 
-const nullableString = v.union(v.literal(null), v.string());
-
-const moneyMapNodeMetadata = v.object({
+const moneyMapNodeMetadata = v.optional(v.object({
   id: v.optional(v.string()),
-  category: v.optional(nullableString),
-  parentId: v.optional(nullableString),
-  podType: v.optional(v.union(v.literal('goal'), v.literal('category'), v.literal('envelope'), v.literal('custom'), v.literal(null))),
-  icon: v.optional(nullableString),
-  accent: v.optional(nullableString),
-  balanceCents: v.optional(v.union(v.number(), v.literal(null))),
+  category: v.optional(v.string()),
+  parentId: v.optional(v.string()),
+  podType: v.optional(v.union(v.literal('goal'), v.literal('category'), v.literal('envelope'), v.literal('custom'))),
+  icon: v.optional(v.string()),
+  accent: v.optional(v.string()),
+  balanceCents: v.optional(v.number()),
   inflow: v.optional(
-    v.union(
-      v.literal(null),
-      v.object({
-        amount: v.number(),
-        cadence: v.union(v.literal('monthly'), v.literal('weekly'), v.literal('daily')),
-      })
-    )
+    v.object({
+      amount: v.number(),
+      cadence: v.union(v.literal('monthly'), v.literal('weekly'), v.literal('daily')),
+    })
   ),
   position: v.optional(
     v.object({
@@ -43,21 +38,21 @@ const moneyMapNodeMetadata = v.object({
       y: v.number(),
     })
   ),
-  returnRate: v.optional(v.union(v.number(), v.literal(null))),
-}).optional();
+  returnRate: v.optional(v.number()),
+}));
 
-const moneyMapEdgeMetadata = v.object({
+const moneyMapEdgeMetadata = v.optional(v.object({
   id: v.optional(v.string()),
-  ruleId: v.optional(nullableString),
-  amountCents: v.optional(v.union(v.number(), v.literal(null))),
-  tag: v.optional(nullableString),
-  note: v.optional(nullableString),
-}).optional();
+  ruleId: v.optional(v.string()),
+  amountCents: v.optional(v.number()),
+  tag: v.optional(v.string()),
+  note: v.optional(v.string()),
+}));
 
 const moneyMapRuleConfig = v.object({
   ruleId: v.optional(v.string()),
   sourceNodeId: v.optional(v.string()),
-  triggerNodeId: v.optional(nullableString),
+  triggerNodeId: v.optional(v.string()),
   allocations: v.optional(
     v.array(
       v.object({

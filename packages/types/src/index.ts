@@ -24,6 +24,10 @@ import {
   MoneyMapRuleRecordSchema,
   MoneyMapRuleConfigSchema,
   MoneyMapRuleTriggerSchema,
+  MoneyMapSaveNodeInputSchema,
+  MoneyMapSaveEdgeInputSchema,
+  MoneyMapSaveRuleInputSchema,
+  MoneyMapSaveInputSchema,
   MoneyMapSnapshotSchema,
   OrganizationKindSchema,
   ProfileRecordSchema,
@@ -95,5 +99,9 @@ export type MoneyMapChangeRequestRecord = typeof MoneyMapChangeRequestRecordSche
 export type MoneyMapNodeMetadata = typeof MoneyMapNodeMetadataSchema._type;
 export type MoneyMapEdgeMetadata = typeof MoneyMapEdgeMetadataSchema._type;
 export type MoneyMapRuleConfig = typeof MoneyMapRuleConfigSchema._type;
+export type MoneyMapSaveNodeInput = typeof MoneyMapSaveNodeInputSchema._type;
+export type MoneyMapSaveEdgeInput = typeof MoneyMapSaveEdgeInputSchema._type;
+export type MoneyMapSaveRuleInput = typeof MoneyMapSaveRuleInputSchema._type;
+export type MoneyMapSaveInput = typeof MoneyMapSaveInputSchema._type;
 export type BetterAuthSession = z.infer<typeof BetterAuthSessionSchema>;
 export type BetterAuthSessionUser = z.infer<typeof BetterAuthSessionUserSchema>;

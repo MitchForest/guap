@@ -17,10 +17,14 @@ const ROLE_STORAGE_KEY = 'guap:user-role';
 
 const RoleProvider: Component<RoleProviderProps> = (props) => {
   const storedRole =
-    typeof window !== 'undefined'
-      ? (window.localStorage.getItem(ROLE_STORAGE_KEY) as UserRole | null)
-      : null;
-  const [role, setRole] = createSignal<UserRole>(props.initialRole ?? storedRole ?? 'child');
+    typeof window !== 'undefined' ? window.localStorage.getItem(ROLE_STORAGE_KEY) : null;
+  const validRoles: ReadonlyArray<UserRole> = ['owner', 'admin', 'member'];
+  const initialRole =
+    props.initialRole ??
+    (storedRole && (validRoles as ReadonlyArray<string>).includes(storedRole)
+      ? (storedRole as UserRole)
+      : 'member');
+  const [role, setRole] = createSignal<UserRole>(initialRole);
 
   const updateRole = (next: UserRole) => {
     setRole(next);

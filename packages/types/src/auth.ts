@@ -6,7 +6,7 @@ export const BetterAuthSessionUserSchema = z
     id: z.string(),
     email: z.string().email().optional(),
     name: z.string().optional(),
-    role: UserRoleSchema.optional(),
+    role: z.union([UserRoleSchema, z.literal('user')]).optional(),
     activeOrganizationId: z.string().optional(),
     organizationId: z.string().optional(),
     organizationMembershipId: z.string().optional(),
@@ -26,4 +26,3 @@ export const BetterAuthSessionSchema = z
       .optional(),
   })
   .passthrough();
-

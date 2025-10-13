@@ -9,6 +9,14 @@ import {
   type WorkspaceRecord,
 } from '@guap/api';
 import { guapApi } from '~/services/guapApi';
+import {
+  clearMoneyMapSnapshotCache,
+  getOrLoadMoneyMapSnapshot,
+  invalidateMoneyMapSnapshot,
+  organizationIdFor,
+  registerMoneyMapSlugs,
+  setMoneyMapSnapshot,
+} from '~/domains/moneyMap/api/cache';
 
 export type { WorkspaceGraphDraft } from '@guap/api';
 
@@ -18,40 +26,9 @@ type VariantKey = `${string}:${WorkspaceVariant}`;
 let lastHouseholdId: string | null = null;
 
 const variantCache = new Map<VariantKey, WorkspaceRecord | null>();
-const snapshotCache = new Map<string, MoneyMapSnapshot | null>();
 
 const cacheKey = (householdId: string, variant: WorkspaceVariant): VariantKey =>
   `${householdId}:${variant}`;
-
-const slugify = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)+/g, '') || 'money-map';
-
-const registerSlugs = (householdId: string, snapshot: MoneyMapSnapshot | null) => {
-  const base = slugify(snapshot?.map?.name ?? householdId);
-  const liveSlug = `${base}-live`;
-  const draftSlug = `${base}-draft`;
-  return { liveSlug, draftSlug };
-};
-
-const organizationIdFor = (householdId: string) => householdId;
-
-const loadSnapshot = async (householdId: string) => {
-  const organizationId = organizationIdFor(householdId);
-  const result = await guapApi.loadMoneyMap(organizationId);
-  snapshotCache.set(householdId, result ?? null);
-  return result ?? null;
-};
-
-const getSnapshot = async (householdId: string) => {
-  if (snapshotCache.has(householdId)) {
-    return snapshotCache.get(householdId) ?? null;
-  }
-  return await loadSnapshot(householdId);
-};
 
 const toWorkspaceRecord = (
   householdId: string,
@@ -77,7 +54,7 @@ const toWorkspaceRecord = (
 
 export const clearWorkspaceCache = () => {
   variantCache.clear();
-  snapshotCache.clear();
+  clearMoneyMapSnapshotCache();
 };
 
 export async function ensureWorkspacePair(params: {
@@ -95,15 +72,17 @@ export async function ensureWorkspacePair(params: {
     edges: [],
     rules: [],
   });
-  snapshotCache.delete(params.householdId);
+  invalidateMoneyMapSnapshot(params.householdId);
   variantCache.delete(cacheKey(params.householdId, 'live'));
   variantCache.delete(cacheKey(params.householdId, 'draft'));
 }
 
 export async function listWorkspaceVariants(householdId: string) {
   lastHouseholdId = householdId;
-  const snapshot = await getSnapshot(householdId);
-  const { liveSlug, draftSlug } = registerSlugs(householdId, snapshot);
+  const snapshot = await getOrLoadMoneyMapSnapshot(householdId, (orgId: string) =>
+    guapApi.loadMoneyMap(orgId),
+  );
+  const { liveSlug, draftSlug } = registerMoneyMapSlugs(householdId, snapshot);
 
   const live = toWorkspaceRecord(householdId, liveSlug, 'live', snapshot);
   const draft = snapshot ? toWorkspaceRecord(householdId, draftSlug, 'draft', snapshot) : null;
@@ -125,8 +104,10 @@ export async function getWorkspace(slug: string): Promise<WorkspaceRecord | null
     return null;
   }
 
-  const snapshot = await getSnapshot(lastHouseholdId);
-  const { liveSlug, draftSlug } = registerSlugs(lastHouseholdId, snapshot);
+  const snapshot = await getOrLoadMoneyMapSnapshot(lastHouseholdId, (orgId: string) =>
+    guapApi.loadMoneyMap(orgId),
+  );
+  const { liveSlug, draftSlug } = registerMoneyMapSlugs(lastHouseholdId, snapshot);
   const live = toWorkspaceRecord(lastHouseholdId, liveSlug, 'live', snapshot);
   const draft = snapshot ? toWorkspaceRecord(lastHouseholdId, draftSlug, 'draft', snapshot) : null;
 
@@ -146,8 +127,10 @@ export async function getWorkspaceVariant(
   if (variantCache.has(key)) {
     return variantCache.get(key) ?? null;
   }
-  const snapshot = await getSnapshot(householdId);
-  const { liveSlug, draftSlug } = registerSlugs(householdId, snapshot);
+  const snapshot = await getOrLoadMoneyMapSnapshot(householdId, (orgId: string) =>
+    guapApi.loadMoneyMap(orgId),
+  );
+  const { liveSlug, draftSlug } = registerMoneyMapSlugs(householdId, snapshot);
   const record =
     variant === 'draft' && snapshot
       ? toWorkspaceRecord(householdId, draftSlug, 'draft', snapshot)
@@ -161,7 +144,9 @@ export async function fetchGraph(slug: string): Promise<WorkspaceGraphData> {
   if (!workspace) {
     return { nodes: [], edges: [], rules: [], allocations: [] };
   }
-  const snapshot = await getSnapshot(workspace.householdId);
+  const snapshot = await getOrLoadMoneyMapSnapshot(workspace.householdId, (orgId: string) =>
+    guapApi.loadMoneyMap(orgId),
+  );
   return workspaceGraphFromSnapshot(snapshot);
 }
 
@@ -172,7 +157,9 @@ export async function publishGraph(target: string | WorkspaceRecord, draft: Work
   }
 
   const householdId = workspace.householdId;
-  const snapshot = await getSnapshot(householdId);
+  const snapshot = await getOrLoadMoneyMapSnapshot(householdId, (orgId: string) =>
+    guapApi.loadMoneyMap(orgId),
+  );
   const payload = createMoneyMapSaveInput({
     organizationId: organizationIdFor(householdId),
     draft,
@@ -182,7 +169,7 @@ export async function publishGraph(target: string | WorkspaceRecord, draft: Work
   });
 
   const result = await guapApi.saveMoneyMap(payload);
-  snapshotCache.set(householdId, result);
+  setMoneyMapSnapshot(householdId, result);
   variantCache.delete(cacheKey(householdId, 'live'));
   variantCache.delete(cacheKey(householdId, 'draft'));
 
@@ -250,7 +237,9 @@ export async function submitChangeRequest(params: {
   draft: WorkspaceGraphDraft;
   summary?: string;
 }) {
-  const snapshot = await getSnapshot(params.householdId);
+  const snapshot = await getOrLoadMoneyMapSnapshot(params.householdId, (orgId: string) =>
+    guapApi.loadMoneyMap(orgId),
+  );
   if (!snapshot) {
     throw new Error('No Money Map exists yet for this household');
   }
