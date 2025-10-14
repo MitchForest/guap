@@ -4,22 +4,19 @@ Goal: define the smallest set of persisted models needed to unlock Earn, Save, S
 
 ---
 
-## Immediate TODOs
-
-- [ ] Drop `moneyMapEdges.metadata.note` unless we add a UI surface for flow notes.
-- [ ] Remove unused `moneyMapNodes.by_map_key` and `moneyMapRules.by_map_key` indexes (add back only when needed).
-- [ ] Mirror `moneyMapNodeId` on runtime tables that link to pods/goals (budgets, savingsGoals) and make it required.
-- [ ] Define and seed the transaction category taxonomy shared between Money Map pods and runtime spend analytics.
-- [ ] Document the provider sync workflow that bridges Money Map nodes to `financialAccounts`.
-
----
-
 ## Principles
 
 - Reuse Money Map as the source of truth for household allocations; new tables only store live financial artefacts.
 - Prefer append-only records; derive aggregates at read time instead of denormalising progress metrics.
 - Reference Better Auth profiles (`profileId`) and organizations (`organizationId`) consistently for permissions.
 - Keep provider-specific details inside `packages/providers`; persisted records track only stable identifiers and balances.
+
+## Current Implementation Snapshot
+
+- Convex currently exposes `auth` and `moneyMaps` domains only; the additional domains described below will be added in upcoming milestones.
+- `moneyMapEdges.metadata.note` and the `by_map_key` indexes still exist in Convex and Zod schemas today; migrations will remove them once ready.
+- The shared enums listed in this document have not yet been added to `packages/types/src/shared/enums.ts`; they need to be implemented before the new domains ship.
+- `AppDataProvider` in the frontend still returns mocked data; real queries will replace it when the new APIs are wired.
 
 ## Shared Primitives & Enums
 
@@ -120,7 +117,7 @@ Indexes:
 - `mapId: Id<'moneyMaps'>`
 - `organizationId: string`
 - `submitterId: string`
-- `status: 'draft' | 'awaiting_admin' | 'approved' | 'rejected'`
+- `status: 'awaiting_admin' | 'approved' | 'rejected' | 'withdrawn'`
 - `summary?: string`
 - `payload` (full Money Map draft mirroring the tables above)
 - `createdAt`, `resolvedAt?`, `updatedAt`
@@ -128,6 +125,8 @@ Indexes:
 Indexes:
 - `by_map_status` → `[mapId, status]` (not actively used but keeps moderation queries simple if needed)
 - `by_organization_status` → `[organizationId, status]`
+
+Implementation note: the backend currently queues requests in the `'awaiting_admin'` state. Students can withdraw pending requests (updating the status to `'withdrawn'`), which unlocks the canvas for further edits. Approved requests apply the snapshot immediately; rejected requests leave the proposed state visible so students can adjust and resubmit.
 
 Planning data flows into runtime models through `moneyMapNodeId` links; runtime aggregates never mutate the Money Map tables directly. The creation flow works both ways:
 - When parents sketch the Money Map first, we mint runtime records (`financialAccounts`, `budgets`, `savingsGoals`, etc.) from approved nodes.
@@ -202,6 +201,34 @@ Indexes:
 
 Transfers emit EventsJournal entries when status changes; actual ledger postings create `transactions` rows.
 
+### `transferGuardrails`
+
+Defines which transfers can execute automatically versus requiring parent/admin approval. Guardrails may apply at the organization, Money Map node, or account level.
+
+- `_id: Id<'transferGuardrails'>`
+- `organizationId: string`
+- `scope: { type: 'organization' } | { type: 'money_map_node'; nodeId: Id<'moneyMapNodes'> } | { type: 'account'; accountId: Id<'financialAccounts'> }`
+- `intent: TransferIntent`
+- `direction: { sourceNodeId: string | null; destinationNodeId: string | null }` (Money Map node ids; null for external inflow/outflow)
+- `approvalPolicy: 'auto' | 'parent_required' | 'admin_only'`
+- `autoApproveUpToCents: number | null`
+- `dailyLimitCents: number | null`
+- `weeklyLimitCents: number | null`
+- `allowedInstrumentKinds: Array<'etf' | 'stock' | 'bond' | 'cash'> | null` (invest-specific)
+- `blockedSymbols: string[] | null` (invest-specific)
+- `maxOrderAmountCents: number | null` (invest-specific)
+- `requireApprovalForSell: boolean | null` (invest-specific)
+- `allowedRolesToInitiate: Array<'owner' | 'admin' | 'member'>`
+- `createdByProfileId: string`
+- `createdAt: number`
+- `updatedAt: number`
+
+Indexes:
+- `by_organization_intent`: `[organizationId, intent]`
+- `by_scope_intent`: `[scope.type, intent]`
+
+Guardrails are seeded from Money Map allocations when parents approve a change request and can be adjusted manually in settings. Every transfer request consults the applicable guardrail to decide whether to auto-approve, cap amounts, or require explicit review. Invest orders reuse the same guardrail record via the `invest` intent.
+
 ## Transactions & Categorisation Domain
 
 ### `transactions`
@@ -247,7 +274,7 @@ Household-level auto-categorisation.
 - `lastMatchedAt: number | null`.
 - `moneyMapNodeId: Id<'moneyMapNodes'> | null` (pods/categories that rules map to; null when using global taxonomy without a pod).
 
-Transactions fall back to a default taxonomy when no rule matches. Category taxonomy itself stays static in code for MVP (`@guap/types/shared/categories.ts`) to avoid another table.
+Transactions fall back to a default taxonomy when no rule matches. Default rules cover Money Map pod assignments, merchant prefix matches for known brands, MCC-based fallbacks, and recurrence detection for allowances/subscriptions. Category taxonomy itself stays static in code for MVP (`@guap/types/shared/categories.ts`) to avoid another table, but households can add or reorder rules as needed.
 
 ## Budgets Domain
 
@@ -310,6 +337,7 @@ Allowance, chores, or job definitions.
 - `amount: CurrencyAmount`.
 - `defaultDestinationAccountId: Id<'financialAccounts'> | null`.
 - `requiresApproval: boolean`.
+- `autoSchedule: boolean` (whether payouts are generated automatically per cadence).
 - `status: IncomeStreamStatus`.
 - `nextScheduledAt: number | null`.
 - `lastPaidAt: number | null`.
@@ -317,7 +345,7 @@ Allowance, chores, or job definitions.
 - `createdAt: number`.
 - `updatedAt: number`.
 
-Payout history lives in `transfers` with `intent = 'earn'` referencing `incomeStreamId` inside `metadata`.
+Payout history lives in `transfers` with `intent = 'earn'` referencing `incomeStreamId` inside `metadata`. When `autoSchedule` is true, the earn domain generates transfer drafts on schedule, subject to guardrails.
 
 ## Savings Domain
 
@@ -452,36 +480,14 @@ Index: `by_profile_event`: `[profileId, eventId]`.
 - **Budgets vs Money Map**: Budgets optionally link to Money Map envelope nodes via `moneyMapNodeId`, enabling UI rollups without duplicating structure.
 - **Hero metrics & charts**: Compose from `financialAccounts`, `accountSnapshots`, and `transactions`. Avoid storing computed totals.
 - **Provider sync**: A shared `syncAccounts` mutation writes to `financialAccounts`, `accountSnapshots`, `transactions`, `investmentPositions`, and emits `eventsJournal` entries. Sync health metadata (last run, errors) can remain in memory or log events (`eventKind = 'sync_failed'`) until we need dedicated tables.
+- **Approvals inbox**: Filter `transfers` (and related `investmentOrders`) by `status = 'pending_approval'` with guardrail metadata to power the parent review queue.
+- **Activity feed**: Query `eventsJournal` (optionally joined with `eventReceipts`) for recent events to display household activity timelines and notification badges.
 
 ## Minimality Checklist
 
-- Every new table either backs a required UI surface or enforces approvals/audit.
+- Every new table either backs a required UI experience or enforces approvals/audit.
 - Budgets, goals, and orders reference Money Map nodes or accounts instead of duplicating allocation data.
-- EventsJournal is the single append-only source for activity feeds and notifications.
-- Pricing history is the only global dataset; everything else remains scoped per household.
-- `providerAccountId: string | null`
-- `lastSyncedAt: number | null`
-- `createdAt`, `updatedAt`
-
-Notes:
-- We never create `financialAccounts` for pod/goal nodes; those remain conceptual envelopes linked through their Money Map node ids.
-- If an imported provider account arrives before the Money Map exists, we auto-create an account node and set `moneyMapNodeId` once the node is saved.
-- `transferId: Id<'transfers'> | null`.
-- `providerTransactionId: string | null`.
-- `direction: TransactionDirection`.
-- `source: TransactionSource`.
-- `status: TransactionStatus`.
-- `amount: CurrencyAmount` (positive numbers; direction handles sign).
-- `description: string`.
-- `merchantName: string | null`.
-- `categoryKey: string | null` (from taxonomy below).
-- `categoryConfidence: number | null` (0 - 1).
-- `needsVsWants: NeedsVsWants`.
-- `occurredAt: number` (provider posted or manual timestamp).
-- `createdAt: number`.
-- `metadata: Record<string, unknown> | null` (MCC, location, etc.).
-+- `moneyMapNodeId: Id<'moneyMapNodes'> | null` (resolved from `categoryKey` when the category is tied to a pod).
-
-Indexes:
-- `by_account_time`: `[accountId, occurredAt]`.
-- `by_org_category_time`: `[organizationId, categoryKey, occurredAt]`.
+- EventsJournal remains the single append-only source for activity feeds and notifications.
+- Pricing history (`instrumentSnapshots`) is the only global dataset; everything else is household scoped.
+- `financialAccounts` stores only real accounts (no pods/goals); auto-created provider accounts sync their Money Map node linkage after approval.
+- `transactions` stay normalized—direction, source, and needs-vs-wants context derive from shared enums and the category taxonomy rather than extra columns.
