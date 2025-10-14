@@ -1,7 +1,5 @@
 import { createAuth, authComponent } from '../../core/auth';
 
-export const normalizeEmail = (value: string) => value.trim().toLowerCase();
-
 export const slugFromName = (name: string) => {
   const base =
     name

@@ -132,7 +132,6 @@ const CanvasPage: Component = () => {
     setSelectedIds,
     selectedIdSet,
     ensureSelection,
-    snapshotGraph,
     resetGraphState: resetEditorState,
     onSnapshotApplied,
     clearSelection: clearSelectionBase,
@@ -1265,16 +1264,15 @@ const CanvasPage: Component = () => {
           </DropdownMenuContent>
         </DropdownMenu>
         <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              disabled={!canSendRequest()}
-              title={requestDisabledReason() ?? undefined}
-            >
-              {submittingChangeRequest() ? 'Sending…' : 'Save'}
-            </Button>
+          <AlertDialogTrigger
+            as={Button}
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={!canSendRequest()}
+            title={requestDisabledReason() ?? undefined}
+          >
+            {submittingChangeRequest() ? 'Sending…' : 'Save'}
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>

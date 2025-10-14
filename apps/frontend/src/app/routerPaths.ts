@@ -3,6 +3,7 @@ export const AppPaths = {
   pricing: '/pricing',
   signIn: '/auth/sign-in',
   signUp: '/auth/sign-up',
+  completeSignup: '/auth/complete-signup',
   onboardingGoal: '/onboarding/goal',
   onboardingUseCase: '/onboarding/use-case',
   onboardingReferral: '/onboarding/referral',

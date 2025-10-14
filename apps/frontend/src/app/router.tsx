@@ -16,6 +16,7 @@ import SignInPage from '~/features/auth/pages/SignInPage';
 import SignUpPage from '~/features/auth/pages/SignUpPage';
 import VerifyEmailPage from '~/features/auth/pages/VerifyEmailPage';
 import AcceptInvitePage from '~/features/auth/pages/AcceptInvitePage';
+import CompleteSignupPage from '~/features/auth/pages/CompleteSignupPage';
 import SettingsLayout from '~/features/settings/pages/SettingsLayout';
 import HouseholdMembersPage from '~/features/settings/pages/HouseholdMembersPage';
 import HouseholdBillingPage from '~/features/settings/pages/HouseholdBillingPage';
@@ -65,6 +66,12 @@ const verifyRoute = new Route({
   getParentRoute: () => authRoute,
   path: 'verify',
   component: VerifyEmailPage,
+});
+
+const completeSignupRoute = new Route({
+  getParentRoute: () => authRoute,
+  path: 'complete-signup',
+  component: CompleteSignupPage,
 });
 
 const acceptInviteRoute = new Route({
@@ -201,7 +208,13 @@ const wealthLadderRoute = new Route({
   component: WealthLadderPage,
 });
 
-const authTree = authRoute.addChildren([signInRoute, signUpRoute, verifyRoute, acceptInviteRoute]);
+const authTree = authRoute.addChildren([
+  signInRoute,
+  signUpRoute,
+  verifyRoute,
+  acceptInviteRoute,
+  completeSignupRoute,
+]);
 const onboardingTree = onboardingRoute.addChildren([goalRoute, useCaseRoute, referralRoute]);
 const toolsTree = toolsRoute.addChildren([compoundRoute, wealthLadderRoute]);
 const appTree = appRoute.addChildren([

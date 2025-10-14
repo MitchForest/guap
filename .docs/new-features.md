@@ -83,6 +83,58 @@ Create `events` domain with a single Convex mutation to record typed events (`ac
 - Permissions: reuse Better Auth role mapping (owner/admin/member) with middleware in each Convex domain.
 - Accessibility: all new pages live under `features/<surface>` with consistent hero component API to keep app shell simple.
 
+## Shared UX & Systems
+
+### UI State Patterns
+
+- Build a `DataState` component that renders loading skeletons, empty state illustrations, error messaging (with retry handlers), or the ready state in a single place.
+- Provide skeleton primitives (`PageSkeleton`, `TableSkeleton`, `StatSkeleton`) under `shared/components/state` so features don’t rebuild shimmering div stacks.
+- Standardise empty and no-access states with iconography + copy templates (`EmptyState`, `NoAccessState`) fed by feature-specific props.
+
+### Error Handling
+
+- Add `shared/services/errors.ts` with `reportError(error, context)` to capture feature/action metadata and forward to console + `eventsJournal` (later external telemetry).
+- Export `getFriendlyErrorMessage` to translate technical failures into user-facing copy; wire it into toasts and empty states.
+- Introduce a reusable Solid error boundary wrapper (`ErrorBoundary` component) for route-level fallbacks plus a `withRetry(fn)` helper for optimistic retries.
+
+### Data Fetching & Caching
+
+- Adopt `@tanstack/solid-query` for queries/mutations; expose `createGuapQuery` / `createGuapMutation` wrappers that auto-inject auth headers, feature-based query keys, and default stale times.
+- Package pagination helpers (`buildCursorQuery`, `useInfiniteScroll`) and optimistic update utilities in `shared/data`.
+- Keep a lightweight resource fallback (`createResourceState`) for cases where TanStack Query is overkill (e.g., local calculations).
+
+### Notifications
+
+- Wrap `solid-sonner` in `shared/services/notifications.ts` with `notify.success|error|info|warning` to enforce copy, duration, and action button conventions.
+- Support contextual actions (undo, view details) and ensure notifications also log to `eventsJournal` when appropriate.
+
+### Forms & Validation
+
+- Introduce `shared/forms` powered by TanStack Form, including a Zod resolver, submit-state handling, and utilities for optimistic disabling.
+- Ship field components (`FormField`, `MoneyField`, `PercentField`, `SelectField`, `CheckboxField`) that bind TanStack Form state to our UI primitives (`Input`, `Select`, etc.).
+- Provide `FormActions` and `FormSection` helpers for consistent button placement, descriptions, and error summaries.
+
+### Tables & Data Views
+
+- Create `shared/components/data-table` built on TanStack Table with default column definitions, sorting, pagination controls, and empty/error overlays.
+- Expose reusable cell renderers (currency, percent, status badge) and toolbar patterns (filter chips, view toggles).
+
+### Analytics & Activity Tracking
+
+- Add `shared/services/analytics.ts` with `trackEvent(eventName, payload)` that mirrors the naming conventions used in `eventsJournal`.
+- Auto-capture page views and key interactions; allow features to opt into additional granularity without reimplementing plumbing.
+
+### Authorization Helpers
+
+- Centralise permission checks in `shared/utils/permissions.ts` with `canAccess(feature, role)` and `canManageHousehold(...)`.
+- Provide `PermissionGate` and `usePermission` to hide actions gracefully and feed the standardized “no access” state when users bump into restrictions.
+
+### Layout & Containers
+
+- Package layout primitives: `PageContainer`, `Section`, `MetricCard`, `SummaryList`, `Modal`, `Drawer`, all living under `shared/components/layout`.
+- Keep spacing, typography, and icon placements consistent so each feature can snap together dashboards rapidly.
+- Include a `StickyCTA` component for mobile flows (approvals, transfers) to avoid bespoke footers per surface.
+
 ## Milestones
 
 ### Milestone 0 — Shared Foundations
@@ -98,6 +150,7 @@ Create `events` domain with a single Convex mutation to record typed events (`ac
 - [ ] Add shared enums/primitives (transaction type, category group, event kind, instrument type).
 - [ ] Scaffold `createGuapApi` domains to fetch accounts, transactions, events.
 - [ ] Wire Money Map nodes to seed FinancialAccount stubs during sync.
+- [ ] Establish shared UX systems (DataState, error reporter, query/mutation wrappers, notifications, forms, data table, layout primitives) so feature teams can reuse them from the start.
 
 ### Milestone 1 — Accounts & Sync Backbone
 

@@ -1,12 +1,12 @@
 import { createAuthClient } from 'better-auth/solid';
+import { convexClient, crossDomainClient } from '@convex-dev/better-auth/client/plugins';
 import {
   adminClient,
-  magicLinkClient,
-  organizationClient,
-  oneTimeTokenClient,
   jwtClient,
+  magicLinkClient,
+  oneTimeTokenClient,
+  organizationClient,
 } from 'better-auth/client/plugins';
-import { convexClient, crossDomainClient } from '@convex-dev/better-auth/client/plugins';
 
 type ResolvedBaseSettings = {
   baseURL?: string;
@@ -49,7 +49,7 @@ const authClientOptions = {
     oneTimeTokenClient(),
     jwtClient(),
   ],
-} as const;
+};
 
 export const authClient = createAuthClient(authClientOptions);
 

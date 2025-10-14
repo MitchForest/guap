@@ -26,9 +26,8 @@ import {
 import {
   createAuthApi,
   AuthApi,
-  type AuthSignupRecordInput,
-  type AuthInviteRecordInput,
-  type AuthBootstrapResult,
+  type AuthCompleteSignupInput,
+  type AuthCompleteSignupResult,
 } from './domains/auth';
 import type {
   MoneyMapChangeRequestRecord,
@@ -63,9 +62,8 @@ export {
   type UpdateChangeRequestStatusInput,
 } from './domains/moneyMaps';
 export {
-  type AuthSignupRecordInput,
-  type AuthInviteRecordInput,
-  type AuthBootstrapResult,
+  type AuthCompleteSignupInput,
+  type AuthCompleteSignupResult,
 } from './domains/auth';
 export type {
   HouseholdRecord,
@@ -113,16 +111,10 @@ export class GuapApi {
     return this.moneyMaps.listChangeRequests(organizationId, status);
   }
 
-  async recordSignup(input: AuthSignupRecordInput): Promise<void> {
-    await this.auth.recordSignup(input);
-  }
-
-  async recordInvite(input: AuthInviteRecordInput): Promise<void> {
-    await this.auth.recordInvite(input);
-  }
-
-  async bootstrapSignup(): Promise<AuthBootstrapResult> {
-    return this.auth.bootstrap();
+  async completeSignup(
+    input: AuthCompleteSignupInput
+  ): Promise<AuthCompleteSignupResult> {
+    return this.auth.completeSignup(input);
   }
 }
 

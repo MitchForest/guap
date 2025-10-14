@@ -1,7 +1,7 @@
 import type { JSX, ValidComponent } from 'solid-js';
 import { splitProps } from 'solid-js';
 import * as ButtonPrimitive from '@kobalte/core/button';
-import type { PolymorphicProps } from '@kobalte/core/polymorphic';
+import type { ElementOf, PolymorphicProps } from '@kobalte/core/polymorphic';
 import type { VariantProps } from 'class-variance-authority';
 import { cva } from 'class-variance-authority';
 import { cn } from '~/shared/utils/classnames';
@@ -39,6 +39,7 @@ type ButtonProps<T extends ValidComponent = 'button'> = ButtonPrimitive.ButtonRo
   VariantProps<typeof buttonVariants> & {
     class?: string;
     children?: JSX.Element;
+    onClick?: JSX.EventHandlerUnion<ElementOf<T>, MouseEvent>;
   };
 
 const Button = <T extends ValidComponent = 'button'>(props: PolymorphicProps<T, ButtonProps<T>>) => {

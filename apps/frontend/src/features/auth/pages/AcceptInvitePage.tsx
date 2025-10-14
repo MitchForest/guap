@@ -3,7 +3,11 @@ import { Component, Show, createEffect, createMemo, createSignal } from 'solid-j
 import { useAuth } from '~/app/contexts/AuthContext';
 import { AppPaths } from '~/app/routerPaths';
 import { toast } from 'solid-sonner';
-import { guapApi } from '~/shared/services/guapApi';
+import {
+  rememberPendingInvitation,
+  removePendingInvitation,
+} from '~/features/auth/utils/authFlowStorage';
+import { authClient } from '~/shared/services/authClient';
 
 const AcceptInvitePage: Component = () => {
   const router = useRouter();
@@ -13,17 +17,22 @@ const AcceptInvitePage: Component = () => {
   });
   const { isAuthenticated, isLoading, refresh } = useAuth();
 
-  const [status, setStatus] = createSignal<'idle' | 'processing' | 'success'>('idle');
+  const [status, setStatus] = createSignal<'idle' | 'awaiting-auth' | 'processing' | 'success'>('idle');
   const [error, setError] = createSignal<string | null>(null);
 
-  const recordInvite = async (id: string) => {
+  const acceptInvitation = async (id: string) => {
     try {
-      await guapApi.recordInvite({
-        invitationId: id,
-      });
+      await authClient.organization.acceptInvitation({ invitationId: id });
+      removePendingInvitation(id);
+      await refresh();
+      toast.success('Invite accepted!');
+      setStatus('success');
+      router.navigate({ to: AppPaths.app });
     } catch (error) {
-      console.error('Failed to record pending invite', error);
-      throw new Error('Unable to record invitation. Please try again.');
+      console.error('Accept invite failed', error);
+      removePendingInvitation(id);
+      setStatus('idle');
+      setError(error instanceof Error ? error.message : 'Unable to accept invite');
     }
   };
 
@@ -33,31 +42,26 @@ const AcceptInvitePage: Component = () => {
       setError('Invitation link is missing or invalid.');
       return;
     }
+    rememberPendingInvitation(id);
     if (isLoading()) return;
 
-    if (status() === 'idle') {
-      setStatus('processing');
-      setError(null);
-      void (async () => {
-        try {
-          await recordInvite(id);
-          if (!isAuthenticated()) {
-            toast.info('Sign in to accept your invite.');
-            router.navigate({ to: AppPaths.signIn });
-            setStatus('idle');
-            return;
-          }
-          await refresh();
-          toast.success('Invite accepted!');
-          setStatus('success');
-          router.navigate({ to: AppPaths.app });
-        } catch (err) {
-          console.error('Accept invite failed', err);
-          setStatus('idle');
-          setError(err instanceof Error ? err.message : 'Unable to accept invite');
-        }
-      })();
+    const currentStatus = status();
+    if (!isAuthenticated()) {
+      if (currentStatus !== 'awaiting-auth') {
+        toast.info('Sign in to accept your invite.');
+        setStatus('awaiting-auth');
+        router.navigate({ to: AppPaths.signIn });
+      }
+      return;
     }
+
+    if (currentStatus === 'processing' || currentStatus === 'success') {
+      return;
+    }
+
+    setStatus('processing');
+    setError(null);
+    void acceptInvitation(id);
   });
 
   return (

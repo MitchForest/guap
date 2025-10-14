@@ -2,46 +2,34 @@ import { z } from 'zod';
 import type { ConvexClientInstance } from '../../core/client';
 import { OrganizationKindSchema, UserRoleSchema } from '@guap/types';
 
-const RecordSignupSchema = z.object({
-  email: z.string(),
+const CompleteSignupSchema = z.object({
   role: UserRoleSchema,
-  organizationName: z.string().optional(),
   organizationKind: OrganizationKindSchema,
+  organizationName: z.string().optional(),
 });
 
-const RecordInviteSchema = z.object({
-  invitationId: z.string(),
-  email: z.string().optional(),
-});
-
-const BootstrapResultSchema = z.object({
+const CompleteSignupResultSchema = z.object({
   shouldRefresh: z.boolean(),
+  organizationId: z.string().optional().nullable(),
 });
 
-export type AuthSignupRecordInput = z.infer<typeof RecordSignupSchema>;
-export type AuthInviteRecordInput = z.infer<typeof RecordInviteSchema>;
-export type AuthBootstrapResult = z.infer<typeof BootstrapResultSchema>;
+export type AuthCompleteSignupInput = z.infer<typeof CompleteSignupSchema>;
+export type AuthCompleteSignupResult = z.infer<typeof CompleteSignupResultSchema>;
 
-const AuthRecordMutation = 'domains/auth/mutations:record' as const;
-const AuthRecordInviteMutation = 'domains/auth/mutations:recordInvite' as const;
-const AuthBootstrapMutation = 'domains/auth/mutations:bootstrap' as const;
+const AuthCompleteSignupMutation = 'domains/auth/mutations:completeSignup' as const;
 
 export class AuthApi {
   constructor(private readonly client: ConvexClientInstance) {}
 
-  async recordSignup(input: AuthSignupRecordInput): Promise<void> {
-    const parsed = RecordSignupSchema.parse(input);
-    await (this.client.mutation as any)(AuthRecordMutation, parsed);
-  }
-
-  async recordInvite(input: AuthInviteRecordInput): Promise<void> {
-    const parsed = RecordInviteSchema.parse(input);
-    await (this.client.mutation as any)(AuthRecordInviteMutation, parsed);
-  }
-
-  async bootstrap(): Promise<AuthBootstrapResult> {
-    const result = await (this.client.mutation as any)(AuthBootstrapMutation, {});
-    return BootstrapResultSchema.parse(result);
+  async completeSignup(
+    input: AuthCompleteSignupInput
+  ): Promise<AuthCompleteSignupResult> {
+    const parsed = CompleteSignupSchema.parse(input);
+    const result = await (this.client.mutation as any)(
+      AuthCompleteSignupMutation,
+      parsed
+    );
+    return CompleteSignupResultSchema.parse(result);
   }
 }
 

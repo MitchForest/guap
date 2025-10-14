@@ -20,7 +20,15 @@ import { clearConvexAuthToken, setConvexAuthToken } from '~/shared/services/conv
 import { recordAuthFailure, recordAuthSignOut, resetAuthTelemetry } from '~/shared/services/telemetry';
 import { toast } from 'solid-sonner';
 import { AppPaths } from '~/app/routerPaths';
-import { guapApi } from '~/shared/services/guapApi';
+import {
+  encodeSignupState,
+  storeSignupState,
+  SIGNUP_STATE_QUERY_PARAM,
+  getPendingInvitations,
+  removePendingInvitation,
+  clearPendingInvitations,
+  type SignupState,
+} from '~/features/auth/utils/authFlowStorage';
 
 type SignUpRequest = {
   email: string;
@@ -96,14 +104,25 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     return parseSessionUser(refreshed);
   };
 
-  const bootstrapSignup = async (): Promise<boolean> => {
-    try {
-      const result = await guapApi.bootstrapSignup();
-      return Boolean(result.shouldRefresh);
-    } catch (error) {
-      console.warn('Signup bootstrap failed', error);
+  const acceptPendingInvitations = async (): Promise<boolean> => {
+    const pending = getPendingInvitations();
+    if (!pending.length) {
       return false;
     }
+
+    let acceptedAny = false;
+    for (const invitationId of pending) {
+      try {
+        await authClient.organization.acceptInvitation({ invitationId });
+        removePendingInvitation(invitationId);
+        acceptedAny = true;
+      } catch (error) {
+        console.warn('Pending invitation acceptance failed', invitationId, error);
+        removePendingInvitation(invitationId);
+      }
+    }
+
+    return acceptedAny;
   };
 
   const redeemOneTimeToken = async () => {
@@ -113,13 +132,16 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     if (!token) return;
 
     try {
-      if (!authClient.oneTimeToken) {
+      const oneTimeTokenClient = (authClient as unknown as {
+        oneTimeToken?: { verify?: (input: { token: string }) => Promise<unknown> };
+      }).oneTimeToken;
+      if (!oneTimeTokenClient || typeof oneTimeTokenClient.verify !== 'function') {
         console.warn('Better Auth one-time token client unavailable');
         return;
       }
       const crossDomainVerify = (authClient as unknown as {
         crossDomain?: {
-          oneTimeToken?: { verify?: typeof authClient.oneTimeToken.verify };
+          oneTimeToken?: { verify?: (input: { token: string }) => Promise<unknown> };
           updateSession?: () => void;
         };
       }).crossDomain?.oneTimeToken?.verify;
@@ -130,7 +152,7 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
           crossDomain?: { updateSession?: () => void };
         }).crossDomain?.updateSession?.();
       } else {
-        await authClient.oneTimeToken.verify({ token });
+        await oneTimeTokenClient.verify({ token });
       }
       await authClient.getSession({ query: { disableCookieCache: true } });
     } catch (error) {
@@ -173,8 +195,8 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
         clearConvexAuthToken();
       }
 
-      const bootstrapped = await bootstrapSignup();
-      if (bootstrapped) {
+      const invitationsAccepted = await acceptPendingInvitations();
+      if (invitationsAccepted) {
         const refreshed = await refreshSessionUser();
         if (refreshed) {
           sessionUser = refreshed.user;
@@ -297,22 +319,37 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
     try {
       const trimmedEmail = payload.email.trim();
       const trimmedName = payload.name.trim();
-      await guapApi
-        .recordSignup({
-          email: trimmedEmail,
-          role: payload.role,
-          organizationName: payload.organizationName?.trim() || undefined,
-          organizationKind: payload.organizationKind ?? 'family',
-        })
-        .catch((error) => {
-          console.error('Signup record mutation failed', error);
-          throw new Error('Unable to prepare signup');
-        });
+      const organizationKind = payload.organizationKind ?? 'family';
+      const signupState: SignupState = {
+        role: payload.role,
+        organizationKind,
+        ...(payload.organizationName ? { organizationName: payload.organizationName.trim() } : {}),
+      };
+
+      storeSignupState(signupState);
+      const encodedState = encodeSignupState(signupState);
+
+      const buildCallbackUrl = (path: string) => {
+        if (typeof window === 'undefined') {
+          return path;
+        }
+        try {
+          const url = new URL(path, window.location.origin);
+          url.searchParams.set(SIGNUP_STATE_QUERY_PARAM, encodedState);
+          return url.toString();
+        } catch (error) {
+          console.warn('Failed to build signup callback URL', error);
+          return path;
+        }
+      };
+
+      const callbackURL = buildCallbackUrl(AppPaths.app);
+      const newUserCallbackURL = buildCallbackUrl(AppPaths.completeSignup);
       const result = await authClient.signIn.magicLink({
         email: trimmedEmail,
         name: trimmedName,
-        callbackURL: AppPaths.app,
-        newUserCallbackURL: AppPaths.app,
+        callbackURL,
+        newUserCallbackURL,
         errorCallbackURL: AppPaths.signIn,
       });
       if (result.error) {
@@ -336,6 +373,7 @@ const AuthProvider: Component<{ children: JSX.Element }> = (props) => {
       console.warn('Better Auth sign out error', error);
     }
     clearConvexAuthToken();
+    clearPendingInvitations();
     setUser(null);
     setError(null);
     recordAuthSignOut();

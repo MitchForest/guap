@@ -6,7 +6,13 @@ import { cn } from '~/shared/utils/classnames';
 import { Button, type ButtonProps } from './button';
 
 const AlertDialog = AlertDialogPrimitive.Root;
-const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
+
+type AlertDialogTriggerProps<T extends ValidComponent = 'button'> =
+  AlertDialogPrimitive.AlertDialogTriggerProps<T>;
+
+const AlertDialogTrigger = <T extends ValidComponent = 'button'>(
+  props: PolymorphicProps<T, AlertDialogTriggerProps<T>>,
+) => <AlertDialogPrimitive.Trigger {...(props as AlertDialogTriggerProps)} />;
 
 const AlertDialogPortal: Component<AlertDialogPrimitive.AlertDialogPortalProps> = (props) => {
   const [, rest] = splitProps(props, ['children']);
@@ -114,26 +120,24 @@ const AlertDialogDescription = <T extends ValidComponent = 'p'>(
 const AlertDialogAction: Component<ButtonProps> = (props) => {
   const [local, others] = splitProps(props as ButtonProps, ['variant', 'size']);
   return (
-    <AlertDialogPrimitive.Action asChild>
-      <Button
-        variant={local.variant ?? 'primary'}
-        size={local.size ?? 'sm'}
-        {...others}
-      />
-    </AlertDialogPrimitive.Action>
+    <AlertDialogPrimitive.CloseButton
+      as={Button}
+      variant={local.variant ?? 'primary'}
+      size={local.size ?? 'sm'}
+      {...others}
+    />
   );
 };
 
 const AlertDialogCancel: Component<ButtonProps> = (props) => {
   const [local, others] = splitProps(props as ButtonProps, ['variant', 'size']);
   return (
-    <AlertDialogPrimitive.Cancel asChild>
-      <Button
-        variant={local.variant ?? 'secondary'}
-        size={local.size ?? 'sm'}
-        {...others}
-      />
-    </AlertDialogPrimitive.Cancel>
+    <AlertDialogPrimitive.CloseButton
+      as={Button}
+      variant={local.variant ?? 'secondary'}
+      size={local.size ?? 'sm'}
+      {...others}
+    />
   );
 };
 

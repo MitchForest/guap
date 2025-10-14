@@ -1,6 +1,16 @@
-# Financial Data Models
+# Financial Data Models & TODOs
 
-Goal: define the smallest set of persisted models needed to unlock Earn, Save, Spend, Donate, and Invest without duplicating Money Map logic or breaking provider swapability.
+Goal: define the smallest set of persisted models needed to unlock Earn, Save, Spend, Donate, Invest, and Liabilities without duplicating Money Map logic or breaking provider swapability.
+
+---
+
+## Immediate TODOs
+
+- [ ] Drop `moneyMapEdges.metadata.note` unless we add a UI surface for flow notes.
+- [ ] Remove unused `moneyMapNodes.by_map_key` and `moneyMapRules.by_map_key` indexes (add back only when needed).
+- [ ] Mirror `moneyMapNodeId` on runtime tables that link to pods/goals (budgets, savingsGoals) and make it required.
+- [ ] Define and seed the transaction category taxonomy shared between Money Map pods and runtime spend analytics.
+- [ ] Document the provider sync workflow that bridges Money Map nodes to `financialAccounts`.
 
 ---
 
@@ -33,29 +43,121 @@ Goal: define the smallest set of persisted models needed to unlock Earn, Save, S
 
 All timestamps are epoch milliseconds (`number`), matching existing Convex tables.
 
+## Money Map Domain (Planning Layer)
+
+Money Map remains the canonical planning surface. Runtime tables reference Money Map node ids to stay in sync.
+
+### `moneyMaps`
+
+- `_id: Id<'moneyMaps'>`
+- `organizationId: string`
+- `name: string`
+- `description?: string`
+- `createdAt`, `updatedAt`
+
+Index: `by_organization` → `[organizationId]`
+
+### `moneyMapNodes`
+
+- `_id: Id<'moneyMapNodes'>`
+- `mapId: Id<'moneyMaps'>`
+- `key: string` (stable identifier in serialized snapshots)
+- `kind: 'income' | 'account' | 'pod' | 'goal' | 'liability'`
+- `label: string`
+- `metadata` object:
+  - `id?: string` (canvas-stable id)
+  - `category?: string | null` (checking/savings/brokerage/etc.)
+  - `parentId?: string | null` (pods/goals inherit parent account)
+  - `podType?: 'goal' | 'category' | 'envelope' | 'custom' | null`
+  - `icon?: string | null`
+  - `accent?: string | null`
+  - `balanceCents?: number | null` (planning hint, not authoritative)
+  - `inflow?: { amount: number; cadence: 'monthly' | 'weekly' | 'daily' } | null`
+  - `position?: { x: number; y: number }`
+  - `returnRate?: number | null` (APY/annual return assumption; defaults to plan presets—0 for checking/liability nodes, 4% for HYSA until real rates sync, 7% for brokerage/UTMA until three months of performance unlocks realised returns)
+- `createdAt`, `updatedAt`
+
+Indexes:
+- `by_map` → `[mapId]`
+- `by_map_key` (currently unused)
+
+### `moneyMapEdges`
+
+- `_id: Id<'moneyMapEdges'>`
+- `mapId: Id<'moneyMaps'>`
+- `sourceKey: string`
+- `targetKey: string`
+- `metadata`:
+  - `id?: string` (stable flow id)
+  - `ruleId?: string`
+  - `amountCents?: number | null` (planned flow amount)
+  - `tag?: string` (UI label)
+  - `note?: string` (currently unused)
+- `createdAt`, `updatedAt`
+
+Index: `by_map` → `[mapId]`
+
+### `moneyMapRules`
+
+- `_id: Id<'moneyMapRules'>`
+- `mapId: Id<'moneyMaps'>`
+- `key: string`
+- `trigger: 'incoming' | 'scheduled'`
+- `config`:
+  - `ruleId?: string`
+  - `sourceNodeId?: string`
+  - `triggerNodeId?: string`
+  - `allocations?: Array<{ targetNodeId: string; percentage: number }>`
+- `createdAt`, `updatedAt`
+
+Indexes:
+- `by_map` → `[mapId]`
+- `by_map_key` (currently unused)
+
+### `moneyMapChangeRequests`
+
+- `_id: Id<'moneyMapChangeRequests'>`
+- `mapId: Id<'moneyMaps'>`
+- `organizationId: string`
+- `submitterId: string`
+- `status: 'draft' | 'awaiting_admin' | 'approved' | 'rejected'`
+- `summary?: string`
+- `payload` (full Money Map draft mirroring the tables above)
+- `createdAt`, `resolvedAt?`, `updatedAt`
+
+Indexes:
+- `by_map_status` → `[mapId, status]` (not actively used but keeps moderation queries simple if needed)
+- `by_organization_status` → `[organizationId, status]`
+
+Planning data flows into runtime models through `moneyMapNodeId` links; runtime aggregates never mutate the Money Map tables directly. The creation flow works both ways:
+- When parents sketch the Money Map first, we mint runtime records (`financialAccounts`, `budgets`, `savingsGoals`, etc.) from approved nodes.
+- When provider sync discovers new accounts first, we create Money Map account nodes (with default metadata) so teens see reality reflected on the canvas and can adjust flows.
+
+---
+
 ## Accounts Domain
 
 ### `financialAccounts`
 
-Represents the live counterpart to a Money Map node.
+Represents the live counterpart to an approved Money Map `account` node.
 
-- `_id: Id<'financialAccounts'>`.
-- `organizationId: string`.
-- `moneyMapNodeId: Id<'moneyMapNodes'>` (required to keep allocations aligned).
-- `name: string`.
-- `kind: AccountKind`.
-- `status: AccountStatus`.
-- `currency: string` (default `USD`).
-- `balance: CurrencyAmount` (last synced balance).
-- `available: CurrencyAmount | null` (credit/available balance).
-- `provider: string` (`virtual`, `stripe`, etc.).
-- `providerAccountId: string | null`.
-- `lastSyncedAt: number | null`.
-- `createdAt`, `updatedAt`.
+- `_id: Id<'financialAccounts'>`
+- `organizationId: string`
+- `moneyMapNodeId: Id<'moneyMapNodes'>` (required; 1:1 with account node)
+- `name: string`
+- `kind: AccountKind`
+- `status: AccountStatus`
+- `currency: string` (default `USD`)
+- `balance: CurrencyAmount` (last synced balance)
+- `available: CurrencyAmount | null` (credit/available balance)
+- `provider: string` (`virtual`, `stripe`, etc.)
+- `providerAccountId: string | null`
+- `lastSyncedAt: number | null`
+- `createdAt`, `updatedAt`
 
 Indexes:
-- `by_organization_kind`: `[organizationId, kind]`.
-- `by_provider`: `[provider, providerAccountId]`.
+- `by_organization_kind`: `[organizationId, kind]`
+- `by_provider`: `[provider, providerAccountId]`
 
 ### `accountSnapshots`
 
@@ -119,14 +221,16 @@ Stores spend/deposit events across accounts.
 - `merchantName: string | null`.
 - `categoryKey: string | null` (from taxonomy below).
 - `categoryConfidence: number | null` (0 - 1).
-- `needsVsWants: NeedsVsWants`.
 - `occurredAt: number` (provider posted or manual timestamp).
 - `createdAt: number`.
 - `metadata: Record<string, unknown> | null` (MCC, location, etc.).
+- `moneyMapNodeId: Id<'moneyMapNodes'> | null` (resolved for pod-linked categories so Spend can highlight the matching allocation).
 
 Indexes:
 - `by_account_time`: `[accountId, occurredAt]`.
 - `by_org_category_time`: `[organizationId, categoryKey, occurredAt]`.
+
+Needs-vs-wants rolls up from the category taxonomy or household overrides; we compute it on read so the table stays lean.
 
 ### `categoryRules`
 
@@ -137,11 +241,11 @@ Household-level auto-categorisation.
 - `matchType: 'merchant_prefix' | 'merchant_exact' | 'mcc' | 'keywords'`.
 - `pattern: string`.
 - `categoryKey: string`.
-- `needsVsWants: NeedsVsWants`.
 - `priority: number` (higher wins).
 - `createdByProfileId: string`.
 - `createdAt: number`.
 - `lastMatchedAt: number | null`.
+- `moneyMapNodeId: Id<'moneyMapNodes'> | null` (pods/categories that rules map to; null when using global taxonomy without a pod).
 
 Transactions fall back to a default taxonomy when no rule matches. Category taxonomy itself stays static in code for MVP (`@guap/types/shared/categories.ts`) to avoid another table.
 
@@ -149,23 +253,48 @@ Transactions fall back to a default taxonomy when no rule matches. Category taxo
 
 ### `budgets`
 
-Monthly envelopes per category.
+Monthly envelopes anchored to Money Map pod nodes. If a household never configures pods, we do not create budgets; actual spend still tracks via categories.
 
-- `_id: Id<'budgets'>`.
-- `organizationId: string`.
-- `categoryKey: string`.
-- `periodKey: string` (`YYYY-MM`).
-- `plannedAmount: CurrencyAmount`.
-- `rollover: boolean`.
-- `capAmount: CurrencyAmount | null` (hard limit).
-- `moneyMapNodeId: Id<'moneyMapNodes'> | null` (links to envelope pods).
-- `createdByProfileId: string`.
-- `createdAt: number`.
-- `archivedAt: number | null`.
+- `_id: Id<'budgets'>`
+- `organizationId: string`
+- `moneyMapNodeId: Id<'moneyMapNodes'>` (required; points to pod node)
+- `periodKey: string` (`YYYY-MM`)
+- `plannedAmount: CurrencyAmount`
+- `rollover: boolean`
+- `capAmount: CurrencyAmount | null` (hard limit; optional)
+- `createdByProfileId: string`
+- `createdAt: number`
+- `archivedAt: number | null`
 
-Index: `by_org_period`: `[organizationId, periodKey]`.
+Index: `by_org_period` → `[organizationId, periodKey]`
 
-Actual spend per budget is derived from `transactions` filtered by category and period.
+Actual spend per budget is derived from `transactions` joined via `moneyMapNodeId` (or the node’s category mapping) within the same period. Overspend triggers `eventsJournal` entries and highlights the associated pod on the Money Map.
+
+## Liabilities Domain
+
+Liability surfaces (secured credit cards, informal IOUs, student loans, auto loans, mortgages) reuse `financialAccounts` with `kind: 'credit'` or `kind: 'liability'`. Additional terms sit alongside the account so projections and reminders stay accurate.
+
+### `liabilityTerms`
+
+- `_id: Id<'liabilityTerms'>`
+- `organizationId: string`
+- `accountId: Id<'financialAccounts'>` (must reference a liability/credit account)
+- `liabilityType: 'secured_credit' | 'loan' | 'student_loan' | 'auto_loan' | 'mortgage' | 'other'`
+- `originPrincipal: CurrencyAmount`
+- `interestRate: number` (APR as decimal, e.g. 0.1999)
+- `minimumPayment: CurrencyAmount`
+- `statementDay: number | null` (1–31; null for loans without statements)
+- `dueDay: number | null`
+- `maturesAt: number | null` (timestamp when payoff/balloon occurs)
+- `openedAt: number`
+- `createdAt: number`
+- `updatedAt: number`
+
+Index: `by_account` → `[accountId]`
+
+Outstanding balances continue to flow through `accountSnapshots` (positive numbers represent amount owed), while purchases and payments live in `transactions`. Payoffs triggered from Spend create `transfers` with `intent = 'credit_payoff'`. Money Map edges from cash accounts into liability nodes express the planned payment flow and seed reminders.
+
+*(Optional later)* `liabilitySchedules` can store amortisation projections per period once we want fixed payment timeline visualisations; not required for the MVP.
 
 ## Earn Domain
 
@@ -180,7 +309,6 @@ Allowance, chores, or job definitions.
 - `cadence: IncomeCadence`.
 - `amount: CurrencyAmount`.
 - `defaultDestinationAccountId: Id<'financialAccounts'> | null`.
-- `defaultAllocation: Array<{ moneyMapNodeId: Id<'moneyMapNodes'>; percentage: number }>` (optional override).
 - `requiresApproval: boolean`.
 - `status: IncomeStreamStatus`.
 - `nextScheduledAt: number | null`.
@@ -195,23 +323,23 @@ Payout history lives in `transfers` with `intent = 'earn'` referencing `incomeSt
 
 ### `savingsGoals`
 
-Targets mapped to HYSA accounts or sub-allocations.
+Mental allocations tied to Money Map goal nodes but funded by real savings accounts.
 
-- `_id: Id<'savingsGoals'>`.
-- `organizationId: string`.
-- `accountId: Id<'financialAccounts'>`.
-- `name: string`.
-- `targetAmount: CurrencyAmount`.
-- `startingAmount: CurrencyAmount`.
-- `targetDate: number | null`.
-- `autoContributionPercent: number | null`.
-- `status: GoalStatus`.
-- `createdByProfileId: string`.
-- `createdAt: number`.
-- `achievedAt: number | null`.
-- `archivedAt: number | null`.
+- `_id: Id<'savingsGoals'>`
+- `organizationId: string`
+- `moneyMapNodeId: Id<'moneyMapNodes'>` (required; points to goal node)
+- `accountId: Id<'financialAccounts'>` (parent HYSA account)
+- `name: string`
+- `targetAmount: CurrencyAmount`
+- `startingAmount: CurrencyAmount`
+- `targetDate: number | null`
+- `status: GoalStatus`
+- `createdByProfileId: string`
+- `createdAt: number`
+- `achievedAt: number | null`
+- `archivedAt: number | null`
 
-Progress is computed via `accountSnapshots` plus `transfers` that include `goalId`.
+Progress is computed via `accountSnapshots` plus `transfers` tagged with `goalId`. Goal nodes stay in sync with runtime progress so the Money Map canvas can visualize projected completion dates.
 
 ## Investing Domain
 
@@ -331,3 +459,29 @@ Index: `by_profile_event`: `[profileId, eventId]`.
 - Budgets, goals, and orders reference Money Map nodes or accounts instead of duplicating allocation data.
 - EventsJournal is the single append-only source for activity feeds and notifications.
 - Pricing history is the only global dataset; everything else remains scoped per household.
+- `providerAccountId: string | null`
+- `lastSyncedAt: number | null`
+- `createdAt`, `updatedAt`
+
+Notes:
+- We never create `financialAccounts` for pod/goal nodes; those remain conceptual envelopes linked through their Money Map node ids.
+- If an imported provider account arrives before the Money Map exists, we auto-create an account node and set `moneyMapNodeId` once the node is saved.
+- `transferId: Id<'transfers'> | null`.
+- `providerTransactionId: string | null`.
+- `direction: TransactionDirection`.
+- `source: TransactionSource`.
+- `status: TransactionStatus`.
+- `amount: CurrencyAmount` (positive numbers; direction handles sign).
+- `description: string`.
+- `merchantName: string | null`.
+- `categoryKey: string | null` (from taxonomy below).
+- `categoryConfidence: number | null` (0 - 1).
+- `needsVsWants: NeedsVsWants`.
+- `occurredAt: number` (provider posted or manual timestamp).
+- `createdAt: number`.
+- `metadata: Record<string, unknown> | null` (MCC, location, etc.).
++- `moneyMapNodeId: Id<'moneyMapNodes'> | null` (resolved from `categoryKey` when the category is tied to a pod).
+
+Indexes:
+- `by_account_time`: `[accountId, occurredAt]`.
+- `by_org_category_time`: `[organizationId, categoryKey, occurredAt]`.

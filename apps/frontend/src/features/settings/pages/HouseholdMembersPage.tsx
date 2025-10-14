@@ -103,14 +103,22 @@ const HouseholdMembersPage: Component = () => {
     }
     const dataset = Array.isArray(result.data) ? result.data : [];
     return dataset
-      .map((invite: Record<string, unknown>) => ({
-        id: String(invite.id ?? invite.invitationId ?? ''),
-        email: String(invite.email ?? ''),
-        role: String(invite.role ?? 'member'),
-        code: (invite.code as string | undefined | null) ?? null,
-        metadata: (invite.metadata as Record<string, unknown> | null) ?? null,
-      }))
-      .filter((invite) => invite.metadata?.householdId === query.householdId);
+      .map((invite: Record<string, unknown>) => {
+        const metadata = (invite.metadata as Record<string, unknown> | null) ?? null;
+        const householdTarget =
+          metadata && typeof metadata.householdId === 'string'
+            ? String(metadata.householdId)
+            : null;
+        return {
+          id: String(invite.id ?? invite.invitationId ?? ''),
+          email: String(invite.email ?? ''),
+          role: String(invite.role ?? 'member'),
+          code: (invite.code as string | undefined | null) ?? null,
+          metadata,
+          householdTarget,
+        };
+      })
+      .filter((invite) => invite.householdTarget === query.householdId);
   });
 
   const [inviteEmail, setInviteEmail] = createSignal('');
