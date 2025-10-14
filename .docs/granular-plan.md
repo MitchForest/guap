@@ -40,7 +40,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
   - Package layout primitives (`PageContainer`, `Section`, `MetricCard`, `SummaryList`, `Modal`, `Drawer`, `StickyCTA`).
   - Stand up shared approvals inbox and household activity feed shells backed by placeholder data.
 - [x] Update App shell to expose entry points/placeholders for approvals inbox + activity feed.
-- [ ] Document provider sync workflow and guardrail philosophy in README / docs if needed.
+- [x] Document provider sync workflow and guardrail philosophy in README / docs if needed.
 - [x] Verify lint/typecheck/build succeed after foundational changes.
 - [ ] Add row-level security policies via the helper wrappers once real domain logic ships (track alongside Milestone 1 domain work).
 
@@ -50,27 +50,55 @@ This checklist turns the feature and data-model plans into a concrete execution 
 
 **Objective:** ingest real (or stubbed) financial accounts and transactions as the source of truth for downstream surfaces.
 
-- [ ] Implement Convex `accounts` domain:
+- [x] **Approval gate:** Share proposed Convex schema additions (`financialAccounts` expansion, `accountSnapshots`, `transactions`, `categoryRules`, `transfers`, `eventsJournal`) + matching `@guap/types` modules before implementation. _Owner: Backend._
+- [x] **Dev ergonomics:** document provider sync workflow + guardrail philosophy in backend README (carryover from Milestone 0). _Owner: Backend._
+- [x] Implement Convex `accounts` domain:
   - `syncAccounts` mutation (provider integration + guardrail seeding for new accounts).
   - `listAccounts`, `getAccount`, `listAccountSnapshots`.
   - Append to `accountSnapshots` during sync (start-of-day capturedAt).
-- [ ] Implement Convex `transactions` domain:
+- [x] Implement Convex `transactions` domain:
   - Upsert provider transactions, link to accounts/transfers.
   - Seed default `categoryRules` from Money Map pods (merchant prefix + MCC).
   - Provide paging/filtering (account, category, type, needs vs wants).
-- [ ] Update `transferGuardrails` when new accounts are created or Money Map guardrails change.
-- [ ] Hook virtual provider to emit deterministic account + transaction fixtures aligned with new schemas.
-- [ ] Extend `packages/api` with accounts/transactions clients + helper transformers.
-- [ ] Frontend:
+- [x] Update `transferGuardrails` when new accounts are created or Money Map guardrails change.
+- [x] Hook virtual provider to emit deterministic account + transaction fixtures aligned with new schemas.
+- [x] Extend `packages/api` with accounts/transactions clients + helper transformers.
+- [x] Frontend:
   - Replace mocked AppData provider with real queries (accounts, income streams placeholders, requests).
   - Build foundational account list view (even simple table) for smoke testing.
   - Wire approvals inbox shell to `transfers` (pending_approval) endpoint.
   - Wire activity feed shell to `eventsJournal`.
-- [ ] Replace placeholder Convex domain scaffolds + API status stubs with real Accounts/Transactions queries & mutations.
-- [ ] Update docs (`.docs/new-features.md` & `.docs/data-models.md`) if schemas or behaviour change during implementation.
-- [ ] Confirm lint/typecheck/build/dev flows remain green.
+- [x] Replace placeholder Convex domain scaffolds + API status stubs with real Accounts/Transactions queries & mutations.
+- [x] Update docs (`.docs/new-features.md` & `.docs/data-models.md`) if schemas or behaviour change during implementation.
+ - [x] Confirm lint/typecheck/build/dev flows remain green.
 
----
+### Implementation Plan
+
+1. **Design pass & approvals**
+   - [ ] Detail table schemas + indexes (Convex + Zod) and circulate for approval.
+   - [ ] Specify provider sync mapping + guardrail seeding flow (diagram or short doc).
+2. **Shared contracts**
+   - [x] Extend `@guap/types` with accounts/transactions/transfers/events domains.
+   - [x] Update `@guap/api` clients (accounts, transactions, transfers, events) to mirror backend signatures.
+3. **Backend domains**
+   - [x] Build `accounts` services (sync, list/get, snapshots) with RLS wrappers.
+   - [x] Build `transactions` services (upsert, filters, pagination) + category rule seeding.
+   - [x] Introduce lightweight `transfers` + `events` domains for approvals/activity feeds.
+   - [x] Beef up provider virtual adapter + guardrail updater.
+4. **Frontend integration**
+   - [x] Refactor `AppDataProvider` to consume new APIs (accounts, requests, income placeholders).
+   - [x] Replace App Shell approvals/activity drawers with live data wiring.
+   - [x] Ship minimal Accounts list view for smoke testing; ensure query helpers handle pagination.
+5. **Validation & docs**
+   - [x] Establish Vitest configs per workspace (`apps/backend/vitest.config.ts`, `apps/frontend/vitest.config.ts`, `packages/*/vitest.config.ts`) with scripts wired into `pnpm test`.
+   - [x] Migrate existing `node:test` placeholder coverage to Vitest.
+   - [x] Add backend unit tests for `syncAccounts`, transaction filters, transfer status updates, and event logging.
+   - [x] Add package tests (API client parsing, provider fixtures, shared schemas) under `src/__tests__`.
+   - [x] Add frontend tests (AppDataProvider integration, approvals/activity components) under `src/__tests__`.
+   - [ ] Update docs (new-features, data-models, provider workflow).
+   - [x] Run `pnpm lint`, `pnpm typecheck`, `pnpm build`, and smoke `pnpm dev`.
+
+--- 
 
 ## Milestone 2 — Save (HYSA Goals & Transfers)
 

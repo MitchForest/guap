@@ -3,6 +3,7 @@ export * as auth from './domains/auth';
 export * as moneyMaps from './domains/moneyMaps';
 export * as accounts from './domains/accounts';
 export * as transactions from './domains/transactions';
+export * as transfers from './domains/transfers';
 export * as budgets from './domains/budgets';
 export * as earn from './domains/earn';
 export * as savings from './domains/savings';

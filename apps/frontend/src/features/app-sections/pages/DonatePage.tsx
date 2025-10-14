@@ -23,7 +23,7 @@ const DonatePage: Component = () => {
                   <p class="text-sm font-semibold text-slate-900">{account.name}</p>
                   <p class="text-xs text-subtle">Designated giving account</p>
                 </div>
-                <p class="text-lg font-bold text-slate-900">{formatCurrency(account.balanceCents)}</p>
+                <p class="text-lg font-bold text-slate-900">{formatCurrency(account.balance.cents)}</p>
               </div>
               <p class="mt-3 text-sm text-subtle">
                 Add causes to commit regular support or schedule one-time gifts here.

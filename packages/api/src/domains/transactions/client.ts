@@ -1,30 +1,58 @@
 import { z } from 'zod';
 import type { ConvexClientInstance } from '../../core/client';
+import {
+  CategoryRuleMatchTypeSchema,
+  CategoryRuleRecordSchema,
+  NeedsVsWantsSchema,
+  TransactionDirectionSchema,
+  TransactionRecordSchema,
+  TransactionStatusSchema,
+} from '@guap/types';
 
-const TransactionsStatusSchema = z.object({
-  domain: z.literal('transactions'),
-  implemented: z.boolean(),
+const ListTransactionsQuery = 'domains/transactions/queries:listForOrganization' as const;
+const ListCategoryRulesQuery = 'domains/transactions/queries:listCategoryRules' as const;
+const UpsertCategoryRuleMutation = 'domains/transactions/mutations:upsertCategoryRule' as const;
+
+const ListTransactionsInputSchema = z.object({
+  organizationId: z.string(),
+  accountId: z.string().optional(),
+  categoryKey: z.string().optional(),
+  direction: TransactionDirectionSchema.optional(),
+  status: TransactionStatusSchema.optional(),
+  needsVsWants: NeedsVsWantsSchema.optional(),
+  limit: z.number().optional(),
 });
 
-export type TransactionsStatus = z.infer<typeof TransactionsStatusSchema>;
-
-const TransactionsStatusQuery = 'domains/transactions/queries:status' as const;
-const TransactionsBootstrapMutation = 'domains/transactions/mutations:bootstrap' as const;
+const UpsertCategoryRuleInputSchema = z.object({
+  organizationId: z.string(),
+  ruleId: z.string().optional(),
+  matchType: CategoryRuleMatchTypeSchema,
+  pattern: z.string(),
+  categoryKey: z.string(),
+  needsVsWants: NeedsVsWantsSchema.optional(),
+  priority: z.number(),
+});
 
 export class TransactionsApi {
   constructor(private readonly client: ConvexClientInstance) {}
 
-  async status(): Promise<TransactionsStatus> {
-    const result = await (this.client.query as any)(TransactionsStatusQuery, {});
-    return TransactionsStatusSchema.parse(result);
+  async list(input: z.input<typeof ListTransactionsInputSchema>) {
+    const payload = ListTransactionsInputSchema.parse(input);
+    const result = await (this.client.query as any)(ListTransactionsQuery, payload);
+    return z.array(TransactionRecordSchema).parse(result);
   }
 
-  async bootstrap(): Promise<TransactionsStatus> {
-    const result = await (this.client.mutation as any)(
-      TransactionsBootstrapMutation,
-      {}
-    );
-    return TransactionsStatusSchema.parse(result);
+  async listCategoryRules(organizationId: string) {
+    const result = await (this.client.query as any)(ListCategoryRulesQuery, {
+      organizationId,
+    });
+    return z.array(CategoryRuleRecordSchema).parse(result);
+  }
+
+  async upsertCategoryRule(input: z.input<typeof UpsertCategoryRuleInputSchema>) {
+    const payload = UpsertCategoryRuleInputSchema.parse(input);
+    const result = await (this.client.mutation as any)(UpsertCategoryRuleMutation, payload);
+    return z.string().parse(result);
   }
 }
 

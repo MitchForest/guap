@@ -10,7 +10,7 @@ const SavePage: Component = () => {
   );
 
   const totalSavings = createMemo(() =>
-    savingsAccounts().reduce((sum, account) => sum + account.balanceCents, 0)
+    savingsAccounts().reduce((sum, account) => sum + (account.balance?.cents ?? 0), 0)
   );
 
   return (
@@ -35,7 +35,7 @@ const SavePage: Component = () => {
                   <p class="text-sm font-semibold text-slate-900">{account.name}</p>
                   <p class="text-xs text-subtle">High-yield savings</p>
                 </div>
-                <p class="text-lg font-bold text-slate-900">{formatCurrency(account.balanceCents)}</p>
+                <p class="text-lg font-bold text-slate-900">{formatCurrency(account.balance.cents)}</p>
               </div>
               <p class="mt-3 text-sm text-subtle">
                 Automations and recurring transfers will appear here as we wire them in.

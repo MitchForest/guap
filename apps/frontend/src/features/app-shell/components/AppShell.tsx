@@ -1,6 +1,7 @@
 import { Link, useRouter } from '@tanstack/solid-router';
 import { clsx } from 'clsx';
 import { Component, For, Show, createMemo, createSignal } from 'solid-js';
+import type { EventJournalRecord, TransferRecord } from '@guap/api';
 import { Button } from '~/shared/components/ui/button';
 import { Input } from '~/shared/components/ui/input';
 import { useAppData } from '~/app/contexts/AppDataContext';
@@ -8,8 +9,11 @@ import { useAuth } from '~/app/contexts/AuthContext';
 import { formatCurrency } from '~/shared/utils/format';
 import { AppPaths, type AppPathValue } from '~/app/routerPaths';
 import { Drawer } from '~/shared/components/layout';
-import { ApprovalsInbox, createPlaceholderApprovals } from './ApprovalsInbox';
-import { ActivityFeed, createPlaceholderActivity } from './ActivityFeed';
+import { ApprovalsInbox } from './ApprovalsInbox';
+import { ActivityFeed } from './ActivityFeed';
+import { createGuapQuery } from '~/shared/services/queryHelpers';
+import { guapApi } from '~/shared/services/guapApi';
+import { organizationIdFor } from '~/features/money-map/api/cache';
 
 type AppShellProps = {
   children: any;
@@ -61,8 +65,35 @@ const AppShell: Component<AppShellProps> = (props) => {
   const activeRole = createMemo(() => user()?.role ?? 'member');
   const requestsLabel = createMemo(() => (activeRole() === 'member' ? 'Requests' : 'Approvals'));
   const activeHouseholdName = createMemo(() => activeHousehold()?.name ?? 'Household');
-  const totalBalance = createMemo(() => accounts().reduce((sum, account) => sum + account.balanceCents, 0));
-  const activeRequestsCount = createMemo(() => requests().filter((item) => item.state === 'pending').length);
+  const totalBalance = createMemo(() =>
+    accounts().reduce((sum, account) => sum + (account.balance?.cents ?? 0), 0)
+  );
+
+  const householdId = createMemo(() => activeHousehold()?._id ?? null);
+
+  const { data: pendingTransfers } = createGuapQuery({
+    source: householdId,
+    initialValue: [] as TransferRecord[],
+    fetcher: async (householdId) => {
+      const organizationId = organizationIdFor(householdId);
+      return await guapApi.transfers.list({ organizationId, status: 'pending_approval', limit: 50 });
+    },
+  });
+
+  const { data: recentEvents } = createGuapQuery({
+    source: householdId,
+    initialValue: [] as EventJournalRecord[],
+    fetcher: async (householdId) => {
+      const organizationId = organizationIdFor(householdId);
+      return await guapApi.events.list({ organizationId, limit: 25 });
+    },
+  });
+
+  const pendingApprovalsCount = createMemo(() => pendingTransfers().length);
+  const pendingChangeRequests = createMemo(() => requests().filter((item) => item.state === 'pending'));
+  const totalPendingActions = createMemo(
+    () => pendingApprovalsCount() + pendingChangeRequests().length
+  );
   const settingsNav = createMemo<NavItem[]>(() => {
     const items: NavItem[] = [
       { label: 'Members', path: AppPaths.appSettingsMembers, icon: '👥' },
@@ -74,9 +105,6 @@ const AppShell: Component<AppShellProps> = (props) => {
     }
     return items;
   });
-
-  const placeholderApprovals = createMemo(() => createPlaceholderApprovals());
-  const placeholderActivity = createMemo(() => createPlaceholderActivity());
 
   return (
     <div class="flex h-full w-full bg-slate-100 text-slate-900">
@@ -157,7 +185,7 @@ const AppShell: Component<AppShellProps> = (props) => {
               <p class="text-sm font-semibold text-slate-700">{activeHouseholdName()}</p>
               <p class="text-lg font-semibold text-slate-900">{formatCurrency(totalBalance())}</p>
               <p class="text-xs text-subtle">
-                {activeRequestsCount()} active {activeRequestsCount() === 1 ? 'request' : 'requests'} awaiting
+                {totalPendingActions()} active {totalPendingActions() === 1 ? 'request' : 'requests'} awaiting
                 action.
               </p>
             </div>
@@ -194,9 +222,9 @@ const AppShell: Component<AppShellProps> = (props) => {
                 onClick={() => setApprovalsOpen(true)}
               >
                 {requestsLabel()}
-                <Show when={activeRequestsCount() > 0}>
+                <Show when={totalPendingActions() > 0}>
                   <span class="ml-2 inline-flex min-w-[24px] justify-center rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
-                    {activeRequestsCount()}
+                    {totalPendingActions()}
                   </span>
                 </Show>
               </Button>
@@ -244,10 +272,10 @@ const AppShell: Component<AppShellProps> = (props) => {
         </main>
       </div>
       <Drawer open={approvalsOpen()} onOpenChange={setApprovalsOpen} title="Approvals inbox">
-        <ApprovalsInbox items={placeholderApprovals()} />
+        <ApprovalsInbox transfers={pendingTransfers()} />
       </Drawer>
       <Drawer open={activityOpen()} onOpenChange={setActivityOpen} title="Activity feed">
-        <ActivityFeed entries={placeholderActivity()} />
+        <ActivityFeed events={recentEvents()} />
       </Drawer>
     </div>
   );

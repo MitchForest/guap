@@ -13,10 +13,10 @@ Goal: define the smallest set of persisted models needed to unlock Earn, Save, S
 
 ## Current Implementation Snapshot
 
-- Convex currently exposes `auth` and `moneyMaps` domains only; the additional domains described below will be added in upcoming milestones.
-- `moneyMapEdges.metadata.note` and the `by_map_key` indexes still exist in Convex and Zod schemas today; migrations will remove them once ready.
-- The shared enums listed in this document have not yet been added to `packages/types/src/shared/enums.ts`; they need to be implemented before the new domains ship.
-- `AppDataProvider` in the frontend still returns mocked data; real queries will replace it when the new APIs are wired.
+- Convex now ships `accounts`, `transactions`, `transfers`, and `events` domains alongside `auth` and `moneyMaps`; remaining surfaces (budgets, earn, savings, investing, donate) are queued for later milestones.
+- `moneyMapEdges.metadata.note` and the legacy `by_map_key` indexes still exist in Convex and Zod schemas today; migrations will remove them once ready.
+- Shared financial enums (transaction directions, transfer intents/statuses, event kinds, etc.) live under `packages/types/src/shared/enums.ts` and power both schema definitions and runtime validation.
+- The frontend AppData provider now consumes the real accounts API and the app shell drawers source pending transfers + events from Convex; Money Map change requests remain available for legacy approvals.
 
 ## Shared Primitives & Enums
 

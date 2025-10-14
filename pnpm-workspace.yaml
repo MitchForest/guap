@@ -6,20 +6,25 @@ catalog:
   '@convex-dev/better-auth': ^0.9.5
   '@eslint/compat': ^1.4.0
   '@eslint/js': ^9.37.0
+  '@solidjs/testing-library': ^0.8.10
   '@tanstack/form-core': ^1.24.1
   '@tanstack/solid-form': ^1.23.5
   '@tanstack/solid-router': ^1.132.41
   '@tanstack/solid-table': ^8.21.3
+  '@testing-library/jest-dom': ^6.9.1
   '@typescript-eslint/eslint-plugin': ^8.46.0
   '@typescript-eslint/parser': ^8.46.0
+  '@vitest/coverage-v8': ^3.2.4
   chart.js: ^4.5.0
   clsx: ^2.1.1
   convex: ^1.27.3
   convex-helpers: ^0.1.104
   eslint: ^9.37.0
   eslint-plugin-solid: ^0.14.5
+  jsdom: ^27.0.0
   solid-motionone: ^1.0.4
   solid-sonner: ^0.2.8
   solid-ui: ^2.6.1
   typescript-eslint: ^8.46.0
+  vitest: ^3.2.4
   zod: ^3.25.76

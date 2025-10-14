@@ -12,9 +12,17 @@
     "lint": "pnpm -r --if-present run lint",
     "build:frontend": "pnpm --filter @guap/frontend build",
     "serve:frontend": "pnpm --filter @guap/frontend preview",
-    "codegen:sync": "node ./scripts/sync-convex-codegen.mjs && node ./scripts/update-better-auth-roles.mjs"
+    "codegen:sync": "node ./scripts/sync-convex-codegen.mjs && node ./scripts/update-better-auth-roles.mjs",
+    "test": "vitest --run"
   },
   "dependencies": {
     "@convex-dev/better-auth": "catalog:"
+  },
+  "devDependencies": {
+    "@solidjs/testing-library": "catalog:",
+    "@testing-library/jest-dom": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "jsdom": "catalog:",
+    "vitest": "catalog:"
   }
 }

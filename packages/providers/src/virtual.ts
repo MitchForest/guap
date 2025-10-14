@@ -8,6 +8,7 @@ import {
   CurrencyAmountSchema,
   ProviderAccountSchema,
   ProviderIncomeSchema,
+  ProviderTransactionSchema,
 } from './contracts';
 
 const amount = (value: number, currency = 'USD') =>
@@ -22,7 +23,10 @@ const defaultAccounts = [
     currency: 'USD',
     balance: amount(250_00),
     available: amount(250_00),
-    metadata: { institution: 'Guap Virtual Bank' },
+    metadata: {
+      institution: 'Guap Virtual Bank',
+      moneyMapNodeKey: 'virtual-checking',
+    },
     lastSyncedAt: Date.now(),
   }),
   ProviderAccountSchema.parse({
@@ -33,7 +37,10 @@ const defaultAccounts = [
     currency: 'USD',
     balance: amount(1_250_00),
     available: amount(1_250_00),
-    metadata: { apy: 0.0425 },
+    metadata: {
+      apy: 0.0425,
+      moneyMapNodeKey: 'virtual-savings',
+    },
     lastSyncedAt: Date.now(),
   }),
 ];
@@ -48,9 +55,37 @@ const defaultIncome = [
   }),
 ];
 
+const defaultTransactions = [
+  ProviderTransactionSchema.parse({
+    providerTransactionId: 'virtual-txn-001',
+    accountId: 'virtual-checking',
+    description: 'Corner Market',
+    amount: amount(-45_12),
+    postedAt: Date.now() - 1000 * 60 * 60 * 24,
+    metadata: { merchantName: 'Corner Market', categoryKey: 'groceries' },
+  }),
+  ProviderTransactionSchema.parse({
+    providerTransactionId: 'virtual-txn-002',
+    accountId: 'virtual-checking',
+    description: 'Allowance Deposit',
+    amount: amount(50_00),
+    postedAt: Date.now() - 1000 * 60 * 60 * 48,
+    metadata: { merchantName: 'Guap Earn', categoryKey: 'income' },
+  }),
+  ProviderTransactionSchema.parse({
+    providerTransactionId: 'virtual-txn-003',
+    accountId: 'virtual-savings',
+    description: 'Interest Credit',
+    amount: amount(5_25),
+    postedAt: Date.now() - 1000 * 60 * 60 * 72,
+    metadata: { merchantName: 'Virtual Savings', categoryKey: 'interest' },
+  }),
+];
+
 const VirtualConfigSchema = z.object({
   accounts: z.array(ProviderAccountSchema).default(defaultAccounts),
   income: z.array(ProviderIncomeSchema).default(defaultIncome),
+  transactions: z.array(ProviderTransactionSchema).default(defaultTransactions),
 });
 
 export class VirtualProvider implements ProviderAdapter {
@@ -63,6 +98,7 @@ export class VirtualProvider implements ProviderAdapter {
     return {
       accounts: parsedConfig.accounts,
       incomeStreams: parsedConfig.income,
+      transactions: parsedConfig.transactions,
     };
   }
 }

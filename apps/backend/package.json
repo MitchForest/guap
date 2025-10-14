@@ -9,12 +9,14 @@
     "generate": "CONVEX_DISABLE_TELEMETRY=1 convex codegen",
     "build": "pnpm run generate",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "lint": "pnpm run typecheck"
+    "lint": "pnpm run typecheck",
+    "test": "vitest --run"
   },
   "dependencies": {
     "@better-auth/stripe": "latest",
     "@convex-dev/better-auth": "^0.9.1",
     "@guap/api": "workspace:*",
+    "@guap/providers": "workspace:*",
     "@guap/types": "workspace:*",
     "better-auth": "^1.3.27",
     "convex": "^1.27.5",

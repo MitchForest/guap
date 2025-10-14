@@ -15,7 +15,8 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --out-dir dist",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "lint": "pnpm run typecheck"
+    "lint": "pnpm run typecheck",
+    "test": "vitest --run"
   },
   "dependencies": {
     "@guap/types": "workspace:*",

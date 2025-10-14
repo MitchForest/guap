@@ -27,7 +27,7 @@ Money Map already captures household allocations and approval flows through Conv
 
 These primitives sit in focused Convex domains (`accounts`, `transactions`, `savings`, `budgets`, `investing`, `events`, `earn`) with mirrored packages in `packages/types` and `packages/api`.
 
-> **Implementation status:** today the backend only includes `auth` and `moneyMaps` domains, and the frontend AppData provider still returns mocked data. The domains listed above, along with the shared enums they imply, will be introduced during Milestone 0.
+> **Implementation status:** `accounts`, `transactions`, `transfers`, and `events` domains now back the provider sync flow with guardrail seeding, and the frontend AppData provider reads those APIs for live balances and approvals. Remaining domains (`budgets`, `earn`, `savings`, `investing`, `donate`) will be implemented across upcoming milestones.
 
 ## Provider Integration Strategy
 
@@ -231,6 +231,13 @@ Create `events` domain with a single Convex mutation to record typed events (`ac
 - Implement append-only AccountSnapshots from sync job.
 - Seed baseline CategoryRules from Money Map allocations.
 - Render neutral Account List page in `features/app-sections` for smoke testing.
+
+#### Provider Sync & Guardrails (Status)
+
+- `syncAccounts` now calls the virtual provider, ensures a Money Map exists, auto-mints account nodes when provider data arrives first, upserts FinancialAccounts, captures daily AccountSnapshots, and derives default category rules from the household's pods when no rules exist yet.
+- New accounts automatically seed account-scoped guardrails with an `auto` approval policy so transfers can flow without manual setup.
+- Every sync logs an `account_synced` event (and guardrail updates log `guardrail_updated`) that surfaces in the activity feed drawer, keeping households aware of changes.
+- Frontend AppData hydrates accounts from the Convex API and the app shell approvals drawer reads the live `transfers` queue (`pending_approval`).
 
 ### Milestone 2 — Save Surface Groundwork
 

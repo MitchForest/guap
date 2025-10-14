@@ -12,13 +12,13 @@ const SpendPage: Component = () => {
   const checkingBalance = createMemo(() =>
     spendAccounts()
       .filter((account) => account.kind === 'checking')
-      .reduce((sum, account) => sum + account.balanceCents, 0)
+      .reduce((sum, account) => sum + (account.balance?.cents ?? 0), 0)
   );
 
   const creditBalance = createMemo(() =>
     spendAccounts()
       .filter((account) => account.kind === 'credit')
-      .reduce((sum, account) => sum + account.balanceCents, 0)
+      .reduce((sum, account) => sum + (account.balance?.cents ?? 0), 0)
   );
 
   return (
@@ -49,9 +49,9 @@ const SpendPage: Component = () => {
                   <p class="text-xs text-subtle uppercase tracking-[0.18em]">{account.kind}</p>
                 </div>
                 <div class="text-right">
-                  <p class="text-lg font-bold text-slate-900">{formatCurrency(account.balanceCents)}</p>
+                  <p class="text-lg font-bold text-slate-900">{formatCurrency(account.balance.cents)}</p>
                   <p class="text-xs text-subtle">
-                    Available {formatCurrency(account.availableCents ?? account.balanceCents)}
+                    Available {formatCurrency(account.available?.cents ?? account.balance.cents)}
                   </p>
                 </div>
               </div>

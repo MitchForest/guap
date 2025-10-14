@@ -23,19 +23,19 @@ const DashboardPage: Component = () => {
   const { accounts, incomeStreams, requests } = useAppData();
 
   const totalBalanceCents = createMemo(() =>
-    accounts().reduce((sum, account) => sum + account.balanceCents, 0)
+    accounts().reduce((sum, account) => sum + (account.balance?.cents ?? 0), 0)
   );
 
   const savingsBalanceCents = createMemo(() =>
     accounts()
       .filter((account) => account.kind === 'hysa')
-      .reduce((sum, account) => sum + account.balanceCents, 0)
+      .reduce((sum, account) => sum + (account.balance?.cents ?? 0), 0)
   );
 
   const investBalanceCents = createMemo(() =>
     accounts()
       .filter((account) => account.kind === 'utma' || account.kind === 'brokerage')
-      .reduce((sum, account) => sum + account.balanceCents, 0)
+      .reduce((sum, account) => sum + (account.balance?.cents ?? 0), 0)
   );
 
   const monthlyIncomeCents = createMemo(() =>

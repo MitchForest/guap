@@ -10,7 +10,7 @@ const InvestPage: Component = () => {
   );
 
   const investedTotal = createMemo(() =>
-    investmentAccounts().reduce((sum, account) => sum + account.balanceCents, 0)
+    investmentAccounts().reduce((sum, account) => sum + (account.balance?.cents ?? 0), 0)
   );
 
   return (
@@ -35,7 +35,7 @@ const InvestPage: Component = () => {
                   <p class="text-sm font-semibold text-slate-900">{account.name}</p>
                   <p class="text-xs text-subtle">{account.kind === 'utma' ? 'UTMA Account' : 'Brokerage'}</p>
                 </div>
-                <p class="text-lg font-bold text-slate-900">{formatCurrency(account.balanceCents)}</p>
+                <p class="text-lg font-bold text-slate-900">{formatCurrency(account.balance.cents)}</p>
               </div>
               <p class="mt-3 text-sm text-subtle">
                 Portfolio allocation and returns will display here. For now, aim for a balanced mix

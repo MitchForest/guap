@@ -5,3 +5,7 @@ export * from './domains/households';
 export * from './domains/profiles';
 export * from './domains/requests';
 export * from './domains/moneyMaps';
+export * from './domains/accounts';
+export * from './domains/transactions';
+export * from './domains/transfers';
+export * from './domains/events';

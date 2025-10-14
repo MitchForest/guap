@@ -8,7 +8,12 @@ import {
   createSignal,
   useContext,
 } from 'solid-js';
-import type { AccountRecord, HouseholdRecord, IncomeRecord, RequestRecord } from '@guap/api';
+import type {
+  FinancialAccountRecord,
+  HouseholdRecord,
+  IncomeRecord,
+  RequestRecord,
+} from '@guap/api';
 import { HouseholdRecordSchema } from '@guap/types';
 import { useAuth } from '~/app/contexts/AuthContext';
 import type { AuthUser } from '~/app/contexts/AuthContext';
@@ -20,7 +25,7 @@ type AppDataContextValue = {
   households: Accessor<HouseholdRecord[]>;
   activeHousehold: Accessor<HouseholdRecord | null>;
   setActiveHouseholdId: (householdId: string | null) => void;
-  accounts: Accessor<AccountRecord[]>;
+  accounts: Accessor<FinancialAccountRecord[]>;
   incomeStreams: Accessor<IncomeRecord[]>;
   requests: Accessor<RequestRecord[]>;
 };
@@ -37,31 +42,15 @@ const AppDataProvider: Component<AppDataProviderProps> = (props) => {
   const [activeHouseholdId, setActiveHouseholdId] = createSignal<string | null>(null);
   const { data: accountsResource } = createGuapQuery({
     source: activeHouseholdId,
-    initialValue: [] as AccountRecord[],
+    initialValue: [] as FinancialAccountRecord[],
     fetcher: async (householdId) => {
-      const snapshot = await guapApi.loadMoneyMap(organizationIdFor(householdId));
-      if (!snapshot) {
-        return [];
+      const organizationId = organizationIdFor(householdId);
+      try {
+        await guapApi.accounts.sync({ organizationId });
+      } catch (error) {
+        console.warn('Account sync failed', error);
       }
-      return snapshot.nodes
-        .filter((node) => node.kind === 'account')
-        .map((node) => {
-          const balanceCents = typeof node.metadata?.balanceCents === 'number' ? node.metadata.balanceCents : 0;
-          return {
-            _id: String(node._id ?? node.key),
-            householdId,
-            ownerProfileId: null,
-            name: node.label,
-            kind: 'checking',
-            status: 'active',
-            currency: 'USD',
-            balanceCents,
-            availableCents: balanceCents,
-            metadata: { moneyMapNodeKey: node.key },
-            createdAt: node.createdAt ?? Date.now(),
-            updatedAt: node.updatedAt ?? Date.now(),
-          } satisfies AccountRecord;
-        });
+      return await guapApi.accounts.list(organizationId);
     },
   });
 
