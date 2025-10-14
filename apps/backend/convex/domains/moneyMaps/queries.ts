@@ -1,23 +1,26 @@
-import { query } from '../../_generated/server';
-import { v } from 'convex/values';
-import type { MoneyMapChangeStatus } from '@guap/types';
+import { z } from 'zod';
+import { defineQuery } from '../../core/functions';
+import { MoneyMapChangeStatusSchema, type MoneyMapChangeStatus } from '@guap/types';
 import {
   ALL_ROLES,
-  changeStatusArg,
   ensureOrganizationAccess,
   ensureRole,
   loadSnapshot,
 } from './services';
 
-export const load = query({
-  args: {
-    organizationId: v.string(),
-  },
+const LoadArgsShape = {
+  organizationId: z.string(),
+} as const;
+const LoadArgsSchema = z.object(LoadArgsShape);
+
+export const load = defineQuery({
+  args: LoadArgsShape,
   handler: async (ctx, args) => {
-    await ensureOrganizationAccess(ctx, args.organizationId);
+    const parsed = LoadArgsSchema.parse(args);
+    await ensureOrganizationAccess(ctx, parsed.organizationId);
     const map = await ctx.db
       .query('moneyMaps')
-      .withIndex('by_organization', (q: any) => q.eq('organizationId', args.organizationId))
+      .withIndex('by_organization', (q: any) => q.eq('organizationId', parsed.organizationId))
       .unique();
 
     if (!map) {
@@ -28,35 +31,27 @@ export const load = query({
   },
 });
 
-export const listChangeRequests = query({
-  args: {
-    organizationId: v.string(),
-    status: v.optional(changeStatusArg),
-  },
+const ListChangeRequestsShape = {
+  organizationId: z.string(),
+  status: MoneyMapChangeStatusSchema.optional(),
+} as const;
+const ListChangeRequestsSchema = z.object(ListChangeRequestsShape);
+
+export const listChangeRequests = defineQuery({
+  args: ListChangeRequestsShape,
   handler: async (ctx, args) => {
-    const session = await ensureOrganizationAccess(ctx, args.organizationId);
+    const parsed = ListChangeRequestsSchema.parse(args);
+    const session = await ensureOrganizationAccess(ctx, parsed.organizationId);
     ensureRole(session, ALL_ROLES);
 
-    let requests;
-    if (args.status) {
-      requests = await ctx.db
-        .query('moneyMapChangeRequests')
-        .withIndex('by_organization_status', (q: any) =>
-          q.eq('organizationId', args.organizationId).eq(
-            'status',
-            args.status as MoneyMapChangeStatus
-          )
-        )
-        .collect();
-    } else {
-      requests = await ctx.db
-        .query('moneyMapChangeRequests')
-        .withIndex('by_organization_status', (q: any) =>
-          q.eq('organizationId', args.organizationId)
-        )
-        .collect();
-    }
+    const baseQuery = ctx.db
+      .query('moneyMapChangeRequests')
+      .withIndex('by_organization_status', (q: any) => q.eq('organizationId', parsed.organizationId));
 
-    return requests.sort((a, b) => b.createdAt - a.createdAt);
+    const records = parsed.status
+      ? await baseQuery.eq('status', parsed.status as MoneyMapChangeStatus).collect()
+      : await baseQuery.collect();
+
+    return records.sort((a: any, b: any) => b.createdAt - a.createdAt);
   },
 });

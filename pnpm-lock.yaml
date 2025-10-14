@@ -33,6 +33,9 @@ catalogs:
     convex:
       specifier: ^1.27.3
       version: 1.27.3
+    convex-helpers:
+      specifier: ^0.1.104
+      version: 0.1.104
     eslint:
       specifier: ^9.37.0
       version: 9.37.0
@@ -45,6 +48,9 @@ catalogs:
     typescript-eslint:
       specifier: ^8.46.0
       version: 8.46.0
+    zod:
+      specifier: ^3.25.76
+      version: 3.25.76
 
 importers:
 
@@ -74,9 +80,15 @@ importers:
       convex:
         specifier: ^1.27.5
         version: 1.27.5(react@19.2.0)
+      convex-helpers:
+        specifier: 'catalog:'
+        version: 0.1.104(convex@1.27.5(react@19.2.0))(react@19.2.0)(typescript@5.9.3)(zod@3.25.76)
       stripe:
         specifier: ^18.0.0
         version: 18.5.0(@types/node@20.19.20)
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^20.17.12

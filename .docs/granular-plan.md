@@ -4,22 +4,31 @@ This checklist turns the feature and data-model plans into a concrete execution 
 
 ---
 
+## Handoff Notes (entering Milestone 1)
+
+- `financialAccounts` is now stubbed in Convex. The accounts domain should flesh this out with real fields and queries in Milestone 1.
+- `defineQuery/defineMutation` wrappers are available; new domains must use them and add row-level security rules where required.
+- `createGuapQuery` is the shared Convex data helper. Wire new surfaces through it (and refetch appropriately) instead of ad-hoc `createResource`.
+- `DataTable` now rides on TanStack. Build Spend/Save/Invest tables by supplying column defs + sorting instead of rolling custom tables.
+- API clients for each domain currently expose placeholder `status/bootstraps`; expand them alongside backend domain work so the frontend can consume the same wrappers.
+- App shell approvals/activity drawers rely on the Money Map change requests. Replace the mock data once real endpoints are available and extend the view toggle logic as surfaces demand.
+
 ## Milestone 0 — Shared Foundations
 
 **Objective:** align core schemas, shared tooling, and developer ergonomics before shipping new surfaces.
 
 - ✅ Review current Money Map + auth code to confirm baseline (done).
-- [ ] Update shared enums in `packages/types/src/shared/enums.ts` (`TransactionDirection`, `TransactionSource`, `TransactionStatus`, `NeedsVsWants`, `TransferStatus`, `TransferIntent`, `IncomeStreamStatus`, `GoalStatus`, `OrderSide`, `OrderStatus`, `EventKind`).
-- [ ] Update Convex schema + Zod types:
+- [x] Update shared enums in `packages/types/src/shared/enums.ts` (`TransactionDirection`, `TransactionSource`, `TransactionStatus`, `NeedsVsWants`, `TransferStatus`, `TransferIntent`, `IncomeStreamStatus`, `GoalStatus`, `OrderSide`, `OrderStatus`, `EventKind`).
+- [x] Update Convex schema + Zod types:
   - Remove `moneyMapEdges.metadata.note`.
   - Drop unused `moneyMapNodes.by_map_key` / `moneyMapRules.by_map_key` indexes.
   - Replace `MoneyMapChangeStatus` variants with `awaiting_admin | approved | rejected | withdrawn`.
   - Add `transferGuardrails` table and `withdrawn` handling to mutations/queries.
-- [ ] Propagate schema changes to generated Convex types (`pnpm --filter @guap/backend generate` after edits).
-- [ ] Create skeleton Convex domains (`accounts`, `transactions`, `budgets`, `earn`, `savings`, `investing`, `donate`, `events`) with placeholder queries/mutations and basic tests.
-- [ ] Extend `packages/api` with matching client scaffolding + barrel exports.
-- [ ] Install `convex-helpers` (`pnpm add convex-helpers`) and wire custom query/mutation wrappers + validator helpers (adopt for all queries/mutations); also use row-level security wrapper once domains are stable.
-- [ ] Frontend shared systems:
+- [x] Propagate schema changes to generated Convex types (`pnpm --filter @guap/backend generate` after edits).
+- [x] Create skeleton Convex domains (`accounts`, `transactions`, `budgets`, `earn`, `savings`, `investing`, `donate`, `events`) with placeholder queries/mutations and basic tests.
+- [x] Extend `packages/api` with matching client scaffolding + barrel exports.
+- [x] Install `convex-helpers` (`pnpm add convex-helpers`) and wire custom query/mutation wrappers + validator helpers (adopt for all queries/mutations); also use row-level security wrapper once domains are stable.
+- [x] Frontend shared systems:
   - Build `DataState`, `PageSkeleton`, `TableSkeleton`, `StatSkeleton`.
   - Build lightweight fetch helpers around Convex queries/mutations (no TanStack Query); provide resource fallback utilities where necessary.
   - Implement `shared/forms` (TanStack Form + Zod resolver) and `FormField`/`FormActions`.
@@ -30,9 +39,10 @@ This checklist turns the feature and data-model plans into a concrete execution 
   - Create `shared/utils/permissions`, `PermissionGate`, `usePermission`.
   - Package layout primitives (`PageContainer`, `Section`, `MetricCard`, `SummaryList`, `Modal`, `Drawer`, `StickyCTA`).
   - Stand up shared approvals inbox and household activity feed shells backed by placeholder data.
-- [ ] Update App shell to expose entry points/placeholders for approvals inbox + activity feed.
+- [x] Update App shell to expose entry points/placeholders for approvals inbox + activity feed.
 - [ ] Document provider sync workflow and guardrail philosophy in README / docs if needed.
-- [ ] Verify lint/typecheck/build succeed after foundational changes.
+- [x] Verify lint/typecheck/build succeed after foundational changes.
+- [ ] Add row-level security policies via the helper wrappers once real domain logic ships (track alongside Milestone 1 domain work).
 
 ---
 
@@ -56,6 +66,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
   - Build foundational account list view (even simple table) for smoke testing.
   - Wire approvals inbox shell to `transfers` (pending_approval) endpoint.
   - Wire activity feed shell to `eventsJournal`.
+- [ ] Replace placeholder Convex domain scaffolds + API status stubs with real Accounts/Transactions queries & mutations.
 - [ ] Update docs (`.docs/new-features.md` & `.docs/data-models.md`) if schemas or behaviour change during implementation.
 - [ ] Confirm lint/typecheck/build/dev flows remain green.
 
@@ -182,4 +193,3 @@ This checklist turns the feature and data-model plans into a concrete execution 
 - Mobile-specific refinements beyond StickyCTA.
 
 Track these after Milestone 7 if bandwidth permits.
-

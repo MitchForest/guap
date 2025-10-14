@@ -1,21 +1,22 @@
-import { mutation } from '../../_generated/server';
-import { v } from 'convex/values';
+import { z } from 'zod';
 import { OrganizationKindValues, UserRoleValues } from '@guap/types';
 import { getAuthContext, slugFromName } from './services';
 import { requireAuth } from '../../core/auth';
+import { defineMutation } from '../../core/functions';
 
-const roleArg = v.union(...UserRoleValues.map((value) => v.literal(value)));
-const organizationKindArg = v.union(
-  ...OrganizationKindValues.map((value) => v.literal(value))
-);
+const CompleteSignupArgs = {
+  role: z.enum(UserRoleValues),
+  organizationKind: z.enum(OrganizationKindValues),
+  organizationName: z.string().optional(),
+} as const;
 
-export const completeSignup = mutation({
-  args: {
-    role: roleArg,
-    organizationKind: organizationKindArg,
-    organizationName: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
+const CompleteSignupSchema = z.object(CompleteSignupArgs);
+
+export const completeSignup = defineMutation({
+  args: CompleteSignupArgs,
+  handler: async (ctx, rawArgs) => {
+    const args = CompleteSignupSchema.parse(rawArgs);
+
     const authUser = await requireAuth(ctx);
     const sessionUser = {
       ...(authUser as any)?.session?.user,
@@ -26,8 +27,8 @@ export const completeSignup = mutation({
       typeof sessionUser.activeOrganizationId === 'string'
         ? (sessionUser.activeOrganizationId as string)
         : typeof sessionUser.organizationId === 'string'
-        ? (sessionUser.organizationId as string)
-        : null;
+          ? (sessionUser.organizationId as string)
+          : null;
 
     if (args.role !== 'owner') {
       return { shouldRefresh: false, organizationId: activeOrganizationId };

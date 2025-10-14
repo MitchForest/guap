@@ -1,3 +1,11 @@
 export * as authCore from './core/auth';
 export * as auth from './domains/auth';
 export * as moneyMaps from './domains/moneyMaps';
+export * as accounts from './domains/accounts';
+export * as transactions from './domains/transactions';
+export * as budgets from './domains/budgets';
+export * as earn from './domains/earn';
+export * as savings from './domains/savings';
+export * as investing from './domains/investing';
+export * as donate from './domains/donate';
+export * as events from './domains/events';

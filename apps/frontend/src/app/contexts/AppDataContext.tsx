@@ -12,6 +12,9 @@ import type { AccountRecord, HouseholdRecord, IncomeRecord, RequestRecord } from
 import { HouseholdRecordSchema } from '@guap/types';
 import { useAuth } from '~/app/contexts/AuthContext';
 import type { AuthUser } from '~/app/contexts/AuthContext';
+import { createGuapQuery } from '~/shared/services/queryHelpers';
+import { guapApi } from '~/shared/services/guapApi';
+import { organizationIdFor } from '~/features/money-map/api/cache';
 
 type AppDataContextValue = {
   households: Accessor<HouseholdRecord[]>;
@@ -31,10 +34,76 @@ type AppDataProviderProps = {
 const AppDataProvider: Component<AppDataProviderProps> = (props) => {
   const { user } = useAuth();
   const [households, setHouseholds] = createSignal<HouseholdRecord[]>([]);
-  const [accounts] = createSignal<AccountRecord[]>([]);
-  const [incomeStreams] = createSignal<IncomeRecord[]>([]);
-  const [requests] = createSignal<RequestRecord[]>([]);
   const [activeHouseholdId, setActiveHouseholdId] = createSignal<string | null>(null);
+  const { data: accountsResource } = createGuapQuery({
+    source: activeHouseholdId,
+    initialValue: [] as AccountRecord[],
+    fetcher: async (householdId) => {
+      const snapshot = await guapApi.loadMoneyMap(organizationIdFor(householdId));
+      if (!snapshot) {
+        return [];
+      }
+      return snapshot.nodes
+        .filter((node) => node.kind === 'account')
+        .map((node) => {
+          const balanceCents = typeof node.metadata?.balanceCents === 'number' ? node.metadata.balanceCents : 0;
+          return {
+            _id: String(node._id ?? node.key),
+            householdId,
+            ownerProfileId: null,
+            name: node.label,
+            kind: 'checking',
+            status: 'active',
+            currency: 'USD',
+            balanceCents,
+            availableCents: balanceCents,
+            metadata: { moneyMapNodeKey: node.key },
+            createdAt: node.createdAt ?? Date.now(),
+            updatedAt: node.updatedAt ?? Date.now(),
+          } satisfies AccountRecord;
+        });
+    },
+  });
+
+  const { data: requestsResource } = createGuapQuery({
+    source: activeHouseholdId,
+    initialValue: [] as RequestRecord[],
+    fetcher: async (householdId) => {
+      const organizationId = organizationIdFor(householdId);
+      const changeRequests = await guapApi.listChangeRequests(organizationId);
+      const stateFromStatus = (status: string): RequestRecord['state'] => {
+        switch (status) {
+          case 'approved':
+            return 'approved';
+          case 'rejected':
+            return 'rejected';
+          case 'withdrawn':
+            return 'rejected';
+          default:
+            return 'pending';
+        }
+      };
+      return changeRequests.map((request) => ({
+        _id: request._id,
+        householdId,
+        createdByProfileId: request.submitterId,
+        assignedToProfileId: null,
+        kind: 'money_map_change',
+        state: stateFromStatus(request.status),
+        payload: { summary: request.summary ?? null },
+        resolvedByProfileId: null,
+        resolvedAt: request.resolvedAt ?? undefined,
+        createdAt: request.createdAt,
+        updatedAt: request.updatedAt,
+      } satisfies RequestRecord));
+    },
+  });
+
+  const { data: incomeStreamsResource } = createGuapQuery({
+    source: activeHouseholdId,
+    initialValue: [] as IncomeRecord[],
+    fetcher: async () => [] as IncomeRecord[],
+  });
   const activeHousehold = createMemo(() => {
     const id = activeHouseholdId();
     if (!id) return null;
@@ -77,9 +146,9 @@ const AppDataProvider: Component<AppDataProviderProps> = (props) => {
     const currentUser = user();
     loadHouseholdData(currentUser ?? null);
   });
-  const filteredAccounts = createMemo(() => accounts());
-  const filteredIncomeStreams = createMemo(() => incomeStreams());
-  const filteredRequests = createMemo(() => requests());
+  const filteredAccounts = createMemo(() => accountsResource());
+  const filteredIncomeStreams = createMemo(() => incomeStreamsResource());
+  const filteredRequests = createMemo(() => requestsResource());
   return (
     <AppDataContext.Provider
       value={{

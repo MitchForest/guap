@@ -4,6 +4,7 @@ import {
   MoneyMapChangeStatusValues,
   MoneyMapNodeKindValues,
   MoneyMapRuleTriggerValues,
+  TransferIntentValues,
 } from '@guap/types';
 
 const moneyMapNodeKind = v.union(
@@ -46,7 +47,6 @@ const moneyMapEdgeMetadata = v.optional(v.object({
   ruleId: v.optional(v.string()),
   amountCents: v.optional(v.number()),
   tag: v.optional(v.string()),
-  note: v.optional(v.string()),
 }));
 
 const moneyMapRuleConfig = v.object({
@@ -81,8 +81,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index('by_map', ['mapId'])
-    .index('by_map_key', ['mapId', 'key']),
+    .index('by_map', ['mapId']),
 
   moneyMapEdges: defineTable({
     mapId: v.id('moneyMaps'),
@@ -101,8 +100,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index('by_map', ['mapId'])
-    .index('by_map_key', ['mapId', 'key']),
+    .index('by_map', ['mapId']),
 
   moneyMapChangeRequests: defineTable({
     mapId: v.id('moneyMaps'),
@@ -143,5 +141,56 @@ export default defineSchema({
   })
     .index('by_map_status', ['mapId', 'status'])
     .index('by_organization_status', ['organizationId', 'status']),
+
+  transferGuardrails: defineTable({
+    organizationId: v.string(),
+    scope: v.union(
+      v.object({ type: v.literal('organization') }),
+      v.object({ type: v.literal('money_map_node'), nodeId: v.id('moneyMapNodes') }),
+      v.object({ type: v.literal('account'), accountId: v.id('financialAccounts') })
+    ),
+    intent: v.union(...TransferIntentValues.map((value) => v.literal(value))),
+    direction: v.object({
+      sourceNodeId: v.union(v.null(), v.id('moneyMapNodes')),
+      destinationNodeId: v.union(v.null(), v.id('moneyMapNodes')),
+    }),
+    approvalPolicy: v.union(
+      v.literal('auto'),
+      v.literal('parent_required'),
+      v.literal('admin_only')
+    ),
+    autoApproveUpToCents: v.optional(v.union(v.null(), v.number())),
+    dailyLimitCents: v.optional(v.union(v.null(), v.number())),
+    weeklyLimitCents: v.optional(v.union(v.null(), v.number())),
+    allowedInstrumentKinds: v.optional(
+      v.array(
+        v.union(
+          v.literal('etf'),
+          v.literal('stock'),
+          v.literal('bond'),
+          v.literal('cash')
+        )
+      )
+    ),
+    blockedSymbols: v.optional(v.array(v.string())),
+    maxOrderAmountCents: v.optional(v.union(v.null(), v.number())),
+    requireApprovalForSell: v.optional(v.union(v.null(), v.boolean())),
+    allowedRolesToInitiate: v.array(
+      v.union(v.literal('owner'), v.literal('admin'), v.literal('member'))
+    ),
+    createdByProfileId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_organization_intent', ['organizationId', 'intent'])
+    .index('by_scope_intent', ['scope.type', 'intent']),
+
+  financialAccounts: defineTable({
+    organizationId: v.string(),
+    name: v.string(),
+    kind: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_organization', ['organizationId']),
 
 });

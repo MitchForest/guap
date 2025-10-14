@@ -48,7 +48,6 @@ export type CanvasFlow = {
   targetId: CanvasNode['id'];
   tag?: string;
   amountCents?: number;
-  note?: string;
   ruleId?: string;
   percentage?: number;
 };

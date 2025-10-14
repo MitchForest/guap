@@ -159,7 +159,6 @@ const normalizeEdgeMetadata = (
   }
 
   assign('tag', typeof source.tag === 'string' ? source.tag : undefined);
-  assign('note', typeof source.note === 'string' ? source.note : undefined);
 
   return Object.keys(metadata).length > 0 ? MoneyMapEdgeMetadataSchema.parse(metadata) : undefined;
 };
@@ -261,7 +260,6 @@ const MoneyMapGraphEdgeSchema = z.object({
   targetNodeId: z.string(),
   amountCents: z.number().optional(),
   tag: z.string().optional(),
-  note: z.string().optional(),
   ruleId: z.string().optional(),
 });
 
@@ -347,7 +345,6 @@ export const workspaceGraphFromSnapshot = (
           ? (metadata as Record<string, any>).amountCents
           : undefined,
       tag: (metadata as Record<string, any>).tag ?? undefined,
-      note: (metadata as Record<string, any>).note ?? undefined,
       ruleId: (metadata as Record<string, any>).ruleId ?? undefined,
     };
   });

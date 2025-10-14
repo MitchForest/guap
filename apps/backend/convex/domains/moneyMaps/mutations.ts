@@ -1,80 +1,44 @@
-import { mutation } from '../../_generated/server';
+import { z } from 'zod';
+import { zid } from 'convex-helpers/server/zod';
 import type { Id } from '@guap/api/codegen/dataModel';
-import { v } from 'convex/values';
 import {
-  MoneyMapNodeKindValues,
-  MoneyMapRuleTriggerValues,
+  MoneyMapChangeStatusSchema,
   MoneyMapSaveInputSchema,
+  type MoneyMapSaveInput,
   type MoneyMapChangeStatus,
   type MoneyMapNodeKind,
   type MoneyMapRuleTrigger,
 } from '@guap/types';
+import { defineMutation } from '../../core/functions';
 import {
   ALL_ROLES,
   OWNER_ADMIN_ROLES,
-  changeStatusArg,
   ensureOrganizationAccess,
   ensureRole,
   loadSnapshot,
   now,
   scrubMetadata,
-  enumArg,
 } from './services';
 
-const nodeInputArg = v.object({
-  key: v.string(),
-  kind: enumArg(MoneyMapNodeKindValues),
-  label: v.string(),
-  metadata: v.optional(v.record(v.string(), v.any())),
-});
+const SaveArgsSchema = MoneyMapSaveInputSchema.shape;
 
-const edgeInputArg = v.object({
-  sourceKey: v.string(),
-  targetKey: v.string(),
-  metadata: v.optional(v.record(v.string(), v.any())),
-});
-
-const ruleInputArg = v.object({
-  key: v.string(),
-  trigger: enumArg(MoneyMapRuleTriggerValues),
-  config: v.record(v.string(), v.any()),
-});
-
-export const save = mutation({
-  args: {
-    organizationId: v.string(),
-    name: v.string(),
-    description: v.optional(v.string()),
-    nodes: v.array(nodeInputArg),
-    edges: v.array(edgeInputArg),
-    rules: v.array(ruleInputArg),
-  },
+export const save = defineMutation({
+  args: SaveArgsSchema,
   handler: async (ctx, args) => {
-    const session = await ensureOrganizationAccess(ctx, args.organizationId);
+    const payload = MoneyMapSaveInputSchema.parse(args) as MoneyMapSaveInput;
+    const session = await ensureOrganizationAccess(ctx, payload.organizationId);
     ensureRole(session, ALL_ROLES);
+
     const timestamp = now();
-
-    const payload = MoneyMapSaveInputSchema.parse({
-      organizationId: args.organizationId,
-      name: args.name,
-      description: args.description ?? undefined,
-      nodes: args.nodes,
-      edges: args.edges,
-      rules: args.rules,
-    });
-
-    if (payload.organizationId !== args.organizationId) {
-      throw new Error('Money map organization mismatch');
-    }
 
     const existing = await ctx.db
       .query('moneyMaps')
-      .withIndex('by_organization', (q: any) => q.eq('organizationId', args.organizationId))
+      .withIndex('by_organization', (q: any) => q.eq('organizationId', payload.organizationId))
       .unique();
 
     let mapId: Id<'moneyMaps'>;
     if (existing) {
-      if (existing.organizationId !== args.organizationId) {
+      if (existing.organizationId !== payload.organizationId) {
         throw new Error('Money map organization mismatch');
       }
       await ctx.db.patch(existing._id, {
@@ -85,7 +49,7 @@ export const save = mutation({
       mapId = existing._id;
     } else {
       mapId = await ctx.db.insert('moneyMaps', {
-        organizationId: args.organizationId,
+        organizationId: payload.organizationId,
         name: payload.name,
         description: payload.description ?? undefined,
         createdAt: timestamp,
@@ -97,25 +61,19 @@ export const save = mutation({
       .query('moneyMapNodes')
       .withIndex('by_map', (q: any) => q.eq('mapId', mapId))
       .collect();
-    for (const record of existingNodes) {
-      await ctx.db.delete(record._id);
-    }
+    await Promise.all(existingNodes.map((record: any) => ctx.db.delete(record._id)));
 
     const existingEdges = await ctx.db
       .query('moneyMapEdges')
       .withIndex('by_map', (q: any) => q.eq('mapId', mapId))
       .collect();
-    for (const record of existingEdges) {
-      await ctx.db.delete(record._id);
-    }
+    await Promise.all(existingEdges.map((record: any) => ctx.db.delete(record._id)));
 
     const existingRules = await ctx.db
       .query('moneyMapRules')
       .withIndex('by_map', (q: any) => q.eq('mapId', mapId))
       .collect();
-    for (const record of existingRules) {
-      await ctx.db.delete(record._id);
-    }
+    await Promise.all(existingRules.map((record: any) => ctx.db.delete(record._id)));
 
     for (const node of payload.nodes) {
       await ctx.db.insert('moneyMapNodes', {
@@ -159,39 +117,42 @@ export const save = mutation({
   },
 });
 
-export const submitChangeRequest = mutation({
-  args: {
-    mapId: v.id('moneyMaps'),
-    organizationId: v.string(),
-    submitterId: v.string(),
-    summary: v.optional(v.string()),
-    payload: v.any(),
-  },
+const SubmitChangeRequestArgs = {
+  mapId: zid('moneyMaps'),
+  organizationId: z.string(),
+  submitterId: z.string(),
+  summary: z.string().optional(),
+  payload: MoneyMapSaveInputSchema,
+} as const;
+
+export const submitChangeRequest = defineMutation({
+  args: SubmitChangeRequestArgs,
   handler: async (ctx, args) => {
-    const session = await ensureOrganizationAccess(ctx, args.organizationId);
+    const mapId = args.mapId as Id<'moneyMaps'>;
+    const organizationId = z.string().parse(args.organizationId);
+    const submitterId = z.string().parse(args.submitterId);
+    const summary = args.summary ?? undefined;
+
+    const payload = MoneyMapSaveInputSchema.parse(args.payload) as MoneyMapSaveInput;
+    const session = await ensureOrganizationAccess(ctx, organizationId);
     ensureRole(session, ['member']);
 
-    const map = await ctx.db.get(args.mapId);
-    if (!map || map.organizationId !== args.organizationId) {
+    const map = await ctx.db.get(mapId);
+    if (!map || map.organizationId !== organizationId) {
       throw new Error('Money map not found for organization');
     }
 
-    const parsedPayload = MoneyMapSaveInputSchema.parse(args.payload);
-    if (parsedPayload.organizationId !== args.organizationId) {
-      throw new Error('Money map payload organization mismatch');
-    }
-
     const normalizedPayload = {
-      ...parsedPayload,
-      nodes: parsedPayload.nodes.map((node) => ({
+      ...payload,
+      nodes: payload.nodes.map((node) => ({
         ...node,
         metadata: scrubMetadata(node.metadata ?? undefined),
       })),
-      edges: parsedPayload.edges.map((edge) => ({
+      edges: payload.edges.map((edge) => ({
         ...edge,
         metadata: scrubMetadata(edge.metadata ?? undefined),
       })),
-      rules: parsedPayload.rules.map((rule) => {
+      rules: payload.rules.map((rule) => {
         const config = { ...rule.config } as Record<string, unknown>;
         if (config.triggerNodeId === null) {
           delete config.triggerNodeId;
@@ -203,11 +164,11 @@ export const submitChangeRequest = mutation({
     const timestamp = now();
 
     return await ctx.db.insert('moneyMapChangeRequests', {
-      mapId: args.mapId,
-      organizationId: args.organizationId,
-      submitterId: args.submitterId,
+      mapId,
+      organizationId,
+      submitterId,
       status: 'awaiting_admin',
-      summary: args.summary ?? undefined,
+      summary,
       payload: normalizedPayload,
       createdAt: timestamp,
       resolvedAt: undefined,
@@ -216,24 +177,39 @@ export const submitChangeRequest = mutation({
   },
 });
 
-export const updateChangeRequestStatus = mutation({
-  args: {
-    requestId: v.id('moneyMapChangeRequests'),
-    status: changeStatusArg,
-  },
+const UpdateChangeRequestStatusArgs = {
+  requestId: zid('moneyMapChangeRequests'),
+  status: MoneyMapChangeStatusSchema,
+} as const;
+
+export const updateChangeRequestStatus = defineMutation({
+  args: UpdateChangeRequestStatusArgs,
   handler: async (ctx, args) => {
     const request = await ctx.db.get(args.requestId);
     if (!request) {
       throw new Error('Change request not found');
     }
+
     const session = await ensureOrganizationAccess(ctx, request.organizationId);
-    ensureRole(session, OWNER_ADMIN_ROLES);
+
+    const isWithdraw = args.status === 'withdrawn';
+    if (isWithdraw) {
+      if (!session.userId || session.userId !== request.submitterId) {
+        throw new Error('Only the submitter can withdraw this request');
+      }
+    } else {
+      ensureRole(session, OWNER_ADMIN_ROLES);
+    }
 
     const timestamp = now();
     await ctx.db.patch(args.requestId, {
       status: args.status as MoneyMapChangeStatus,
       resolvedAt:
-        args.status === 'approved' || args.status === 'rejected' ? timestamp : undefined,
+        args.status === 'approved' ||
+        args.status === 'rejected' ||
+        args.status === 'withdrawn'
+          ? timestamp
+          : undefined,
       updatedAt: timestamp,
     });
   },

@@ -1,12 +1,8 @@
 import type { Id } from '@guap/api/codegen/dataModel';
-import { v } from 'convex/values';
-import { MoneyMapChangeStatusValues, UserRoleValues } from '@guap/types';
+import { UserRoleValues } from '@guap/types';
 import { authComponent } from '../../core/auth';
 
 export const now = () => Date.now();
-
-export const enumArg = <const T extends readonly string[]>(values: T) =>
-  v.union(...values.map((value) => v.literal(value)));
 
 type CanonicalRole = (typeof UserRoleValues)[number];
 
@@ -117,5 +113,3 @@ export const loadSnapshot = async (db: any, mapId: Id<'moneyMaps'>) => {
 
   return { map, nodes, edges, rules };
 };
-
-export const changeStatusArg = enumArg(MoneyMapChangeStatusValues);

@@ -29,6 +29,22 @@ import {
   type AuthCompleteSignupInput,
   type AuthCompleteSignupResult,
 } from './domains/auth';
+import { createAccountsApi, AccountsApi, type AccountsStatus } from './domains/accounts';
+import {
+  createTransactionsApi,
+  TransactionsApi,
+  type TransactionsStatus,
+} from './domains/transactions';
+import { createBudgetsApi, BudgetsApi, type BudgetsStatus } from './domains/budgets';
+import { createEarnApi, EarnApi, type EarnStatus } from './domains/earn';
+import { createSavingsApi, SavingsApi, type SavingsStatus } from './domains/savings';
+import {
+  createInvestingApi,
+  InvestingApi,
+  type InvestingStatus,
+} from './domains/investing';
+import { createDonateApi, DonateApi, type DonateStatus } from './domains/donate';
+import { createEventsApi, EventsApi, type EventsStatus } from './domains/events';
 import type {
   MoneyMapChangeRequestRecord,
   MoneyMapChangeStatus,
@@ -65,6 +81,14 @@ export {
   type AuthCompleteSignupInput,
   type AuthCompleteSignupResult,
 } from './domains/auth';
+export type { AccountsStatus } from './domains/accounts';
+export type { TransactionsStatus } from './domains/transactions';
+export type { BudgetsStatus } from './domains/budgets';
+export type { EarnStatus } from './domains/earn';
+export type { SavingsStatus } from './domains/savings';
+export type { InvestingStatus } from './domains/investing';
+export type { DonateStatus } from './domains/donate';
+export type { EventsStatus } from './domains/events';
 export type {
   HouseholdRecord,
   MembershipRecord,
@@ -82,10 +106,26 @@ export type {
 export class GuapApi {
   readonly moneyMaps: MoneyMapsApi;
   readonly auth: AuthApi;
+  readonly accounts: AccountsApi;
+  readonly transactions: TransactionsApi;
+  readonly budgets: BudgetsApi;
+  readonly earn: EarnApi;
+  readonly savings: SavingsApi;
+  readonly investing: InvestingApi;
+  readonly donate: DonateApi;
+  readonly events: EventsApi;
 
   constructor(private readonly client: ConvexClientInstance) {
     this.moneyMaps = createMoneyMapsApi(client);
     this.auth = createAuthApi(client);
+    this.accounts = createAccountsApi(client);
+    this.transactions = createTransactionsApi(client);
+    this.budgets = createBudgetsApi(client);
+    this.earn = createEarnApi(client);
+    this.savings = createSavingsApi(client);
+    this.investing = createInvestingApi(client);
+    this.donate = createDonateApi(client);
+    this.events = createEventsApi(client);
   }
 
   async loadMoneyMap(organizationId: string): Promise<MoneyMapSnapshot | null> {

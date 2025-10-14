@@ -11,7 +11,12 @@ export const MoneyMapNodeKindSchema = z.enum(MoneyMapNodeKindValues);
 export const MoneyMapRuleTriggerValues = ['incoming', 'scheduled'] as const;
 export const MoneyMapRuleTriggerSchema = z.enum(MoneyMapRuleTriggerValues);
 
-export const MoneyMapChangeStatusValues = ['draft', 'awaiting_admin', 'approved', 'rejected'] as const;
+export const MoneyMapChangeStatusValues = [
+  'awaiting_admin',
+  'approved',
+  'rejected',
+  'withdrawn',
+] as const;
 export const MoneyMapChangeStatusSchema = z.enum(MoneyMapChangeStatusValues);
 
 export const MoneyMapNodeMetadataSchema = z.object({
@@ -50,7 +55,6 @@ export const MoneyMapEdgeMetadataSchema = z
     ruleId: z.string().nullable().optional(),
     amountCents: z.number().nullable().optional(),
     tag: z.string().nullable().optional(),
-    note: z.string().nullable().optional(),
   })
   .strict();
 

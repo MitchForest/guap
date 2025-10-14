@@ -528,7 +528,6 @@ const CanvasPage: Component = () => {
       targetId: String(edge.targetNodeId),
       tag: edge.tag ?? undefined,
       amountCents: typeof edge.amountCents === 'number' ? edge.amountCents : undefined,
-      note: edge.note ?? undefined,
       ruleId: edge.ruleId ? String(edge.ruleId) : undefined,
     } satisfies CanvasFlow));
 

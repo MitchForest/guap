@@ -1,12 +1,15 @@
 import { Link, useRouter } from '@tanstack/solid-router';
 import { clsx } from 'clsx';
-import { Component, For, Show, createMemo } from 'solid-js';
+import { Component, For, Show, createMemo, createSignal } from 'solid-js';
 import { Button } from '~/shared/components/ui/button';
 import { Input } from '~/shared/components/ui/input';
 import { useAppData } from '~/app/contexts/AppDataContext';
 import { useAuth } from '~/app/contexts/AuthContext';
 import { formatCurrency } from '~/shared/utils/format';
 import { AppPaths, type AppPathValue } from '~/app/routerPaths';
+import { Drawer } from '~/shared/components/layout';
+import { ApprovalsInbox, createPlaceholderApprovals } from './ApprovalsInbox';
+import { ActivityFeed, createPlaceholderActivity } from './ActivityFeed';
 
 type AppShellProps = {
   children: any;
@@ -43,6 +46,9 @@ const AppShell: Component<AppShellProps> = (props) => {
   const { user, signOut } = useAuth();
   const { activeHousehold, accounts, requests } = useAppData();
 
+  const [approvalsOpen, setApprovalsOpen] = createSignal(false);
+  const [activityOpen, setActivityOpen] = createSignal(false);
+
   const currentPath = createMemo(() => router.state.location.pathname);
 
   const isActive = (path: NavigationPath) => {
@@ -68,6 +74,9 @@ const AppShell: Component<AppShellProps> = (props) => {
     }
     return items;
   });
+
+  const placeholderApprovals = createMemo(() => createPlaceholderApprovals());
+  const placeholderActivity = createMemo(() => createPlaceholderActivity());
 
   return (
     <div class="flex h-full w-full bg-slate-100 text-slate-900">
@@ -177,13 +186,28 @@ const AppShell: Component<AppShellProps> = (props) => {
               </div>
             </div>
             <div class="flex items-center gap-3">
-              <Button type="button" variant="secondary" size="sm" class="hidden sm:flex">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                class="hidden sm:flex"
+                onClick={() => setApprovalsOpen(true)}
+              >
                 {requestsLabel()}
                 <Show when={activeRequestsCount() > 0}>
                   <span class="ml-2 inline-flex min-w-[24px] justify-center rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
                     {activeRequestsCount()}
                   </span>
                 </Show>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="hidden sm:flex"
+                onClick={() => setActivityOpen(true)}
+              >
+                Activity
               </Button>
               <Button
                 type="button"
@@ -219,6 +243,12 @@ const AppShell: Component<AppShellProps> = (props) => {
           </div>
         </main>
       </div>
+      <Drawer open={approvalsOpen()} onOpenChange={setApprovalsOpen} title="Approvals inbox">
+        <ApprovalsInbox items={placeholderApprovals()} />
+      </Drawer>
+      <Drawer open={activityOpen()} onOpenChange={setActivityOpen} title="Activity feed">
+        <ActivityFeed entries={placeholderActivity()} />
+      </Drawer>
     </div>
   );
 };
