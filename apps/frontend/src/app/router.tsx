@@ -147,9 +147,9 @@ const donateRoute = new Route({
   component: DonatePage,
 });
 
-const automationsRoute = new Route({
+const moneyMapRoute = new Route({
   getParentRoute: () => appRoute,
-  path: 'automations',
+  path: 'money-map',
   component: CanvasPage,
 });
 
@@ -211,7 +211,7 @@ const appTree = appRoute.addChildren([
   investRoute,
   spendRoute,
   donateRoute,
-  automationsRoute,
+  moneyMapRoute,
   toolsTree,
   settingsRoute.addChildren([settingsIndexRoute, settingsMembersRoute, settingsBillingRoute, settingsOrganizationRoute]),
 ]);

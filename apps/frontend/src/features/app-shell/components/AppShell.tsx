@@ -30,7 +30,7 @@ const primaryNav: NavItem[] = [
   { label: 'Invest', path: AppPaths.appInvest, icon: '📈' },
   { label: 'Spend', path: AppPaths.appSpend, icon: '💳' },
   { label: 'Donate', path: AppPaths.appDonate, icon: '🎁' },
-  { label: 'Automations', path: AppPaths.appAutomations, icon: '🛠️' },
+  { label: 'Money Map', path: AppPaths.appMoneyMap, icon: '🗺️' },
 ];
 
 const toolsNav: NavItem[] = [
@@ -156,64 +156,53 @@ const AppShell: Component<AppShellProps> = (props) => {
         </aside>
       </Show>
       <div class="flex flex-1 flex-col">
-        <header
-          class={clsx(
-            'flex items-center justify-between border-b px-4 py-3 md:px-6',
-            props.fullScreen
-              ? 'border-transparent bg-transparent'
-              : 'border-slate-200 bg-white/80 backdrop-blur'
-          )}
-        >
-          <div class="flex flex-1 items-center gap-3 md:gap-4">
-            <Show when={props.fullScreen}>
+        <Show when={!props.fullScreen}>
+          <header
+            class={clsx(
+              'flex items-center justify-between border-b px-4 py-3 md:px-6',
+              'border-slate-200 bg-white/80 backdrop-blur'
+            )}
+          >
+            <div class="flex flex-1 items-center gap-3 md:gap-4">
+              <div class="relative hidden flex-1 max-w-md items-stretch lg:flex">
+                <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+                  🔍
+                </span>
+                <Input
+                  type="search"
+                  class="h-10 w-full pl-10 pr-3"
+                  placeholder="Search accounts, goals, money maps…"
+                  aria-label="Search"
+                />
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <Button type="button" variant="secondary" size="sm" class="hidden sm:flex">
+                {requestsLabel()}
+                <Show when={activeRequestsCount() > 0}>
+                  <span class="ml-2 inline-flex min-w-[24px] justify-center rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
+                    {activeRequestsCount()}
+                  </span>
+                </Show>
+              </Button>
               <Button
                 type="button"
+                variant="ghost"
                 size="sm"
-                variant="secondary"
-                class="lg:hidden"
-                onClick={() => router.navigate({ to: basePath })}
+                class="flex items-center gap-2 text-slate-600 hover:text-slate-900"
+                onClick={async () => {
+                  await signOut();
+                  router.navigate({ to: AppPaths.landing });
+                }}
               >
-                ← Back
-              </Button>
-            </Show>
-            <div class="relative hidden flex-1 max-w-md items-stretch lg:flex">
-              <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
-                🔍
-              </span>
-              <Input
-                type="search"
-                class="h-10 w-full pl-10 pr-3"
-                placeholder="Search accounts, goals, automations…"
-                aria-label="Search"
-              />
-            </div>
-          </div>
-          <div class="flex items-center gap-3">
-            <Button type="button" variant="secondary" size="sm" class="hidden sm:flex">
-              {requestsLabel()}
-              <Show when={activeRequestsCount() > 0}>
-                <span class="ml-2 inline-flex min-w-[24px] justify-center rounded-full bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white">
-                  {activeRequestsCount()}
+                <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-700">
+                  {user()?.displayName?.slice(0, 1).toUpperCase() ?? 'U'}
                 </span>
-              </Show>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              class="flex items-center gap-2 text-slate-600 hover:text-slate-900"
-              onClick={async () => {
-                await signOut();
-                router.navigate({ to: AppPaths.landing });
-              }}
-            >
-              <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-700">
-                {user()?.displayName?.slice(0, 1).toUpperCase() ?? 'U'}
-              </span>
-              <span class="hidden text-sm font-semibold sm:block">Sign out</span>
-            </Button>
-          </div>
-        </header>
+                <span class="hidden text-sm font-semibold sm:block">Sign out</span>
+              </Button>
+            </div>
+          </header>
+        </Show>
         <main
           class={clsx(
             'flex-1',

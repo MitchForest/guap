@@ -16,14 +16,25 @@ import { useCanvasSimulation, simulationHorizonOptions } from '~/features/money-
 import { SimulationPanel } from '~/features/money-map';
 import { useFlowComposer } from '~/features/money-map/state/useFlowComposer';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '~/shared/components/ui/dropdown-menu';
+import { Button } from '~/shared/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '~/shared/components/ui/alert-dialog';
 import { useAppData } from '~/app/contexts/AppDataContext';
 import { useAuth } from '~/app/contexts/AuthContext';
-import { CanvasDrawerPanel, CanvasScene, CanvasToolbar, createCanvasEditor } from '~/features/money-map';
+import { CanvasDrawerPanel, CanvasScene, createCanvasEditor } from '~/features/money-map';
 import type { AllocationHealth, AllocationIssue, RuleRecord } from '~/features/money-map';
 import {
   clearMoneyMapCache,
   loadMoneyMapGraph,
-  saveMoneyMapGraph,
   submitMoneyMapChangeRequest,
 } from '~/features/money-map/api/client';
 import { useShell } from '~/app/contexts/ShellContext';
@@ -49,7 +60,7 @@ const ChevronDownIcon = () => (
   </svg>
 );
 
-const ExitIcon = () => (
+const CloseIcon = () => (
   <svg
     class="h-4 w-4"
     viewBox="0 0 24 24"
@@ -60,59 +71,8 @@ const ExitIcon = () => (
     stroke-linejoin="round"
     aria-hidden="true"
   >
-    <path d="M15 6l6 6-6 6" />
-    <path d="M21 12H9" />
-    <path d="M9 5H5a2 2 0 00-2 2v10a2 2 0 002 2h4" />
-  </svg>
-);
-
-const SaveIcon = () => (
-  <svg
-    class="h-4 w-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M5 21h14a2 2 0 002-2V7.828a2 2 0 00-.586-1.414l-3.828-3.828A2 2 0 0015.172 2H5a2 2 0 00-2 2v15a2 2 0 002 2z" />
-    <path d="M9 21v-6h6v6" />
-    <path d="M9 5h6v4H9z" />
-  </svg>
-);
-
-const DuplicateIcon = () => (
-  <svg
-    class="h-4 w-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"
-  >
-    <rect x="9" y="9" width="13" height="13" rx="2" />
-    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-  </svg>
-);
-
-const ShareIcon = () => (
-  <svg
-    class="h-4 w-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7" />
-    <path d="M16 6l-4-4-4 4" />
-    <path d="M12 2v14" />
+    <path d="M18 6L6 18" />
+    <path d="M6 6l12 12" />
   </svg>
 );
 
@@ -151,7 +111,6 @@ const CanvasPage: Component = () => {
 
   const householdId = createMemo(() => activeHousehold()?._id ?? null);
   const [initializingMap, setInitializingMap] = createSignal(true);
-  const [saving, setSaving] = createSignal(false);
   const [submittingChangeRequest, setSubmittingChangeRequest] = createSignal(false);
   const [lastSnapshot, setLastSnapshot] = createSignal<MoneyMapSnapshot | null>(null);
   const lastUpdatedLabel = createMemo(() => {
@@ -163,7 +122,6 @@ const CanvasPage: Component = () => {
     () => lastSnapshot()?.map?.name ?? activeHousehold()?.name ?? 'Money Map'
   );
   let drawerContainerRef: HTMLDivElement | undefined;
-  let shareStatusTimeout: number | undefined;
 
   const {
     graph,
@@ -199,8 +157,6 @@ const CanvasPage: Component = () => {
   const [podParentId, setPodParentId] = createSignal<string | null>(null);
   const [showHero, setShowHero] = createSignal(true);
   const [loading, setLoading] = createSignal(true);
-  const [actionsMenuOpen, setActionsMenuOpen] = createSignal(false);
-  const [shareStatus, setShareStatus] = createSignal<'copied' | 'error' | null>(null);
 
   const loadMoneyMapState = async ({ primeHistory = false }: { primeHistory?: boolean } = {}) => {
     const id = householdId();
@@ -236,37 +192,6 @@ const CanvasPage: Component = () => {
       setInitializingMap(false);
     }
   };
-
-  const showShareStatus = (status: 'copied' | 'error') => {
-    setShareStatus(status);
-    if (typeof window !== 'undefined') {
-      if (shareStatusTimeout) window.clearTimeout(shareStatusTimeout);
-      shareStatusTimeout = window.setTimeout(() => setShareStatus(null), 2400);
-    }
-  };
-
-  const handleShareMoneyMap = async () => {
-    if (typeof window === 'undefined') return;
-
-    try {
-      const url = new URL(window.location.href);
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        await navigator.clipboard.writeText(url.toString());
-        showShareStatus('copied');
-      } else {
-        showShareStatus('error');
-      }
-    } catch (error) {
-      console.error('Failed to copy Money Map link', error);
-      showShareStatus('error');
-    }
-  };
-
-  onCleanup(() => {
-    if (typeof window !== 'undefined' && shareStatusTimeout) {
-      window.clearTimeout(shareStatusTimeout);
-    }
-  });
 
   const {
     flowComposer,
@@ -433,27 +358,7 @@ const CanvasPage: Component = () => {
 
   const editingLocked = createMemo(() => false);
 
-  const canSave = createMemo(
-    () =>
-      !saving() &&
-      isAuthenticated() &&
-      Boolean(householdId()) &&
-      hasChanges() &&
-      allocationIssues().length === 0
-  );
-
-  const saveDisabledReason = createMemo(() => {
-    if (saving()) return null;
-    if (!isAuthenticated()) return 'Sign in to save changes.';
-    if (!householdId()) return 'Join or create a household to save changes.';
-    if (!hasChanges()) return 'No changes to save.';
-    if (allocationIssues().length > 0) {
-      return 'Complete allocation rules for all income sources to save.';
-    }
-    return null;
-  });
-
-  const canSubmitChangeRequest = createMemo(
+  const canSendRequest = createMemo(
     () =>
       !submittingChangeRequest() &&
       Boolean(user()?.profileId) &&
@@ -461,7 +366,7 @@ const CanvasPage: Component = () => {
       hasChanges()
   );
 
-  const submitDisabledReason = createMemo(() => {
+  const requestDisabledReason = createMemo(() => {
     if (submittingChangeRequest()) return null;
     if (!isAuthenticated()) return 'Sign in to submit changes.';
     if (!householdId()) return 'Join or create a household to submit changes.';
@@ -674,17 +579,6 @@ const CanvasPage: Component = () => {
     if (!simulationMenuOpen()) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setSimulationMenuOpen(false);
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    onCleanup(() => {
-      document.removeEventListener('keydown', handleKeyDown);
-    });
-  });
-
-  createEffect(() => {
-    if (!actionsMenuOpen()) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setActionsMenuOpen(false);
     };
     document.addEventListener('keydown', handleKeyDown);
     onCleanup(() => {
@@ -1273,42 +1167,6 @@ const CanvasPage: Component = () => {
   const drawerOpen = createMemo(() => Boolean(drawerNode()));
   const simulationPanelOpen = createMemo(() => Boolean(simulationResult()));
 
-  const handleSave = async () => {
-    const id = householdId();
-    if (!id || saving()) return;
-    if (!hasChanges()) {
-      toast.message('No changes to save.');
-      return;
-    }
-    if (allocationIssues().length > 0) {
-      toast.error('Complete allocation rules for all income sources before saving.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const { snapshot, graph: savedGraph } = await saveMoneyMapGraph({
-        householdId: id,
-        draft: {
-          nodes: graph.nodes,
-          flows: graph.flows,
-          rules: rules(),
-        },
-      });
-
-      setLastSnapshot(snapshot);
-      hydrateGraph(savedGraph, { primeHistory: true });
-      replaceHistory(snapshotGraph());
-      setHasChanges(false);
-      setShowHero(savedGraph.nodes.length === 0);
-      toast.success('Money Map saved.');
-    } catch (error) {
-      console.error('Failed to save Money Map', error);
-      toast.error('Unable to save your Money Map changes.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleSubmitChangeRequest = async () => {
     const id = householdId();
     const submitterId = user()?.profileId ?? null;
@@ -1350,21 +1208,100 @@ const CanvasPage: Component = () => {
     }
   };
 
-  const toolbar = (
-    <CanvasToolbar
-      initializing={initializingMap}
-      title={mapTitle}
-      lastUpdatedLabel={lastUpdatedLabel}
-      canSave={canSave}
-      saving={saving}
-      saveDisabledReason={saveDisabledReason}
-      onSave={() => void handleSave()}
-      canSubmit={canSubmitChangeRequest}
-      submitting={submittingChangeRequest}
-      submitDisabledReason={submitDisabledReason}
-      onSubmit={() => void handleSubmitChangeRequest()}
-      onShare={() => void handleShareMoneyMap()}
-    />
+  const overlayHeader = (
+    <div class="pointer-events-none absolute inset-x-4 top-4 z-40 flex flex-col gap-3 sm:inset-x-6 sm:top-6 sm:flex-row sm:items-center sm:justify-between">
+      <div class="pointer-events-auto flex items-center gap-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          class="rounded-full border border-slate-200/70 bg-white/80 text-slate-600 shadow-sm backdrop-blur hover:border-slate-300 hover:text-slate-900"
+          onClick={handleExit}
+          aria-label="Exit money map"
+        >
+          <CloseIcon />
+        </Button>
+        <div class="hidden sm:flex flex-col leading-tight text-slate-700">
+          <Show when={!initializingMap()}>
+            <span class="text-sm font-semibold text-slate-800">{mapTitle()}</span>
+          </Show>
+          <Show when={lastUpdatedLabel()}>
+            {(label) => (
+              <span class="text-xs text-subtle">Last updated {label()}</span>
+            )}
+          </Show>
+        </div>
+      </div>
+      <div class="pointer-events-auto flex items-center gap-2 self-end sm:self-auto">
+        <Show when={simulationError()}>
+          {(message) => (
+            <span class="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm">
+              {message()}
+            </span>
+          )}
+        </Show>
+        <DropdownMenu open={simulationMenuOpen()} onOpenChange={setSimulationMenuOpen}>
+          <DropdownMenuTrigger
+            as="button"
+            type="button"
+            class="flex h-9 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm backdrop-blur-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 disabled:cursor-not-allowed"
+          >
+            ▶ Simulate
+            <ChevronDownIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent class="w-56">
+            <div class="py-1">
+              <For each={[5, 10, 20, 30, 40, 50]}>
+                {(years) => (
+                  <DropdownMenuItem
+                    class="px-4 py-3 text-sm font-semibold text-slate-700"
+                    onSelect={() => runSimulation(years)}
+                  >
+                    {years} Years
+                  </DropdownMenuItem>
+                )}
+              </For>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={!canSendRequest()}
+              title={requestDisabledReason() ?? undefined}
+            >
+              {submittingChangeRequest() ? 'Sending…' : 'Save'}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Send this money map for approval?</AlertDialogTitle>
+              <AlertDialogDescription>
+                We’ll notify your parent or guardian so they can review and approve these changes.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel variant="ghost" size="sm">
+                Keep editing
+              </AlertDialogCancel>
+              <AlertDialogAction
+                variant="primary"
+                size="sm"
+                disabled={submittingChangeRequest()}
+                onClick={() => {
+                  void handleSubmitChangeRequest();
+                }}
+              >
+                {submittingChangeRequest() ? 'Sending…' : 'Send request'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
   );
 
   const viewport = (
@@ -1420,113 +1357,6 @@ const CanvasPage: Component = () => {
         </div>
       </div>
     </Show>
-  );
-
-  const topRight = (
-    <>
-      <div class="pointer-events-auto flex items-center gap-2">
-        <Show when={simulationError()}>
-          {(message) => (
-            <span class="pointer-events-auto rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-600 shadow-sm">
-              {message()}
-            </span>
-          )}
-        </Show>
-        <DropdownMenu open={simulationMenuOpen()} onOpenChange={setSimulationMenuOpen}>
-          <DropdownMenuTrigger
-            as="button"
-            type="button"
-            class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
-          >
-            ▶ Simulate
-            <ChevronDownIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent class="w-56">
-            <div class="py-1">
-              <For each={[5, 10, 20, 30, 40, 50]}>
-                {(years) => (
-                  <DropdownMenuItem
-                    class="px-4 py-3 text-sm font-semibold text-slate-700"
-                    onSelect={() => runSimulation(years)}
-                  >
-                    {years} Years
-                  </DropdownMenuItem>
-                )}
-              </For>
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu open={actionsMenuOpen()} onOpenChange={setActionsMenuOpen}>
-          <DropdownMenuTrigger
-            as="button"
-            type="button"
-            class="h-8 flex items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 text-xs font-medium text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white/90 hover:text-slate-800 backdrop-blur-sm disabled:cursor-not-allowed"
-          >
-            Actions
-            <ChevronDownIcon />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent class="w-60">
-            <DropdownMenuItem
-              class="px-3 py-2 text-sm font-semibold text-slate-700"
-              disabled={!canSave()}
-              onSelect={() => {
-                if (!canSave()) return;
-                setActionsMenuOpen(false);
-                void handleSave();
-              }}
-            >
-              <SaveIcon />
-              <span>{saving() ? 'Saving…' : 'Save Money Map'}</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              class="px-3 py-2 text-sm font-semibold text-slate-700"
-              disabled={!canSubmitChangeRequest()}
-              onSelect={() => {
-                if (!canSubmitChangeRequest()) return;
-                setActionsMenuOpen(false);
-                void handleSubmitChangeRequest();
-              }}
-            >
-              <DuplicateIcon />
-              <span>{submittingChangeRequest() ? 'Submitting…' : 'Request Approval'}</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              class="px-3 py-2 text-sm font-semibold text-slate-700"
-              onSelect={() => {
-                setActionsMenuOpen(false);
-                void handleShareMoneyMap();
-              }}
-            >
-              <ShareIcon />
-              <span>Share</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              class="px-3 py-2 text-sm font-semibold text-slate-700"
-              onSelect={() => {
-                setActionsMenuOpen(false);
-                handleExit();
-              }}
-            >
-              <ExitIcon />
-              <span>Exit</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <Show when={shareStatus()}>
-        {(status) => (
-          <span
-            class="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-floating"
-            classList={{
-              'bg-emerald-500': status() === 'copied',
-              'bg-rose-500': status() === 'error',
-            }}
-          >
-            {status() === 'copied' ? 'Link copied to clipboard' : 'Unable to copy link'}
-          </span>
-        )}
-      </Show>
-    </>
   );
 
   const contextMenuOverlay = (
@@ -1654,10 +1484,9 @@ const CanvasPage: Component = () => {
     <CanvasScene
       drawerOpen={drawerOpen}
       simulationPanelOpen={simulationPanelOpen}
-      toolbar={toolbar}
+      toolbar={overlayHeader}
       viewport={viewport}
       heroOverlay={heroOverlay}
-      topRight={topRight}
       contextMenu={contextMenuOverlay}
       drawer={drawerPanel}
       bottomDock={bottomDockSection}

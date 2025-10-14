@@ -11,7 +11,6 @@ import {
   getMoneyMapSnapshot,
   loadMoneyMapSnapshot,
   organizationIdFor,
-  setMoneyMapSnapshot,
 } from './cache';
 
 export const clearMoneyMapCache = clearMoneyMapSnapshotCache;
@@ -23,31 +22,6 @@ export const loadMoneyMapGraph = async (householdId: string) => {
   return {
     snapshot: snapshot ?? null,
     graph: workspaceGraphFromSnapshot(snapshot ?? null),
-  };
-};
-
-export const saveMoneyMapGraph = async (params: {
-  householdId: string;
-  draft: MoneyMapDraft;
-}) => {
-  const { householdId, draft } = params;
-  const snapshot = getMoneyMapSnapshot(householdId);
-  const organizationId = organizationIdFor(householdId);
-
-  const payload = createMoneyMapSaveInput({
-    organizationId,
-    draft,
-    snapshot,
-    fallbackName: snapshot?.map?.name ?? 'Money Map',
-    fallbackDescription: snapshot?.map?.description,
-  });
-
-  const result = await guapApi.saveMoneyMap(payload);
-  setMoneyMapSnapshot(householdId, result);
-
-  return {
-    snapshot: result,
-    graph: workspaceGraphFromSnapshot(result),
   };
 };
 

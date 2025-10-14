@@ -12,6 +12,12 @@ catalogs:
     '@eslint/js':
       specifier: ^9.37.0
       version: 9.37.0
+    '@tanstack/solid-form':
+      specifier: ^1.23.5
+      version: 1.23.5
+    '@tanstack/solid-table':
+      specifier: ^8.21.3
+      version: 8.21.3
     '@typescript-eslint/eslint-plugin':
       specifier: ^8.46.0
       version: 8.46.0
@@ -90,13 +96,13 @@ importers:
         specifier: ^1.24.1
         version: 1.24.1
       '@tanstack/solid-form':
-        specifier: ^1.23.5
+        specifier: 'catalog:'
         version: 1.23.5(solid-js@1.9.9)
       '@tanstack/solid-router':
         specifier: ^1.132.41
         version: 1.132.41(solid-js@1.9.9)
       '@tanstack/solid-table':
-        specifier: ^8.21.3
+        specifier: 'catalog:'
         version: 8.21.3(solid-js@1.9.9)
       better-auth:
         specifier: ^1.3.27

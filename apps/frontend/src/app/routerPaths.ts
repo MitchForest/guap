@@ -13,7 +13,7 @@ export const AppPaths = {
   appInvest: '/app/invest',
   appSpend: '/app/spend',
   appDonate: '/app/donate',
-  appAutomations: '/app/automations',
+  appMoneyMap: '/app/money-map',
   appTools: '/app/tools',
   appToolsCompound: '/app/tools/compound',
   appToolsWealthLadder: '/app/tools/wealth-ladder',
