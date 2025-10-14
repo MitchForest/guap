@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as __tests___helpers_mockDb from "../__tests__/helpers/mockDb.js";
 import type * as core_auth_generated__generated_api from "../core/auth/generated/_generated/api.js";
 import type * as core_auth_generated__generated_server from "../core/auth/generated/_generated/server.js";
 import type * as core_auth_generated_adapter from "../core/auth/generated/adapter.js";
@@ -73,6 +74,7 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  "__tests__/helpers/mockDb": typeof __tests___helpers_mockDb;
   "core/auth/generated/_generated/api": typeof core_auth_generated__generated_api;
   "core/auth/generated/_generated/server": typeof core_auth_generated__generated_server;
   "core/auth/generated/adapter": typeof core_auth_generated_adapter;

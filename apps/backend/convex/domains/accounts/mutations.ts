@@ -16,6 +16,9 @@ const SyncAccountsArgs = {
   force: z.boolean().optional(),
 } as const;
 
+const SyncAccountsSchema = z.object(SyncAccountsArgs);
+export type SyncAccountsInput = z.infer<typeof SyncAccountsSchema>;
+
 const resolveStartOfDay = (timestamp: number) => {
   const date = new Date(timestamp);
   date.setHours(0, 0, 0, 0);
@@ -435,139 +438,147 @@ const ensureDefaultCategoryRules = async (
   }
 };
 
+export const syncAccountsImpl = async (ctx: any, args: SyncAccountsInput) => {
+  const session = await ensureOrganizationAccess(ctx, args.organizationId);
+  ensureRole(session, OWNER_ADMIN_ROLES);
+
+  const providerId = args.provider ?? virtualProvider.id;
+  if (providerId !== virtualProvider.id) {
+    throw new Error(`Unsupported provider: ${providerId}`);
+  }
+
+  const { map, nodes: moneyMapNodes, nodeByKey, accountNodes } = await resolveMoneyMapNodes(
+    ctx,
+    args.organizationId
+  );
+
+  const syncResult = await virtualProvider.sync({
+    householdId: session.activeOrganizationId ?? args.organizationId,
+    organizationId: args.organizationId,
+    profileId: session.userId ?? 'system',
+    providerConfig: undefined,
+    forceRefresh: Boolean(args.force),
+  });
+
+  const timestamp = Date.now();
+  const accountMap = new Map<string, string>();
+  const createdAccountIds: string[] = [];
+  const updatedAccountIds: string[] = [];
+
+  for (const account of syncResult.accounts ?? []) {
+    let targetNode = resolveNodeForAccount(account, { nodeByKey, accountNodes });
+    if (!targetNode) {
+      targetNode = await createMoneyMapAccountNode(ctx, {
+        map,
+        providerId,
+        account,
+        timestamp,
+        nodeByKey,
+        accountNodes,
+        allNodes: moneyMapNodes,
+      });
+    }
+
+    const providerAccountId = account.providerAccountId;
+    const existing = providerAccountId
+      ? await ctx.db
+          .query('financialAccounts')
+          .withIndex('by_provider', (q: any) =>
+            q.eq('provider', providerId).eq('providerAccountId', providerAccountId)
+          )
+          .unique()
+      : null;
+
+    const basePayload = {
+      organizationId: args.organizationId,
+      moneyMapNodeId: targetNode._id,
+      name: account.name,
+      kind: account.kind,
+      status: account.status,
+      currency: account.currency ?? account.balance.currency,
+      balance: account.balance,
+      available: account.available ?? null,
+      provider: providerId,
+      providerAccountId: providerAccountId ?? null,
+      lastSyncedAt: timestamp,
+      metadata: scrubMetadata(account.metadata ?? undefined) ?? null,
+      updatedAt: timestamp,
+    };
+
+    let accountId: string;
+    if (existing) {
+      await ctx.db.patch(existing._id, basePayload);
+      accountId = existing._id;
+      updatedAccountIds.push(accountId);
+    } else {
+      accountId = await ctx.db.insert('financialAccounts', {
+        ...basePayload,
+        createdAt: timestamp,
+      });
+      createdAccountIds.push(accountId);
+    }
+
+    accountMap.set(providerAccountId ?? account.name, accountId);
+
+    await ensureAccountSnapshot(ctx, {
+      organizationId: args.organizationId,
+      accountId,
+      balance: account.balance,
+      available: account.available ?? null,
+    });
+
+    await ensureAccountGuardrail(ctx, {
+      organizationId: args.organizationId,
+      accountId,
+      createdByProfileId: session.userId,
+    });
+  }
+
+  const transactionSummary = syncResult.transactions?.length
+    ? await upsertTransactions(ctx, {
+        organizationId: args.organizationId,
+        accountMap,
+        transactions: syncResult.transactions,
+      })
+    : { created: 0, updated: 0 };
+
+  await ensureDefaultCategoryRules(
+    ctx,
+    {
+      organizationId: args.organizationId,
+      createdByProfileId: session.userId,
+    },
+    moneyMapNodes
+  );
+
+  await logEvent(ctx.db, {
+    organizationId: args.organizationId,
+    eventKind: 'account_synced',
+    actorProfileId: session.userId,
+    primaryEntity: {
+      table: 'financialAccounts',
+      id: createdAccountIds[0] ?? updatedAccountIds[0] ?? 'unknown',
+    },
+    payload: {
+      createdAccounts: createdAccountIds.length,
+      updatedAccounts: updatedAccountIds.length,
+      transactionsCreated: transactionSummary.created,
+      transactionsUpdated: transactionSummary.updated,
+    },
+  });
+
+  return {
+    provider: providerId,
+    createdAccountIds,
+    updatedAccountIds,
+    transactions: transactionSummary,
+  };
+};
+
 export const syncAccounts = defineMutation({
   args: SyncAccountsArgs,
   handler: async (ctx, rawArgs) => {
-    const args = z.object(SyncAccountsArgs).parse(rawArgs);
-    const session = await ensureOrganizationAccess(ctx, args.organizationId);
-    ensureRole(session, OWNER_ADMIN_ROLES);
-
-    const providerId = args.provider ?? virtualProvider.id;
-    if (providerId !== virtualProvider.id) {
-      throw new Error(`Unsupported provider: ${providerId}`);
-    }
-
-    const { map, nodes: moneyMapNodes, nodeByKey, accountNodes } = await resolveMoneyMapNodes(
-      ctx,
-      args.organizationId
-    );
-
-    const syncResult = await virtualProvider.sync({
-      householdId: session.activeOrganizationId ?? args.organizationId,
-      organizationId: args.organizationId,
-      profileId: session.userId ?? 'system',
-      providerConfig: undefined,
-      forceRefresh: Boolean(args.force),
-    });
-
-    const timestamp = Date.now();
-    const accountMap = new Map<string, string>();
-    const createdAccountIds: string[] = [];
-    const updatedAccountIds: string[] = [];
-
-    for (const account of syncResult.accounts ?? []) {
-      let targetNode = resolveNodeForAccount(account, { nodeByKey, accountNodes });
-      if (!targetNode) {
-        targetNode = await createMoneyMapAccountNode(ctx, {
-          map,
-          providerId,
-          account,
-          timestamp,
-          nodeByKey,
-          accountNodes,
-          allNodes: moneyMapNodes,
-        });
-      }
-
-      const providerAccountId = account.providerAccountId;
-      const existing = providerAccountId
-        ? await ctx.db
-            .query('financialAccounts')
-            .withIndex('by_provider', (q: any) =>
-              q.eq('provider', providerId).eq('providerAccountId', providerAccountId)
-            )
-            .unique()
-        : null;
-
-      const basePayload = {
-        organizationId: args.organizationId,
-        moneyMapNodeId: targetNode._id,
-        name: account.name,
-        kind: account.kind,
-        status: account.status,
-        currency: account.currency ?? account.balance.currency,
-        balance: account.balance,
-        available: account.available ?? null,
-        provider: providerId,
-        providerAccountId: providerAccountId ?? null,
-        lastSyncedAt: timestamp,
-        metadata: scrubMetadata(account.metadata ?? undefined) ?? null,
-        updatedAt: timestamp,
-      };
-
-      let accountId: string;
-      if (existing) {
-        await ctx.db.patch(existing._id, basePayload);
-        accountId = existing._id;
-        updatedAccountIds.push(accountId);
-      } else {
-        accountId = await ctx.db.insert('financialAccounts', {
-          ...basePayload,
-          createdAt: timestamp,
-        });
-        createdAccountIds.push(accountId);
-      }
-
-      accountMap.set(providerAccountId ?? account.name, accountId);
-
-      await ensureAccountSnapshot(ctx, {
-        organizationId: args.organizationId,
-        accountId,
-        balance: account.balance,
-        available: account.available ?? null,
-      });
-
-      await ensureAccountGuardrail(ctx, {
-        organizationId: args.organizationId,
-        accountId,
-        createdByProfileId: session.userId,
-      });
-    }
-
-    const transactionSummary = syncResult.transactions?.length
-      ? await upsertTransactions(ctx, {
-          organizationId: args.organizationId,
-          accountMap,
-          transactions: syncResult.transactions,
-        })
-      : { created: 0, updated: 0 };
-
-    await ensureDefaultCategoryRules(ctx, {
-      organizationId: args.organizationId,
-      createdByProfileId: session.userId,
-    }, moneyMapNodes);
-
-    await logEvent(ctx.db, {
-      organizationId: args.organizationId,
-      eventKind: 'account_synced',
-      actorProfileId: session.userId,
-      primaryEntity: {
-        table: 'financialAccounts',
-        id: createdAccountIds[0] ?? updatedAccountIds[0] ?? 'unknown',
-      },
-      payload: {
-        createdAccounts: createdAccountIds.length,
-        updatedAccounts: updatedAccountIds.length,
-        transactionsCreated: transactionSummary.created,
-        transactionsUpdated: transactionSummary.updated,
-      },
-    });
-
-    return {
-      provider: providerId,
-      createdAccountIds,
-      updatedAccountIds,
-      transactions: transactionSummary,
-    };
+    const args = SyncAccountsSchema.parse(rawArgs);
+    return await syncAccountsImpl(ctx, args);
   },
 });

@@ -71,6 +71,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
 - [x] Replace placeholder Convex domain scaffolds + API status stubs with real Accounts/Transactions queries & mutations.
 - [x] Update docs (`.docs/new-features.md` & `.docs/data-models.md`) if schemas or behaviour change during implementation.
  - [x] Confirm lint/typecheck/build/dev flows remain green.
+- [x] Add automated tests (backend, frontend, packages) covering Accounts/Transactions/Transfers changes with coverage reports captured.
 
 ### Implementation Plan
 
@@ -81,22 +82,25 @@ This checklist turns the feature and data-model plans into a concrete execution 
    - [x] Extend `@guap/types` with accounts/transactions/transfers/events domains.
    - [x] Update `@guap/api` clients (accounts, transactions, transfers, events) to mirror backend signatures.
 3. **Backend domains**
-   - [x] Build `accounts` services (sync, list/get, snapshots) with RLS wrappers.
-   - [x] Build `transactions` services (upsert, filters, pagination) + category rule seeding.
-   - [x] Introduce lightweight `transfers` + `events` domains for approvals/activity feeds.
-   - [x] Beef up provider virtual adapter + guardrail updater.
+- [x] Build `accounts` services (sync, list/get, snapshots) with RLS wrappers.
+- [x] Build `transactions` services (upsert, filters, pagination) + category rule seeding.
+- [x] Introduce lightweight `transfers` + `events` domains for approvals/activity feeds.
+- [x] Beef up provider virtual adapter + guardrail updater.
+ - [x] Expand unit tests + coverage for new backend surfaces before closing the milestone.
 4. **Frontend integration**
-   - [x] Refactor `AppDataProvider` to consume new APIs (accounts, requests, income placeholders).
-   - [x] Replace App Shell approvals/activity drawers with live data wiring.
-   - [x] Ship minimal Accounts list view for smoke testing; ensure query helpers handle pagination.
+- [x] Refactor `AppDataProvider` to consume new APIs (accounts, requests, income placeholders).
+- [x] Replace App Shell approvals/activity drawers with live data wiring.
+- [x] Ship minimal Accounts list view for smoke testing; ensure query helpers handle pagination.
+ - [x] Add frontend/unit tests for the new wiring where feasible (providers, shell helpers).
 5. **Validation & docs**
-   - [x] Establish Vitest configs per workspace (`apps/backend/vitest.config.ts`, `apps/frontend/vitest.config.ts`, `packages/*/vitest.config.ts`) with scripts wired into `pnpm test`.
-   - [x] Migrate existing `node:test` placeholder coverage to Vitest.
-   - [x] Add backend unit tests for `syncAccounts`, transaction filters, transfer status updates, and event logging.
-   - [x] Add package tests (API client parsing, provider fixtures, shared schemas) under `src/__tests__`.
-   - [x] Add frontend tests (AppDataProvider integration, approvals/activity components) under `src/__tests__`.
-   - [ ] Update docs (new-features, data-models, provider workflow).
-   - [x] Run `pnpm lint`, `pnpm typecheck`, `pnpm build`, and smoke `pnpm dev`.
+- [x] Establish Vitest configs per workspace (`apps/backend/vitest.config.ts`, `apps/frontend/vitest.config.ts`, `packages/*/vitest.config.ts`) with scripts wired into `pnpm test`.
+- [x] Migrate existing `node:test` placeholder coverage to Vitest.
+- [x] Add backend unit tests for `syncAccounts`, transaction filters, transfer status updates, and event logging.
+- [x] Add package tests (API client parsing, provider fixtures, shared schemas) under `src/__tests__`.
+- [x] Add frontend tests (AppDataProvider integration, approvals/activity components) under `src/__tests__`.
+- [ ] Update docs (new-features, data-models, provider workflow).
+- [x] Run `pnpm lint`, `pnpm typecheck`, `pnpm build`, and smoke `pnpm dev`.
+- [x] Record coverage snapshot (apps/backend, apps/frontend, packages) and ensure thresholds documented.
 
 --- 
 
@@ -118,6 +122,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
 - [ ] Update approvals inbox to show Save transfer requests with goal context.
 - [ ] Add relevant events (`transfer_requested`, `transfer_executed`) with payloads for activity feed.
 - [ ] Manual QA: submit/approve/withdraw Save transfers; verify Money Map + guardrails sync.
+- [ ] Add/update automated tests (backend/frontend/packages) for Save domain work and capture coverage snapshot before closing the milestone.
 
 ---
 
@@ -139,6 +144,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
 - [ ] Approvals inbox: display Spend-related pending transfers (payoffs, manual reallocations).
 - [ ] Activity feed: log spend events (overspend alerts, guardrail breaches, credit payoff).
 - [ ] Manual QA: transact through auto, pending, and rejected flows.
+- [ ] Add/update automated tests (backend/frontend/packages) for Spend/Budgets work and capture coverage snapshot before closing the milestone.
 
 ---
 
@@ -160,6 +166,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
 - [ ] Approvals inbox: show pending orders with guardrail reason.
 - [ ] Activity feed: log order submitted/approved/executed events.
 - [ ] Manual QA: exercise allowed vs blocked orders.
+- [ ] Add/update automated tests (backend/frontend/packages) for Invest domain work and capture coverage snapshot before closing the milestone.
 
 ---
 
@@ -180,6 +187,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
 - [ ] Approvals inbox: highlight pending earn payouts with stream metadata.
 - [ ] Activity feed: log outcomes (payout approved, skipped, auto-executed).
 - [ ] Update projections widget (goal completion timeline).
+- [ ] Add/update automated tests (backend/frontend/packages) for Earn domain work and capture coverage snapshot before closing the milestone.
 
 ---
 
@@ -196,6 +204,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
   - History timeline (transfers + events).
 - [ ] Approvals inbox: show pending donations; allow parent overrides.
 - [ ] Activity feed: log donation requested/completed events.
+- [ ] Add/update automated tests (backend/frontend/packages) for Donate domain work and capture coverage snapshot before closing the milestone.
 
 ---
 
@@ -211,6 +220,7 @@ This checklist turns the feature and data-model plans into a concrete execution 
 - [ ] Update docs (`README`, `.docs/new-features.md`, `.docs/data-models.md`) reflecting implemented behaviour.
 - [ ] Run full regression (lint, typecheck, unit/integration tests, manual smoke of key scenarios).
 - [ ] Prep release notes summarising new capabilities and guardrail policies.
+- [ ] Add/update automated tests (backend/frontend/packages) for Insights/Notifications polish and capture coverage snapshot before closing the milestone.
 
 ---
 
