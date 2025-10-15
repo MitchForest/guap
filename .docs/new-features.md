@@ -243,6 +243,8 @@ Create `events` domain with a single Convex mutation to record typed events (`ac
 
 **Objective:** deliver HYSA Save page with goals, transfers, and projections.
 
+> **Status:** Implemented — the Save page now exposes the HYSA hero, goal board, transfer modal, and contribution history.
+
 **DoD**
 - `savings` domain manages SavingsGoal CRUD, projections, and transfer initiation.
 - Transfer mutation writes Transfers + Events and triggers provider stub updates.

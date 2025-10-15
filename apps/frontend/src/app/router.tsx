@@ -11,7 +11,7 @@ import InvestPage from '~/features/app-sections/pages/InvestPage';
 import LandingPage from '~/features/marketing/pages/LandingPage';
 import PricingPage from '~/features/marketing/pages/PricingPage';
 import RootLayout from '~/features/app-shell/pages/RootLayout';
-import SavePage from '~/features/app-sections/pages/SavePage';
+import SavePage from '~/features/save/pages/SavePage';
 import SignInPage from '~/features/auth/pages/SignInPage';
 import SignUpPage from '~/features/auth/pages/SignUpPage';
 import VerifyEmailPage from '~/features/auth/pages/VerifyEmailPage';

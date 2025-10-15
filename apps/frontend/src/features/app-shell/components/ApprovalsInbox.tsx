@@ -41,7 +41,17 @@ const columns = [
         {transferIntentLabel(info.row.original.intent)}
       </span>
     ),
-    meta: { width: '18%' },
+    meta: { width: '16%' },
+  }),
+  columnHelper.display({
+    id: 'goal',
+    header: 'Goal',
+    cell: (info) => (
+      <span class="text-sm text-slate-600">
+        {(info.row.original.metadata?.goalName as string | undefined) ?? '—'}
+      </span>
+    ),
+    meta: { width: '20%' },
   }),
   columnHelper.display({
     id: 'amount',
@@ -61,7 +71,7 @@ const columns = [
         {formatSubmittedAt(info.row.original.requestedAt)}
       </span>
     ),
-    meta: { width: '22%' },
+    meta: { width: '20%' },
   }),
   columnHelper.accessor('status', {
     header: 'Status',

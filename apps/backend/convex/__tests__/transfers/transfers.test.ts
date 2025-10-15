@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TransferRecord } from '@guap/types';
 
 vi.mock('../../core/session', () => ({
   ensureOrganizationAccess: vi.fn(),
@@ -48,7 +49,7 @@ describe('listTransfersImpl', () => {
     const ctx = { db } as any;
     const result = await listTransfersImpl(ctx, { organizationId, limit: 10 });
 
-    expect(result.map((transfer) => transfer.requestedAt)).toEqual([20, 10, 5]);
+    expect(result.map((transfer: TransferRecord) => transfer.requestedAt)).toEqual([20, 10, 5]);
     expect(ensureOrganizationAccess).toHaveBeenCalledWith(ctx, organizationId);
   });
 
@@ -66,6 +67,6 @@ describe('listTransfersImpl', () => {
     });
 
     expect(result).toHaveLength(2);
-    expect(result.every((transfer) => transfer.status === 'approved')).toBe(true);
+    expect(result.every((transfer: TransferRecord) => transfer.status === 'approved')).toBe(true);
   });
 });

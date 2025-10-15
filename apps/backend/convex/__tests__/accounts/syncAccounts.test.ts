@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { virtualProvider } from '@guap/providers';
 
 vi.mock('../../core/session', () => ({
@@ -41,7 +41,7 @@ const baseTransaction = (overrides: Partial<Record<string, unknown>> = {}) => ({
 });
 
 describe('syncAccountsImpl', () => {
-  let syncSpy: ReturnType<typeof vi.spyOn>;
+  let syncSpy: MockInstance;
 
   beforeEach(() => {
     vi.useFakeTimers();

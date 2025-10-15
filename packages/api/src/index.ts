@@ -33,7 +33,7 @@ import { createAccountsApi, AccountsApi } from './domains/accounts';
 import { createTransactionsApi, TransactionsApi } from './domains/transactions';
 import { createBudgetsApi, BudgetsApi, type BudgetsStatus } from './domains/budgets';
 import { createEarnApi, EarnApi, type EarnStatus } from './domains/earn';
-import { createSavingsApi, SavingsApi, type SavingsStatus } from './domains/savings';
+import { createSavingsApi, SavingsApi } from './domains/savings';
 import {
   createInvestingApi,
   InvestingApi,
@@ -80,7 +80,6 @@ export {
 } from './domains/auth';
 export type { BudgetsStatus } from './domains/budgets';
 export type { EarnStatus } from './domains/earn';
-export type { SavingsStatus } from './domains/savings';
 export type { InvestingStatus } from './domains/investing';
 export type { DonateStatus } from './domains/donate';
 export type {
@@ -102,7 +101,17 @@ export type {
   MoneyMapChangeRequestRecord,
   MoneyMapNodeKind,
   MoneyMapRuleTrigger,
+  SavingsGoalRecord,
+  SavingsGoalProgress,
+  SavingsGuardrailSummary,
+  GuardrailApprovalPolicy,
+  GuardrailScope,
+  SavingsGoalWithProgress,
+  CreateSavingsGoalInput,
+  UpdateSavingsGoalInput,
+  InitiateSavingsTransferInput,
 } from '@guap/types';
+export type { SavingsTransferResult } from './domains/savings/client';
 
 export class GuapApi {
   readonly moneyMaps: MoneyMapsApi;

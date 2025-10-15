@@ -20,7 +20,13 @@ describe('summarizeEvent', () => {
     const result = summarizeEvent(buildEvent());
     expect(result.title).toBe('Account synced');
     expect(result.detail).toBe('financialAccounts:acc-1 • by user-1');
-    expect(result.timestamp).toBe(new Date(1_700_000_000_000).toLocaleString());
+    const expectedTimestamp = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+    }).format(1_700_000_000_000);
+    expect(result.timestamp).toBe(expectedTimestamp);
   });
 
   it('handles system actors gracefully', () => {

@@ -9,3 +9,4 @@ export * from './domains/accounts';
 export * from './domains/transactions';
 export * from './domains/transfers';
 export * from './domains/events';
+export * from './domains/savings';

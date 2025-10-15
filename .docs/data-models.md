@@ -229,6 +229,8 @@ Indexes:
 
 Guardrails are seeded from Money Map allocations when parents approve a change request and can be adjusted manually in settings. Every transfer request consults the applicable guardrail to decide whether to auto-approve, cap amounts, or require explicit review. Invest orders reuse the same guardrail record via the `invest` intent.
 
+For Save flows specifically, the backend seeds two guardrails per goal node: deposits default to `auto` (with optional auto-approve limits) while withdrawals default to `parent_required`, ensuring savings outflows always collect an explicit review unless an account-level override loosens the policy.
+
 ## Transactions & Categorisation Domain
 
 ### `transactions`

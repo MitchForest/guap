@@ -4,6 +4,7 @@ import * as accounts from '../accounts';
 import * as transactions from '../transactions';
 import * as transfers from '../transfers';
 import * as events from '../events';
+import * as savings from '../savings';
 
 describe('domain exports', () => {
   it('exposes accounts entry points', () => {
@@ -27,5 +28,11 @@ describe('domain exports', () => {
   it('exposes events entry points', () => {
     expect(typeof (events as any).listForOrganization).toBe('function');
     expect(typeof (events as any).markEventRead).toBe('function');
+  });
+
+  it('exposes savings entry points', () => {
+    expect(typeof (savings as any).listForOrganization).toBe('function');
+    expect(typeof (savings as any).createGoal).toBe('function');
+    expect(typeof (savings as any).initiateTransfer).toBe('function');
   });
 });

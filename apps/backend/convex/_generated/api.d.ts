@@ -48,6 +48,7 @@ import type * as domains_moneyMaps_services from "../domains/moneyMaps/services.
 import type * as domains_savings_index from "../domains/savings/index.js";
 import type * as domains_savings_mutations from "../domains/savings/mutations.js";
 import type * as domains_savings_queries from "../domains/savings/queries.js";
+import type * as domains_savings_services from "../domains/savings/services.js";
 import type * as domains_transactions_index from "../domains/transactions/index.js";
 import type * as domains_transactions_mutations from "../domains/transactions/mutations.js";
 import type * as domains_transactions_queries from "../domains/transactions/queries.js";
@@ -114,6 +115,7 @@ declare const fullApi: ApiFromModules<{
   "domains/savings/index": typeof domains_savings_index;
   "domains/savings/mutations": typeof domains_savings_mutations;
   "domains/savings/queries": typeof domains_savings_queries;
+  "domains/savings/services": typeof domains_savings_services;
   "domains/transactions/index": typeof domains_transactions_index;
   "domains/transactions/mutations": typeof domains_transactions_mutations;
   "domains/transactions/queries": typeof domains_transactions_queries;

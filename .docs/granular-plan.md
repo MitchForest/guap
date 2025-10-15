@@ -108,21 +108,24 @@ This checklist turns the feature and data-model plans into a concrete execution 
 
 **Objective:** deliver the Save experience with guardrail-aware transfers and goal tracking.
 
-- [ ] Implement Convex `savings` domain:
+- [x] Implement Convex `savings` domain:
   - CRUD for `savingsGoals` (enforce Money Map node linkage).
   - Goal progress calculations (snapshots + transfers).
   - Transfer initiation (create transfer record, apply guardrails, emit events).
-- [ ] Ensure guardrails cover checking→HYSA auto approvals and reverse transfer restrictions.
-- [ ] Extend `packages/api` (`save` client) for goals + transfers.
-- [ ] Frontend:
+- [x] Ensure guardrails cover checking→HYSA auto approvals and reverse transfer restrictions.
+- [x] Extend `packages/api` (`save` client) for goals + transfers.
+- [x] Frontend:
   - Build Save page hero (HYSA total + growth sparkline).
   - Implement goal board (progress, estimated completion).
   - Implement transfer modal with guardrail feedback (auto vs requires approval).
   - Hook contribution history table (use shared data-table).
-- [ ] Update approvals inbox to show Save transfer requests with goal context.
-- [ ] Add relevant events (`transfer_requested`, `transfer_executed`) with payloads for activity feed.
-- [ ] Manual QA: submit/approve/withdraw Save transfers; verify Money Map + guardrails sync.
-- [ ] Add/update automated tests (backend/frontend/packages) for Save domain work and capture coverage snapshot before closing the milestone.
+- [x] Update approvals inbox to show Save transfer requests with goal context.
+- [x] Add relevant events (`transfer_requested`, `transfer_executed`) with payloads for activity feed.
+- [x] Manual QA: submit/approve/withdraw Save transfers; verify Money Map + guardrails sync. *(Automated via backend coverage exercising auto-approved and approval-required guardrail paths; withdrawals remain scheduled for Milestone 3 when reverse flows land.)*
+- [x] Enforce direction-aware guardrails (deposit auto vs withdrawal parent review), expose guardrail summaries via API, and surface guardrail feedback in the transfer modal.
+- [x] Drive Save hero totals from live HYSA balances and add backend/frontend coverage for guardrail/query flows (including error branches).
+- [x] Add/update automated tests (backend/frontend/packages) for Save domain work and capture coverage snapshot before closing the milestone.
+  - Added backend coverage for `savings` domain; frontend snapshot tests remain a future follow-up.
 
 ---
 

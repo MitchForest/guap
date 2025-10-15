@@ -6,6 +6,7 @@ import {
   AccountStatusValues,
   CategoryRuleMatchTypeValues,
   EventKindValues,
+  GoalStatusValues,
   MoneyMapChangeStatusValues,
   MoneyMapNodeKindValues,
   MoneyMapRuleTriggerValues,
@@ -41,6 +42,7 @@ const transferStatus = literalUnion(TransferStatusValues);
 
 const eventKind = literalUnion(EventKindValues);
 const notificationChannel = literalUnion(NotificationChannelValues);
+const goalStatus = literalUnion(GoalStatusValues);
 
 const userRole = literalUnion(UserRoleValues);
 
@@ -274,7 +276,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_organization_status', ['organizationId', 'status'])
-    .index('by_destination_time', ['destinationAccountId', 'requestedAt']),
+    .index('by_destination_time', ['destinationAccountId', 'requestedAt'])
+    .index('by_goal', ['goalId']),
 
   eventsJournal: defineTable({
     organizationId: v.string(),
@@ -311,6 +314,24 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_profile_channel', ['profileId', 'channel']),
+
+  savingsGoals: defineTable({
+    organizationId: v.string(),
+    moneyMapNodeId: v.id('moneyMapNodes'),
+    accountId: v.id('financialAccounts'),
+    name: v.string(),
+    targetAmount: currencyAmount,
+    startingAmount: currencyAmount,
+    targetDate: v.optional(v.union(v.number(), v.null())),
+    status: goalStatus,
+    createdByProfileId: v.string(),
+    createdAt: v.number(),
+    achievedAt: v.optional(v.union(v.number(), v.null())),
+    archivedAt: v.optional(v.union(v.number(), v.null())),
+  })
+    .index('by_organization', ['organizationId'])
+    .index('by_money_map_node', ['moneyMapNodeId'])
+    .index('by_account', ['accountId']),
 
   transferGuardrails: defineTable({
     organizationId: v.string(),
