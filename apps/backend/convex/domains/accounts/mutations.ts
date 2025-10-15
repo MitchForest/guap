@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { virtualProvider } from '@guap/providers';
-import type { ProviderAccount, ProviderTransaction } from '@guap/providers';
+import type {
+  ProviderAccount,
+  ProviderTransaction,
+  ProviderPosition,
+  ProviderInstrumentQuote,
+} from '@guap/providers';
 import { defineMutation } from '../../core/functions';
 import {
   ensureOrganizationAccess,
@@ -528,6 +533,58 @@ const ensureLiabilityTerms = async (
   return termId;
 };
 
+const syncProviderPositions = async (
+  db: any,
+  params: {
+    organizationId: string;
+    accountMap: Map<string, string>;
+    positions: ProviderPosition[];
+  }
+) => {
+  const timestamp = Date.now();
+  for (const position of params.positions) {
+    const accountId = params.accountMap.get(position.accountId);
+    if (!accountId) continue;
+
+    const symbol = position.symbol.toUpperCase();
+    const existing = await db
+      .query('investmentPositions')
+      .withIndex('by_account_symbol', (q: any) => q.eq('accountId', accountId).eq('symbol', symbol))
+      .unique();
+
+    const payload = {
+      organizationId: params.organizationId,
+      accountId,
+      symbol,
+      instrumentType: position.instrumentType,
+      quantity: position.quantity,
+      averageCost: position.averageCost,
+      marketValue: position.marketValue,
+      lastPrice: position.lastPrice,
+      lastPricedAt: position.lastPricedAt,
+      metadata: null,
+      updatedAt: timestamp,
+    };
+
+    if (existing) {
+      await db.patch(existing._id, payload);
+    } else {
+      await db.insert('investmentPositions', payload);
+    }
+  }
+};
+
+const recordInstrumentSnapshots = async (db: any, quotes: ProviderInstrumentQuote[]) => {
+  for (const quote of quotes) {
+    await db.insert('instrumentSnapshots', {
+      symbol: quote.symbol.toUpperCase(),
+      price: quote.price,
+      capturedAt: quote.capturedAt,
+      source: quote.source ?? 'virtual',
+    });
+  }
+};
+
 const upsertTransactions = async (
   ctx: any,
   params: {
@@ -868,6 +925,18 @@ export const syncAccountsImpl = async (ctx: any, args: SyncAccountsInput) => {
         recurrenceMap,
       })
     : { created: 0, updated: 0 };
+
+  if (syncResult.positions?.length) {
+    await syncProviderPositions(ctx.db, {
+      organizationId: args.organizationId,
+      accountMap,
+      positions: syncResult.positions,
+    });
+  }
+
+  if (syncResult.quotes?.length) {
+    await recordInstrumentSnapshots(ctx.db, syncResult.quotes);
+  }
 
   await logEvent(ctx.db, {
     organizationId: args.organizationId,

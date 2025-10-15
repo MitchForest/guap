@@ -34,4 +34,16 @@ describe('summarizeEvent', () => {
     expect(result.detail).toContain('by system');
     expect(result.title).toBe('Transfer approved');
   });
+
+  it('summarizes order events', () => {
+    const result = summarizeEvent(
+      buildEvent({
+        eventKind: 'order_executed',
+        payload: { symbol: 'VTI', side: 'buy', quantity: 2.5 },
+      })
+    );
+    expect(result.title).toBe('Order executed for VTI');
+    expect(result.detail).toContain('2.50 units');
+    expect(result.detail).toContain('buy');
+  });
 });

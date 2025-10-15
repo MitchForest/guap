@@ -155,21 +155,21 @@ This checklist turns the feature and data-model plans into a concrete execution 
 
 **Objective:** enable investing with guardrail-controlled buy/sell orders and holdings tracking.
 
-- [ ] Implement Convex `investing` domain:
+- [x] Implement Convex `investing` domain:
   - CRUD for `investmentPositions`, `investmentOrders`, `watchlistEntries`, `instrumentSnapshots`.
   - Order lifecycle (submitted → pending_approval → approved/executed/failed).
   - Integrate `transferGuardrails` (instrument type limits, blocked symbols, amount caps, sell approval).
-- [ ] Extend provider stub for market data + simulated order fills.
-- [ ] API clients for invest surfaces.
-- [ ] Frontend Invest page:
+- [x] Extend provider stub for market data + simulated order fills.
+- [x] API clients for invest surfaces.
+- [x] Frontend Invest page:
   - Portfolio hero (total, daily change).
   - Holdings table + detail drawer.
   - Watchlist grid.
   - Buy/Sell modal with guardrail messaging.
-- [ ] Approvals inbox: show pending orders with guardrail reason.
-- [ ] Activity feed: log order submitted/approved/executed events.
-- [ ] Manual QA: exercise allowed vs blocked orders.
-- [ ] Add/update automated tests (backend/frontend/packages) for Invest domain work and capture coverage snapshot before closing the milestone.
+- [x] Approvals inbox: show pending orders with guardrail reason.
+- [x] Activity feed: log order submitted/approved/executed events.
+- [ ] Manual QA: exercise allowed vs blocked orders. *(Pending walkthrough 2025-02-15 to capture notes; automation in progress to mirror scenarios.)*
+- [x] Add/update automated tests (backend/frontend/packages) for Invest domain work and capture coverage snapshot before closing the milestone.
 
 ---
 

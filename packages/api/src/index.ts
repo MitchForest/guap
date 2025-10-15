@@ -37,7 +37,6 @@ import { createSavingsApi, SavingsApi } from './domains/savings';
 import {
   createInvestingApi,
   InvestingApi,
-  type InvestingStatus,
 } from './domains/investing';
 import { createDonateApi, DonateApi, type DonateStatus } from './domains/donate';
 import { createEventsApi, EventsApi } from './domains/events';
@@ -80,7 +79,6 @@ export {
   type AuthCompleteSignupResult,
 } from './domains/auth';
 export type { EarnStatus } from './domains/earn';
-export type { InvestingStatus } from './domains/investing';
 export type { DonateStatus } from './domains/donate';
 export type {
   HouseholdRecord,
@@ -105,6 +103,15 @@ export type {
   UpdateBudgetInput,
   LiabilityTermsRecord,
   MoneyMapSnapshot,
+  InvestmentPositionRecord,
+  InvestmentOrderRecord,
+  WatchlistEntryRecord,
+  InstrumentSnapshotRecord,
+  InvestmentGuardrailEvaluation,
+  InvestmentGuardrailSummary,
+  CreateInvestmentOrderInput,
+  ApproveInvestmentOrderInput,
+  CancelInvestmentOrderInput,
   MoneyMapChangeStatus,
   MoneyMapChangeRequestRecord,
   MoneyMapNodeKind,

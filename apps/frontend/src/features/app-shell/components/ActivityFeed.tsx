@@ -71,6 +71,43 @@ export const summarizeEvent = (event: EventJournalRecord) => {
     };
   }
 
+  if (event.eventKind.startsWith('order_')) {
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    const symbol = (payload.symbol as string | undefined) ?? 'Unknown symbol';
+    const side = (payload.side as string | undefined) ?? 'order';
+    const quantity = typeof payload.quantity === 'number' ? payload.quantity : null;
+    const baseTitle =
+      event.eventKind === 'order_submitted'
+        ? `Order submitted for ${symbol}`
+        : event.eventKind === 'order_approved'
+          ? `Order approved for ${symbol}`
+          : event.eventKind === 'order_executed'
+            ? `Order executed for ${symbol}`
+            : event.eventKind === 'order_failed'
+              ? `Order failed for ${symbol}`
+              : `Order update for ${symbol}`;
+
+    const detailParts: string[] = [];
+    if (quantity != null) {
+      detailParts.push(`${quantity.toFixed(2)} units`);
+    }
+    if (side) {
+      detailParts.push(side);
+    }
+    if (event.actorProfileId) {
+      detailParts.push(`by ${event.actorProfileId}`);
+    }
+    if (event.eventKind === 'order_failed' && typeof payload.reason === 'string') {
+      detailParts.push(payload.reason);
+    }
+
+    return {
+      title: baseTitle,
+      detail: detailParts.join(' • '),
+      timestamp: friendlyDateTime(event.createdAt),
+    };
+  }
+
   const label = event.eventKind.replace(/_/g, ' ');
   const title = label.charAt(0).toUpperCase() + label.slice(1);
   const actor = event.actorProfileId ? `by ${event.actorProfileId}` : 'by system';

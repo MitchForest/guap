@@ -373,6 +373,8 @@ Progress is computed via `accountSnapshots` plus `transfers` tagged with `goalId
 
 ## Investing Domain
 
+_Status: Tables live in Convex with auto-executed buys, parent approvals, and watchlist snapshots._
+
 ### `investmentPositions`
 
 Aggregated holdings per UTMA/brokerage account.

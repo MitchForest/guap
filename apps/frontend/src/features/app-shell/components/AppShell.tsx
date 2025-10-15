@@ -1,3 +1,4 @@
+import type { InvestmentOrderRecord } from '@guap/types';
 import { Link, useRouter } from '@tanstack/solid-router';
 import { clsx } from 'clsx';
 import { Component, For, Show, createMemo, createSignal } from 'solid-js';
@@ -71,15 +72,31 @@ const AppShell: Component<AppShellProps> = (props) => {
 
   const householdId = createMemo(() => activeHousehold()?._id ?? null);
 
+  const { data: pendingOrders } = createGuapQuery({
+    source: householdId,
+    initialValue: [] as InvestmentOrderRecord[],
+    fetcher: async (householdId) => {
+      const organizationId = organizationIdFor(householdId);
+      return await guapApi.investing.listOrders({
+        organizationId,
+        status: ['awaiting_parent'],
+        limit: 50,
+      });
+    },
+  });
+
   const { data: pendingTransfers } = createGuapQuery({
     source: householdId,
     initialValue: [] as TransferRecord[],
     fetcher: async (householdId) => {
       const organizationId = organizationIdFor(householdId);
-      return await guapApi.transfers.list({ organizationId, status: 'pending_approval', limit: 50 });
+      return await guapApi.transfers.list({
+        organizationId,
+        status: 'pending_approval',
+        limit: 50,
+      });
     },
   });
-
   const { data: recentEvents } = createGuapQuery({
     source: householdId,
     initialValue: [] as EventJournalRecord[],
@@ -89,7 +106,7 @@ const AppShell: Component<AppShellProps> = (props) => {
     },
   });
 
-  const pendingApprovalsCount = createMemo(() => pendingTransfers().length);
+  const pendingApprovalsCount = createMemo(() => pendingTransfers().length + pendingOrders().length);
   const pendingChangeRequests = createMemo(() => requests().filter((item) => item.state === 'pending'));
   const totalPendingActions = createMemo(
     () => pendingApprovalsCount() + pendingChangeRequests().length
@@ -272,7 +289,7 @@ const AppShell: Component<AppShellProps> = (props) => {
         </main>
       </div>
       <Drawer open={approvalsOpen()} onOpenChange={setApprovalsOpen} title="Approvals inbox">
-        <ApprovalsInbox transfers={pendingTransfers()} />
+        <ApprovalsInbox transfers={pendingTransfers()} orders={pendingOrders()} />
       </Drawer>
       <Drawer open={activityOpen()} onOpenChange={setActivityOpen} title="Activity feed">
         <ActivityFeed events={recentEvents()} />

@@ -42,6 +42,7 @@ import type * as domains_events_services from "../domains/events/services.js";
 import type * as domains_investing_index from "../domains/investing/index.js";
 import type * as domains_investing_mutations from "../domains/investing/mutations.js";
 import type * as domains_investing_queries from "../domains/investing/queries.js";
+import type * as domains_investing_services from "../domains/investing/services.js";
 import type * as domains_liabilities_index from "../domains/liabilities/index.js";
 import type * as domains_liabilities_mutations from "../domains/liabilities/mutations.js";
 import type * as domains_liabilities_queries from "../domains/liabilities/queries.js";
@@ -114,6 +115,7 @@ declare const fullApi: ApiFromModules<{
   "domains/investing/index": typeof domains_investing_index;
   "domains/investing/mutations": typeof domains_investing_mutations;
   "domains/investing/queries": typeof domains_investing_queries;
+  "domains/investing/services": typeof domains_investing_services;
   "domains/liabilities/index": typeof domains_liabilities_index;
   "domains/liabilities/mutations": typeof domains_liabilities_mutations;
   "domains/liabilities/queries": typeof domains_liabilities_queries;

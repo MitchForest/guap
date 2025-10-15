@@ -12,12 +12,14 @@ import {
   MoneyMapRuleTriggerValues,
   NeedsVsWantsValues,
   NotificationChannelValues,
+  OrderStatusValues,
   TransactionDirectionValues,
   TransactionSourceValues,
   TransactionStatusValues,
   TransferIntentValues,
   TransferStatusValues,
   UserRoleValues,
+  InstrumentTypeValues,
 } from '@guap/types';
 
 const literalUnion = (values: readonly string[]) =>
@@ -43,6 +45,7 @@ const transferStatus = literalUnion(TransferStatusValues);
 const eventKind = literalUnion(EventKindValues);
 const notificationChannel = literalUnion(NotificationChannelValues);
 const goalStatus = literalUnion(GoalStatusValues);
+const instrumentType = literalUnion(InstrumentTypeValues);
 
 const userRole = literalUnion(UserRoleValues);
 
@@ -408,4 +411,62 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_account', ['accountId']),
+
+  investmentPositions: defineTable({
+    organizationId: v.string(),
+    accountId: v.id('financialAccounts'),
+    symbol: v.string(),
+    instrumentType: instrumentType,
+    quantity: v.number(),
+    averageCost: currencyAmount,
+    marketValue: currencyAmount,
+    lastPrice: currencyAmount,
+    lastPricedAt: v.number(),
+    metadata: recordMetadata,
+    updatedAt: v.number(),
+  })
+    .index('by_organization', ['organizationId'])
+    .index('by_account_symbol', ['accountId', 'symbol']),
+
+  investmentOrders: defineTable({
+    organizationId: v.string(),
+    accountId: v.id('financialAccounts'),
+    symbol: v.string(),
+    instrumentType: instrumentType,
+    side: v.union(v.literal('buy'), v.literal('sell')),
+    orderType: v.literal('market'),
+    quantity: v.number(),
+    notional: currencyAmount,
+    limitPrice: v.optional(v.union(currencyAmount, v.null())),
+    status: literalUnion(OrderStatusValues),
+    placedByProfileId: v.string(),
+    approvedByProfileId: v.optional(v.union(v.string(), v.null())),
+    submittedAt: v.number(),
+    approvedAt: v.optional(v.union(v.number(), v.null())),
+    executedAt: v.optional(v.union(v.number(), v.null())),
+    executionPrice: v.optional(v.union(currencyAmount, v.null())),
+    transferId: v.optional(v.union(v.id('transfers'), v.null())),
+    failureReason: v.optional(v.union(v.string(), v.null())),
+    metadata: recordMetadata,
+  })
+    .index('by_organization_status', ['organizationId', 'status'])
+    .index('by_account_time', ['accountId', 'submittedAt']),
+
+  watchlistEntries: defineTable({
+    organizationId: v.string(),
+    profileId: v.string(),
+    symbol: v.string(),
+    instrumentType: instrumentType,
+    createdAt: v.number(),
+    notes: v.optional(v.union(v.string(), v.null())),
+  })
+    .index('by_organization_profile', ['organizationId', 'profileId'])
+    .index('by_profile_symbol', ['profileId', 'symbol']),
+
+  instrumentSnapshots: defineTable({
+    symbol: v.string(),
+    price: currencyAmount,
+    capturedAt: v.number(),
+    source: v.string(),
+  }).index('by_symbol_time', ['symbol', 'capturedAt']),
 });

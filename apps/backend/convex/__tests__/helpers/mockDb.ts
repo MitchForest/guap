@@ -50,6 +50,11 @@ class MockQuery {
     return this;
   }
 
+  filter(predicate: (record: AnyRecord) => boolean) {
+    this.filters.push(predicate);
+    return this;
+  }
+
   take(limit: number) {
     return this.apply().slice(0, limit);
   }
@@ -112,6 +117,21 @@ class MockDb {
   get(id: string) {
     const record = this.idLookup.get(id);
     return record ? clone(record) : null;
+  }
+
+  delete(id: string) {
+    const record = this.idLookup.get(id);
+    if (!record) {
+      return;
+    }
+    for (const records of this.tables.values()) {
+      const index = records.findIndex((item) => item._id === id);
+      if (index >= 0) {
+        records.splice(index, 1);
+        break;
+      }
+    }
+    this.idLookup.delete(id);
   }
 
   query(table: string) {

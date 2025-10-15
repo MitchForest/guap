@@ -279,6 +279,8 @@ _Status: Backend budgets/liabilities/transactions APIs and the Spend surface are
 
 **Objective:** enable UTMA investing views with holdings, watchlist, and order flow.
 
+_Status: Backend domain, provider fixtures, API clients, and the Invest surface are implemented; approvals drawer and activity feed now include orders. Manual QA walkthrough pending._
+
 **DoD**
 - `investing` domain stores InvestmentPositions, daily price snapshots, and handles buy/sell orders with approval states.
 - Watchlist API allows CRUD per student and resolves market data via provider stub.

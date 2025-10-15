@@ -12,3 +12,4 @@ export * from './domains/events';
 export * from './domains/savings';
 export * from './domains/budgets';
 export * from './domains/liabilities';
+export * from './domains/investing';

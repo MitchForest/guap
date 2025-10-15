@@ -41,6 +41,7 @@ export type DataTableProps<TItem> = {
   toolbar?: DataTableToolbar<TItem>;
   empty?: JSX.Element;
   initialSorting?: SortingState;
+  onRowClick?: (item: TItem) => void;
 };
 
 export const DataTable = <TItem,>(props: DataTableProps<TItem>) => {
@@ -193,7 +194,14 @@ export const DataTable = <TItem,>(props: DataTableProps<TItem>) => {
             >
               <For each={table.getRowModel().rows}>
                 {(row) => (
-                  <tr class="hover:bg-slate-50">
+                  <tr
+                    class={`hover:bg-slate-50 ${props.onRowClick ? 'cursor-pointer' : ''}`}
+                    onClick={() => {
+                      if (props.onRowClick) {
+                        props.onRowClick(row.original as TItem);
+                      }
+                    }}
+                  >
                     <For each={row.getVisibleCells()}>
                       {(cell) => (
                         <td class="px-4 py-3 align-middle text-sm text-slate-700">
