@@ -21,7 +21,7 @@ import SettingsLayout from '~/features/settings/pages/SettingsLayout';
 import HouseholdMembersPage from '~/features/settings/pages/HouseholdMembersPage';
 import HouseholdBillingPage from '~/features/settings/pages/HouseholdBillingPage';
 import OrganizationRosterPage from '~/features/settings/pages/OrganizationRosterPage';
-import SpendPage from '~/features/app-sections/pages/SpendPage';
+import SpendPage from '~/features/spend/pages/SpendPage';
 import WealthLadderPage from '~/features/tools/pages/WealthLadderPage';
 import GoalSelectionPage from '~/features/onboarding/pages/GoalSelectionPage';
 import UseCasePage from '~/features/onboarding/pages/UseCasePage';

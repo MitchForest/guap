@@ -273,6 +273,8 @@ Create `events` domain with a single Convex mutation to record typed events (`ac
 - Surface guardrail controls for spend-related accounts so parents can edit limits inline.
 - Emit Events for overspend alerts and budget resets.
 
+_Status: Backend budgets/liabilities/transactions APIs and the Spend surface are live with guardrail editing, transaction filtering, and credit payoff flow. Manual QA + overspend event tuning remain for follow-up._
+
 ### Milestone 4 — Invest Surface
 
 **Objective:** enable UTMA investing views with holdings, watchlist, and order flow.

@@ -133,21 +133,21 @@ This checklist turns the feature and data-model plans into a concrete execution 
 
 **Objective:** provide a rich Spend surface with search/filtering, budgets, guardrails, and credit payoff.
 
-- [ ] Enhance `transactions` domain:
+- [x] Enhance `transactions` domain:
   - Implement auto-categorisation heuristics (merchant prefix, MCC, recurrence detection).
   - Expose endpoints for transaction search (merchant), sort, filter.
-- [ ] Implement `budgets` domain (CRUD, actuals, guardrail tie-ins).
-- [ ] Add endpoints for parent-managed `categoryRules` edits/reorder.
-- [ ] Integrate liability data (`liabilityTerms`) for credit cards/loans.
-- [ ] Frontend Spend page:
+- [x] Implement `budgets` domain (CRUD, actuals, guardrail tie-ins).
+- [x] Add endpoints for parent-managed `categoryRules` edits/reorder.
+- [x] Integrate liability data (`liabilityTerms`) for credit cards/loans.
+- [x] Frontend Spend page:
   - Use shared data table with search, sort, filter toggles.
   - Needs vs wants donut + delta vs budget.
   - Budget summary cards with inline guardrail overrides.
   - Credit payoff flow (transfer submission, guardrail evaluation).
-- [ ] Approvals inbox: display Spend-related pending transfers (payoffs, manual reallocations).
-- [ ] Activity feed: log spend events (overspend alerts, guardrail breaches, credit payoff).
-- [ ] Manual QA: transact through auto, pending, and rejected flows.
-- [ ] Add/update automated tests (backend/frontend/packages) for Spend/Budgets work and capture coverage snapshot before closing the milestone.
+- [x] Approvals inbox: display Spend-related pending transfers (payoffs, manual reallocations).
+- [x] Activity feed: log spend events (overspend alerts, guardrail breaches, credit payoff).
+- [ ] Manual QA: transact through auto, pending, and rejected flows. *(Pending after UI polish; schedule walkthrough with pair before handoff.)*
+- [x] Add/update automated tests (backend/frontend/packages) for Spend/Budgets work and capture coverage snapshot before closing the milestone.
 
 ---
 

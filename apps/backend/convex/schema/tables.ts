@@ -242,6 +242,7 @@ export default defineSchema({
   })
     .index('by_account_time', ['accountId', 'occurredAt'])
     .index('by_org_category_time', ['organizationId', 'categoryKey', 'occurredAt'])
+    .index('by_org_time', ['organizationId', 'occurredAt'])
     .index('by_provider', ['organizationId', 'providerTransactionId']),
 
   categoryRules: defineTable({
@@ -373,4 +374,38 @@ export default defineSchema({
   })
     .index('by_organization_intent', ['organizationId', 'intent'])
     .index('by_scope_intent', ['scope.type', 'intent']),
+
+  budgets: defineTable({
+    organizationId: v.string(),
+    moneyMapNodeId: v.id('moneyMapNodes'),
+    periodKey: v.string(),
+    plannedAmount: currencyAmount,
+    rollover: v.boolean(),
+    capAmount: v.optional(v.union(currencyAmount, v.null())),
+    createdByProfileId: v.string(),
+    createdAt: v.number(),
+    archivedAt: v.optional(v.union(v.number(), v.null())),
+  }).index('by_org_period', ['organizationId', 'periodKey']),
+
+  liabilityTerms: defineTable({
+    organizationId: v.string(),
+    accountId: v.id('financialAccounts'),
+    liabilityType: v.union(
+      v.literal('secured_credit'),
+      v.literal('loan'),
+      v.literal('student_loan'),
+      v.literal('auto_loan'),
+      v.literal('mortgage'),
+      v.literal('other')
+    ),
+    originPrincipal: currencyAmount,
+    interestRate: v.number(),
+    minimumPayment: currencyAmount,
+    statementDay: v.optional(v.union(v.number(), v.null())),
+    dueDay: v.optional(v.union(v.number(), v.null())),
+    maturesAt: v.optional(v.union(v.number(), v.null())),
+    openedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_account', ['accountId']),
 });

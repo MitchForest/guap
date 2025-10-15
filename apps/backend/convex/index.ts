@@ -10,3 +10,4 @@ export * as savings from './domains/savings';
 export * as investing from './domains/investing';
 export * as donate from './domains/donate';
 export * as events from './domains/events';
+export * as liabilities from './domains/liabilities';

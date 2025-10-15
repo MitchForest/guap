@@ -20,6 +20,16 @@ const UpsertCategoryRuleArgs = {
   priority: z.number().int(),
 } as const;
 
+const DeleteCategoryRuleArgs = {
+  organizationId: z.string(),
+  ruleId: z.string(),
+} as const;
+
+const ReorderCategoryRulesArgs = {
+  organizationId: z.string(),
+  ruleIds: z.array(z.string()).nonempty(),
+} as const;
+
 export const upsertCategoryRule = defineMutation({
   args: UpsertCategoryRuleArgs,
   handler: async (ctx, rawArgs) => {
@@ -62,5 +72,51 @@ export const upsertCategoryRule = defineMutation({
     });
 
     return ruleId;
+  },
+});
+
+export const deleteCategoryRule = defineMutation({
+  args: DeleteCategoryRuleArgs,
+  handler: async (ctx, rawArgs) => {
+    const args = z.object(DeleteCategoryRuleArgs).parse(rawArgs);
+    const session = await ensureOrganizationAccess(ctx, args.organizationId);
+    ensureRole(session, OWNER_ADMIN_ROLES);
+
+    const rule = await ctx.db.get(args.ruleId as any);
+    if (!rule) {
+      throw new Error('Category rule not found');
+    }
+    if (rule.organizationId !== args.organizationId) {
+      throw new Error('Cannot delete rule outside organization scope');
+    }
+
+    await ctx.db.delete(args.ruleId as any);
+    return args.ruleId;
+  },
+});
+
+export const reorderCategoryRules = defineMutation({
+  args: ReorderCategoryRulesArgs,
+  handler: async (ctx, rawArgs) => {
+    const args = z.object(ReorderCategoryRulesArgs).parse(rawArgs);
+    const session = await ensureOrganizationAccess(ctx, args.organizationId);
+    ensureRole(session, OWNER_ADMIN_ROLES);
+
+    const basePriority = 200;
+    const step = 5;
+    let updated = 0;
+
+    for (let index = 0; index < args.ruleIds.length; index += 1) {
+      const ruleId = args.ruleIds[index];
+      const rule = await ctx.db.get(ruleId as any);
+      if (!rule || rule.organizationId !== args.organizationId) {
+        continue;
+      }
+      const priority = basePriority - index * step;
+      await ctx.db.patch(ruleId as any, { priority });
+      updated += 1;
+    }
+
+    return { updated };
   },
 });

@@ -12,6 +12,8 @@ import {
 const ListTransactionsQuery = 'domains/transactions/queries:listForOrganization' as const;
 const ListCategoryRulesQuery = 'domains/transactions/queries:listCategoryRules' as const;
 const UpsertCategoryRuleMutation = 'domains/transactions/mutations:upsertCategoryRule' as const;
+const DeleteCategoryRuleMutation = 'domains/transactions/mutations:deleteCategoryRule' as const;
+const ReorderCategoryRulesMutation = 'domains/transactions/mutations:reorderCategoryRules' as const;
 
 const ListTransactionsInputSchema = z.object({
   organizationId: z.string(),
@@ -21,6 +23,8 @@ const ListTransactionsInputSchema = z.object({
   status: TransactionStatusSchema.optional(),
   needsVsWants: NeedsVsWantsSchema.optional(),
   limit: z.number().optional(),
+  search: z.string().optional(),
+  sort: z.enum(['occurredAt', '-occurredAt', 'amount', '-amount']).optional(),
 });
 
 const UpsertCategoryRuleInputSchema = z.object({
@@ -31,6 +35,16 @@ const UpsertCategoryRuleInputSchema = z.object({
   categoryKey: z.string(),
   needsVsWants: NeedsVsWantsSchema.optional(),
   priority: z.number(),
+});
+
+const DeleteCategoryRuleInputSchema = z.object({
+  organizationId: z.string(),
+  ruleId: z.string(),
+});
+
+const ReorderCategoryRulesInputSchema = z.object({
+  organizationId: z.string(),
+  ruleIds: z.array(z.string()).nonempty(),
 });
 
 export class TransactionsApi {
@@ -53,6 +67,18 @@ export class TransactionsApi {
     const payload = UpsertCategoryRuleInputSchema.parse(input);
     const result = await (this.client.mutation as any)(UpsertCategoryRuleMutation, payload);
     return z.string().parse(result);
+  }
+
+  async deleteCategoryRule(input: z.input<typeof DeleteCategoryRuleInputSchema>) {
+    const payload = DeleteCategoryRuleInputSchema.parse(input);
+    const result = await (this.client.mutation as any)(DeleteCategoryRuleMutation, payload);
+    return z.string().parse(result);
+  }
+
+  async reorderCategoryRules(input: z.input<typeof ReorderCategoryRulesInputSchema>) {
+    const payload = ReorderCategoryRulesInputSchema.parse(input);
+    const result = await (this.client.mutation as any)(ReorderCategoryRulesMutation, payload);
+    return z.object({ updated: z.number() }).parse(result);
   }
 }
 

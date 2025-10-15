@@ -105,6 +105,17 @@ export const OrderStatusValues = [
 export const OrderStatusSchema = z.enum(OrderStatusValues);
 export type OrderStatus = z.infer<typeof OrderStatusSchema>;
 
+export const LiabilityTypeValues = [
+  'secured_credit',
+  'loan',
+  'student_loan',
+  'auto_loan',
+  'mortgage',
+  'other',
+] as const;
+export const LiabilityTypeSchema = z.enum(LiabilityTypeValues);
+export type LiabilityType = z.infer<typeof LiabilityTypeSchema>;
+
 export const EventKindValues = [
   'account_linked',
   'account_synced',

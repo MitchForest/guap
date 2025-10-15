@@ -5,6 +5,8 @@ import * as transactions from '../transactions';
 import * as transfers from '../transfers';
 import * as events from '../events';
 import * as savings from '../savings';
+import * as budgets from '../budgets';
+import * as liabilities from '../liabilities';
 
 describe('domain exports', () => {
   it('exposes accounts entry points', () => {
@@ -18,11 +20,14 @@ describe('domain exports', () => {
     expect(typeof (transactions as any).listForOrganization).toBe('function');
     expect(typeof (transactions as any).listCategoryRules).toBe('function');
     expect(typeof (transactions as any).upsertCategoryRule).toBe('function');
+    expect(typeof (transactions as any).deleteCategoryRule).toBe('function');
+    expect(typeof (transactions as any).reorderCategoryRules).toBe('function');
   });
 
   it('exposes transfers entry points', () => {
     expect(typeof (transfers as any).listForOrganization).toBe('function');
     expect(typeof (transfers as any).updateStatus).toBe('function');
+    expect(typeof (transfers as any).initiateSpendTransfer).toBe('function');
   });
 
   it('exposes events entry points', () => {
@@ -34,5 +39,20 @@ describe('domain exports', () => {
     expect(typeof (savings as any).listForOrganization).toBe('function');
     expect(typeof (savings as any).createGoal).toBe('function');
     expect(typeof (savings as any).initiateTransfer).toBe('function');
+  });
+
+  it('exposes budgets entry points', () => {
+    expect(typeof (budgets as any).listForOrganization).toBe('function');
+    expect(typeof (budgets as any).summarizeForOrganization).toBe('function');
+    expect(typeof (budgets as any).createBudget).toBe('function');
+    expect(typeof (budgets as any).updateBudget).toBe('function');
+    expect(typeof (budgets as any).archiveBudget).toBe('function');
+    expect(typeof (budgets as any).updateGuardrail).toBe('function');
+  });
+
+  it('exposes liability entry points', () => {
+    expect(typeof (liabilities as any).listForOrganization).toBe('function');
+    expect(typeof (liabilities as any).getByAccount).toBe('function');
+    expect(typeof (liabilities as any).upsertTerms).toBe('function');
   });
 });

@@ -10,3 +10,5 @@ export * from './domains/transactions';
 export * from './domains/transfers';
 export * from './domains/events';
 export * from './domains/savings';
+export * from './domains/budgets';
+export * from './domains/liabilities';

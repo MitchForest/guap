@@ -43,6 +43,20 @@ const defaultAccounts = [
     },
     lastSyncedAt: Date.now(),
   }),
+  ProviderAccountSchema.parse({
+    providerAccountId: 'virtual-credit',
+    name: 'Virtual Credit Card',
+    kind: 'credit',
+    status: 'active',
+    currency: 'USD',
+    balance: amount(420_00),
+    available: amount(2_500_00),
+    metadata: {
+      limit: 2500,
+      moneyMapNodeKey: 'virtual-credit',
+    },
+    lastSyncedAt: Date.now(),
+  }),
 ];
 
 const defaultIncome = [
@@ -79,6 +93,14 @@ const defaultTransactions = [
     amount: amount(5_25),
     postedAt: Date.now() - 1000 * 60 * 60 * 72,
     metadata: { merchantName: 'Virtual Savings', categoryKey: 'interest' },
+  }),
+  ProviderTransactionSchema.parse({
+    providerTransactionId: 'virtual-txn-004',
+    accountId: 'virtual-credit',
+    description: 'Guap Equipment',
+    amount: amount(-125_50),
+    postedAt: Date.now() - 1000 * 60 * 60 * 30,
+    metadata: { merchantName: 'Guap Equipment', categoryKey: 'supplies', mcc: '5732' },
   }),
 ];
 

@@ -45,12 +45,22 @@ const columns = [
   }),
   columnHelper.display({
     id: 'goal',
-    header: 'Goal',
-    cell: (info) => (
-      <span class="text-sm text-slate-600">
-        {(info.row.original.metadata?.goalName as string | undefined) ?? '—'}
-      </span>
-    ),
+    header: 'Context',
+    cell: (info) => {
+      const transfer = info.row.original;
+      const metadata = transfer.metadata ?? {};
+      const label = (() => {
+        if (transfer.intent === 'save') {
+          return (metadata.goalName as string | undefined) ?? 'Savings';
+        }
+        if (transfer.intent === 'credit_payoff') {
+          return (metadata.destinationAccountName as string | undefined) ?? 'Credit payoff';
+        }
+        return transfer.intent.replace(/_/g, ' ');
+      })();
+
+      return <span class="text-sm text-slate-600">{label}</span>;
+    },
     meta: { width: '20%' },
   }),
   columnHelper.display({

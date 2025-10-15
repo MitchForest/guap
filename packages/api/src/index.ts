@@ -31,7 +31,7 @@ import {
 } from './domains/auth';
 import { createAccountsApi, AccountsApi } from './domains/accounts';
 import { createTransactionsApi, TransactionsApi } from './domains/transactions';
-import { createBudgetsApi, BudgetsApi, type BudgetsStatus } from './domains/budgets';
+import { createBudgetsApi, BudgetsApi } from './domains/budgets';
 import { createEarnApi, EarnApi, type EarnStatus } from './domains/earn';
 import { createSavingsApi, SavingsApi } from './domains/savings';
 import {
@@ -42,6 +42,7 @@ import {
 import { createDonateApi, DonateApi, type DonateStatus } from './domains/donate';
 import { createEventsApi, EventsApi } from './domains/events';
 import { createTransfersApi, TransfersApi } from './domains/transfers';
+import { createLiabilitiesApi, LiabilitiesApi } from './domains/liabilities';
 import type {
   MoneyMapChangeRequestRecord,
   MoneyMapChangeStatus,
@@ -78,7 +79,6 @@ export {
   type AuthCompleteSignupInput,
   type AuthCompleteSignupResult,
 } from './domains/auth';
-export type { BudgetsStatus } from './domains/budgets';
 export type { EarnStatus } from './domains/earn';
 export type { InvestingStatus } from './domains/investing';
 export type { DonateStatus } from './domains/donate';
@@ -96,6 +96,14 @@ export type {
   TransferRecord,
   EventJournalRecord,
   EventReceiptRecord,
+  BudgetRecord,
+  BudgetActuals,
+  BudgetWithActuals,
+  BudgetSummary,
+  BudgetGuardrailSummary,
+  CreateBudgetInput,
+  UpdateBudgetInput,
+  LiabilityTermsRecord,
   MoneyMapSnapshot,
   MoneyMapChangeStatus,
   MoneyMapChangeRequestRecord,
@@ -110,6 +118,7 @@ export type {
   CreateSavingsGoalInput,
   UpdateSavingsGoalInput,
   InitiateSavingsTransferInput,
+  UpsertLiabilityTermsInput,
 } from '@guap/types';
 export type { SavingsTransferResult } from './domains/savings/client';
 
@@ -125,6 +134,7 @@ export class GuapApi {
   readonly donate: DonateApi;
   readonly events: EventsApi;
   readonly transfers: TransfersApi;
+  readonly liabilities: LiabilitiesApi;
 
   constructor(private readonly client: ConvexClientInstance) {
     this.moneyMaps = createMoneyMapsApi(client);
@@ -138,6 +148,7 @@ export class GuapApi {
     this.donate = createDonateApi(client);
     this.events = createEventsApi(client);
     this.transfers = createTransfersApi(client);
+    this.liabilities = createLiabilitiesApi(client);
   }
 
   async loadMoneyMap(organizationId: string): Promise<MoneyMapSnapshot | null> {

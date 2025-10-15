@@ -10,6 +10,179 @@ import {
 import { now, scrubMetadata } from '../moneyMaps/services';
 import { logEvent } from '../events/services';
 
+type CategoryRuleRecord = {
+  _id: string;
+  organizationId: string;
+  matchType: 'merchant_prefix' | 'merchant_exact' | 'mcc' | 'keywords';
+  pattern: string;
+  categoryKey: string;
+  needsVsWants: string | null;
+  priority: number;
+  createdByProfileId: string;
+  createdAt: number;
+  lastMatchedAt: number | null;
+  moneyMapNodeId: string | null;
+};
+
+type ClassificationResult = {
+  categoryKey: string | null;
+  needsVsWants: string | null;
+  moneyMapNodeId: string | null;
+  confidence: number | null;
+  matchedRuleId: string | null;
+};
+
+const normalize = (value: unknown) =>
+  typeof value === 'string' ? value.trim().toLowerCase() : '';
+
+const MCC_CATEGORY_MAP: Record<string, { categoryKey: string; needsVsWants: string | null }> = {
+  '5411': { categoryKey: 'groceries', needsVsWants: 'needs' },
+  '5812': { categoryKey: 'dining', needsVsWants: 'wants' },
+  '5541': { categoryKey: 'gas', needsVsWants: 'needs' },
+  '5732': { categoryKey: 'electronics', needsVsWants: 'wants' },
+  '4131': { categoryKey: 'transportation', needsVsWants: 'needs' },
+};
+
+const HEURISTIC_PATTERNS: Array<{
+  pattern: RegExp;
+  categoryKey: string;
+  needsVsWants: string | null;
+}> = [
+  { pattern: /grocery|market|foods?/i, categoryKey: 'groceries', needsVsWants: 'needs' },
+  { pattern: /uber|lyft|ride/i, categoryKey: 'transportation', needsVsWants: 'needs' },
+  { pattern: /netflix|spotify|subscription/i, categoryKey: 'entertainment', needsVsWants: 'wants' },
+  { pattern: /utility|energy|electric|water/i, categoryKey: 'utilities', needsVsWants: 'needs' },
+  { pattern: /school|tuition|books?/i, categoryKey: 'education', needsVsWants: 'needs' },
+];
+
+const matchCategoryRule = (transaction: ProviderTransaction, rule: CategoryRuleRecord) => {
+  const description = normalize(transaction.description);
+  const merchant = normalize((transaction.metadata as any)?.merchantName ?? transaction.description);
+  const mcc = typeof (transaction.metadata as any)?.mcc === 'string'
+    ? (transaction.metadata as any).mcc
+    : null;
+
+  switch (rule.matchType) {
+    case 'merchant_prefix':
+      return merchant.startsWith(normalize(rule.pattern));
+    case 'merchant_exact':
+      return merchant === normalize(rule.pattern);
+    case 'mcc':
+      return mcc === rule.pattern;
+    case 'keywords':
+      return description.includes(normalize(rule.pattern));
+    default:
+      return false;
+  }
+};
+
+const resolveCategoryFromMcc = (transaction: ProviderTransaction): ClassificationResult | null => {
+  const mcc = typeof (transaction.metadata as any)?.mcc === 'string'
+    ? (transaction.metadata as any).mcc
+    : null;
+  if (!mcc) return null;
+  const mapping = MCC_CATEGORY_MAP[mcc];
+  if (!mapping) return null;
+  return {
+    categoryKey: mapping.categoryKey,
+    needsVsWants: mapping.needsVsWants,
+    moneyMapNodeId: null,
+    confidence: 0.6,
+    matchedRuleId: null,
+  };
+};
+
+const resolveCategoryFromHeuristics = (
+  transaction: ProviderTransaction
+): ClassificationResult | null => {
+  const merchant = (transaction.metadata as any)?.merchantName ?? transaction.description;
+  const description = transaction.description;
+  for (const heuristic of HEURISTIC_PATTERNS) {
+    if (heuristic.pattern.test(merchant) || heuristic.pattern.test(description)) {
+      return {
+        categoryKey: heuristic.categoryKey,
+        needsVsWants: heuristic.needsVsWants,
+        moneyMapNodeId: null,
+        confidence: 0.5,
+        matchedRuleId: null,
+      };
+    }
+  }
+  return null;
+};
+
+const recurringKeyFor = (transaction: ProviderTransaction) => {
+  const merchant = normalize((transaction.metadata as any)?.merchantName ?? transaction.description);
+  const amountBucket = Math.abs(transaction.amount.cents);
+  return `${merchant}|${amountBucket}`;
+};
+
+const recurringKeyForStored = (transaction: any) => {
+  const merchant = normalize(transaction.merchantName ?? transaction.description);
+  const amount = Math.abs(transaction.amount?.cents ?? 0);
+  return `${merchant}|${amount}`;
+};
+
+const classifyTransaction = (
+  transaction: ProviderTransaction,
+  context: {
+    rules: CategoryRuleRecord[];
+    nodeByCategory: Map<string, string>;
+    recurrenceMap: Map<string, { count: number; lastSeen: number }>;
+  }
+): ClassificationResult => {
+  for (const rule of context.rules) {
+    if (matchCategoryRule(transaction, rule)) {
+      const nodeId =
+        rule.moneyMapNodeId ?? context.nodeByCategory.get(rule.categoryKey) ?? null;
+      return {
+        categoryKey: rule.categoryKey,
+        needsVsWants: rule.needsVsWants,
+        moneyMapNodeId: nodeId,
+        confidence: 1,
+        matchedRuleId: rule._id,
+      };
+    }
+  }
+
+  const mccResult = resolveCategoryFromMcc(transaction);
+  if (mccResult) {
+    const nodeId = mccResult.categoryKey
+      ? context.nodeByCategory.get(mccResult.categoryKey) ?? null
+      : null;
+    return { ...mccResult, moneyMapNodeId: nodeId };
+  }
+
+  const heuristicResult = resolveCategoryFromHeuristics(transaction);
+  if (heuristicResult) {
+    const nodeId = heuristicResult.categoryKey
+      ? context.nodeByCategory.get(heuristicResult.categoryKey) ?? null
+      : null;
+    return { ...heuristicResult, moneyMapNodeId: nodeId };
+  }
+
+  const recurrenceKey = recurringKeyFor(transaction);
+  const summary = context.recurrenceMap.get(recurrenceKey);
+  if (summary && summary.count >= 2) {
+    const nodeId = context.nodeByCategory.get('subscriptions') ?? null;
+    return {
+      categoryKey: 'subscriptions',
+      needsVsWants: 'wants',
+      moneyMapNodeId: nodeId,
+      confidence: 0.4,
+      matchedRuleId: null,
+    };
+  }
+
+  return {
+    categoryKey: null,
+    needsVsWants: null,
+    moneyMapNodeId: null,
+    confidence: null,
+    matchedRuleId: null,
+  };
+};
+
 const SyncAccountsArgs = {
   organizationId: z.string(),
   provider: z.string().optional(),
@@ -307,17 +480,70 @@ const ensureAccountGuardrail = async (
   return guardrailId;
 };
 
+const ensureLiabilityTerms = async (
+  ctx: any,
+  params: {
+    organizationId: string;
+    accountId: string;
+    accountKind: string;
+    currency: string;
+    balanceCents: number;
+  }
+) => {
+  const existing = await ctx.db
+    .query('liabilityTerms')
+    .withIndex('by_account', (q: any) => q.eq('accountId', params.accountId))
+    .unique();
+
+  if (existing) {
+    return existing._id;
+  }
+
+  const timestamp = Date.now();
+  const liabilityType = params.accountKind === 'credit' ? 'secured_credit' : 'loan';
+  const originPrincipal = {
+    cents: Math.abs(Math.round(params.balanceCents)),
+    currency: params.currency,
+  };
+  const minimumPayment = {
+    cents: Math.max(0, Math.round(params.balanceCents * 0.03)) || 2500,
+    currency: params.currency,
+  };
+
+  const termId = await ctx.db.insert('liabilityTerms', {
+    organizationId: params.organizationId,
+    accountId: params.accountId,
+    liabilityType,
+    originPrincipal,
+    interestRate: params.accountKind === 'credit' ? 0.1999 : 0.0599,
+    minimumPayment,
+    statementDay: null,
+    dueDay: null,
+    maturesAt: null,
+    openedAt: timestamp,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+
+  return termId;
+};
+
 const upsertTransactions = async (
   ctx: any,
   params: {
     organizationId: string;
     accountMap: Map<string, string>;
     transactions: ProviderTransaction[];
+    categoryRules: CategoryRuleRecord[];
+    nodeByCategory: Map<string, string>;
+    recurrenceMap: Map<string, { count: number; lastSeen: number }>;
   }
 ) => {
   const timestamp = Date.now();
   let created = 0;
   let updated = 0;
+
+  const rules = [...params.categoryRules].sort((a, b) => b.priority - a.priority);
 
   for (const transaction of params.transactions) {
     if (!transaction.providerTransactionId) continue;
@@ -327,9 +553,17 @@ const upsertTransactions = async (
     const existing = await ctx.db
       .query('transactions')
       .withIndex('by_provider', (q: any) =>
-        q.eq('organizationId', params.organizationId).eq('providerTransactionId', transaction.providerTransactionId)
+        q
+          .eq('organizationId', params.organizationId)
+          .eq('providerTransactionId', transaction.providerTransactionId)
       )
       .unique();
+
+    const classification = classifyTransaction(transaction, {
+      rules,
+      nodeByCategory: params.nodeByCategory,
+      recurrenceMap: params.recurrenceMap,
+    });
 
     const payload = {
       organizationId: params.organizationId,
@@ -351,13 +585,22 @@ const upsertTransactions = async (
       categoryKey:
         typeof (transaction.metadata as any)?.categoryKey === 'string'
           ? (transaction.metadata as any).categoryKey
-          : null,
-      categoryConfidence: null,
-      needsVsWants: null,
+          : classification.categoryKey,
+      categoryConfidence:
+        typeof (transaction.metadata as any)?.categoryKey === 'string'
+          ? 1
+          : classification.confidence,
+      needsVsWants:
+        typeof (transaction.metadata as any)?.needsVsWants === 'string'
+          ? (transaction.metadata as any).needsVsWants
+          : classification.needsVsWants,
       occurredAt: transaction.postedAt,
       createdAt: timestamp,
       metadata: scrubMetadata(transaction.metadata ?? undefined) ?? null,
-      moneyMapNodeId: null,
+      moneyMapNodeId:
+        (transaction.metadata as any)?.moneyMapNodeId ??
+        classification.moneyMapNodeId ??
+        null,
     };
 
     if (existing) {
@@ -369,6 +612,27 @@ const upsertTransactions = async (
     } else {
       await ctx.db.insert('transactions', payload);
       created += 1;
+    }
+
+    if (classification.matchedRuleId) {
+      await ctx.db.patch(classification.matchedRuleId as any, {
+        lastMatchedAt: timestamp,
+      });
+    }
+
+    const recurrenceKey = recurringKeyFor(transaction);
+    const history = params.recurrenceMap.get(recurrenceKey);
+    const occurredAt = transaction.postedAt;
+    if (history) {
+      params.recurrenceMap.set(recurrenceKey, {
+        count: history.count + 1,
+        lastSeen: Math.max(history.lastSeen, occurredAt),
+      });
+    } else {
+      params.recurrenceMap.set(recurrenceKey, {
+        count: 1,
+        lastSeen: occurredAt,
+      });
     }
   }
 
@@ -532,15 +796,17 @@ export const syncAccountsImpl = async (ctx: any, args: SyncAccountsInput) => {
       accountId,
       createdByProfileId: session.userId,
     });
-  }
 
-  const transactionSummary = syncResult.transactions?.length
-    ? await upsertTransactions(ctx, {
+    if (account.kind === 'credit' || account.kind === 'liability') {
+      await ensureLiabilityTerms(ctx, {
         organizationId: args.organizationId,
-        accountMap,
-        transactions: syncResult.transactions,
-      })
-    : { created: 0, updated: 0 };
+        accountId,
+        accountKind: account.kind,
+        currency: account.currency ?? account.balance.currency,
+        balanceCents: account.balance.cents,
+      });
+    }
+  }
 
   await ensureDefaultCategoryRules(
     ctx,
@@ -550,6 +816,58 @@ export const syncAccountsImpl = async (ctx: any, args: SyncAccountsInput) => {
     },
     moneyMapNodes
   );
+
+  const categoryRules: CategoryRuleRecord[] = await ctx.db
+    .query('categoryRules')
+    .withIndex('by_organization_priority', (q: any) =>
+      q.eq('organizationId', args.organizationId)
+    )
+    .order('desc')
+    .collect();
+
+  const nodeByCategory = new Map<string, string>();
+  for (const node of moneyMapNodes) {
+    if (node.kind !== 'pod') continue;
+    const category = typeof node.metadata?.category === 'string' ? node.metadata.category : null;
+    if (category) {
+      nodeByCategory.set(category, node._id);
+    }
+  }
+
+  const recurrenceMap = new Map<string, { count: number; lastSeen: number }>();
+  const recentTransactions = await ctx.db
+    .query('transactions')
+    .withIndex('by_org_time', (q: any) => q.eq('organizationId', args.organizationId))
+    .order('desc')
+    .take(200);
+
+  for (const record of recentTransactions as any[]) {
+    const key = recurringKeyForStored(record);
+    const current = recurrenceMap.get(key);
+    const occurredAt = typeof record.occurredAt === 'number' ? record.occurredAt : record.createdAt ?? Date.now();
+    if (current) {
+      recurrenceMap.set(key, {
+        count: current.count + 1,
+        lastSeen: Math.max(current.lastSeen, occurredAt),
+      });
+    } else {
+      recurrenceMap.set(key, {
+        count: 1,
+        lastSeen: occurredAt,
+      });
+    }
+  }
+
+  const transactionSummary = syncResult.transactions?.length
+    ? await upsertTransactions(ctx, {
+        organizationId: args.organizationId,
+        accountMap,
+        transactions: syncResult.transactions,
+        categoryRules,
+        nodeByCategory,
+        recurrenceMap,
+      })
+    : { created: 0, updated: 0 };
 
   await logEvent(ctx.db, {
     organizationId: args.organizationId,

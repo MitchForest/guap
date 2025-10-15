@@ -3,10 +3,18 @@ import type { TransferRecord } from '@guap/types';
 
 vi.mock('../../core/session', () => ({
   ensureOrganizationAccess: vi.fn(),
+  ensureRole: vi.fn(),
+  OWNER_ADMIN_ROLES: ['owner', 'admin'],
+}));
+
+vi.mock('../../domains/events/services', () => ({
+  logEvent: vi.fn(),
 }));
 
 import { listTransfersImpl } from '../../domains/transfers/queries';
-import { ensureOrganizationAccess } from '../../core/session';
+import { initiateSpendTransferImpl } from '../../domains/transfers/mutations';
+import { ensureOrganizationAccess, ensureRole } from '../../core/session';
+import { logEvent } from '../../domains/events/services';
 import { createMockDb } from '../helpers/mockDb';
 
 const organizationId = 'org-1';
@@ -38,6 +46,9 @@ describe('listTransfersImpl', () => {
       role: 'owner',
       userId: 'user-1',
     });
+    vi.mocked(ensureRole).mockImplementation(() => {});
+    vi.mocked(logEvent).mockClear();
+    vi.mocked(logEvent).mockResolvedValue(undefined);
   });
 
   it('returns transfers ordered by most recent requestedAt value', async () => {
@@ -68,5 +79,142 @@ describe('listTransfersImpl', () => {
 
     expect(result).toHaveLength(2);
     expect(result.every((transfer: TransferRecord) => transfer.status === 'approved')).toBe(true);
+  });
+});
+
+describe('initiateSpendTransfer', () => {
+  const createAccount = (db: ReturnType<typeof createMockDb>, overrides: Record<string, unknown>) =>
+    db.insert('financialAccounts', {
+      organizationId,
+      moneyMapNodeId: null,
+      name: 'Account',
+      kind: 'checking',
+      status: 'active',
+      currency: 'USD',
+      balance: { cents: 10_000, currency: 'USD' },
+      available: { cents: 10_000, currency: 'USD' },
+      provider: 'virtual',
+      providerAccountId: null,
+      lastSyncedAt: Date.now(),
+      metadata: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    vi.mocked(ensureOrganizationAccess).mockResolvedValue({
+      activeOrganizationId: organizationId,
+      role: 'owner',
+      userId: 'user-1',
+    });
+    vi.mocked(ensureRole).mockImplementation(() => {});
+    vi.mocked(logEvent).mockClear();
+    vi.mocked(logEvent).mockResolvedValue(undefined);
+  });
+
+  it('executes transfer immediately when guardrail allows auto approval', async () => {
+    const db = createMockDb();
+    const nodeId = 'node-credit';
+    const sourceAccountId = createAccount(db, { name: 'Checking' });
+    const destinationAccountId = createAccount(db, {
+      name: 'Credit Card',
+      kind: 'credit',
+      moneyMapNodeId: nodeId,
+    });
+    db.insert('transferGuardrails', {
+      organizationId,
+      scope: { type: 'money_map_node', nodeId },
+      intent: 'spend',
+      direction: { sourceNodeId: nodeId, destinationNodeId: null },
+      approvalPolicy: 'auto',
+      autoApproveUpToCents: 10_000,
+      dailyLimitCents: null,
+      weeklyLimitCents: null,
+      allowedInstrumentKinds: null,
+      blockedSymbols: [],
+      maxOrderAmountCents: null,
+      requireApprovalForSell: null,
+      allowedRolesToInitiate: ['owner', 'admin', 'member'],
+      createdByProfileId: 'user-1',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const ctx = { db } as any;
+
+    const result = await initiateSpendTransferImpl(
+      ctx,
+      {
+        organizationId,
+        sourceAccountId,
+        destinationAccountId,
+        amount: { cents: 5_000, currency: 'USD' },
+      },
+      { userId: 'user-1' }
+    );
+
+    expect(result.transfer?.status).toBe('executed');
+    expect(logEvent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      eventKind: 'transfer_requested',
+    }));
+    expect(logEvent).toHaveBeenCalledTimes(2);
+    const transfers = db.getTable('transfers');
+    expect(transfers).toHaveLength(1);
+    expect(transfers[0]?.status).toBe('executed');
+    const transactions = db.getTable('transactions');
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0]?.transferId).toBe(transfers[0]?._id);
+    expect(transactions[0]?.needsVsWants).toBeNull();
+  });
+
+  it('marks transfer pending when guardrail requires approval', async () => {
+    const db = createMockDb();
+    const nodeId = 'node-credit';
+    const sourceAccountId = createAccount(db, { name: 'Checking' });
+    const destinationAccountId = createAccount(db, {
+      name: 'Credit Card',
+      kind: 'credit',
+      moneyMapNodeId: nodeId,
+    });
+    db.insert('transferGuardrails', {
+      organizationId,
+      scope: { type: 'money_map_node', nodeId },
+      intent: 'spend',
+      direction: { sourceNodeId: nodeId, destinationNodeId: null },
+      approvalPolicy: 'parent_required',
+      autoApproveUpToCents: null,
+      dailyLimitCents: null,
+      weeklyLimitCents: null,
+      allowedInstrumentKinds: null,
+      blockedSymbols: [],
+      maxOrderAmountCents: null,
+      requireApprovalForSell: null,
+      allowedRolesToInitiate: ['owner', 'admin', 'member'],
+      createdByProfileId: 'user-1',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    const ctx = { db } as any;
+
+    const result = await initiateSpendTransferImpl(
+      ctx,
+      {
+        organizationId,
+        sourceAccountId,
+        destinationAccountId,
+        amount: { cents: 50_000, currency: 'USD' },
+        memo: 'Pay off card',
+      },
+      { userId: 'user-1' }
+    );
+
+    expect(result.transfer?.status).toBe('pending_approval');
+    const transfers = db.getTable('transfers');
+    expect(transfers[0]?.status).toBe('pending_approval');
+    expect(logEvent).toHaveBeenCalledTimes(1);
+    const transactions = db.getTable('transactions');
+    expect(transactions).toHaveLength(0);
   });
 });

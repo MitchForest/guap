@@ -11,9 +11,10 @@ describe('virtual provider', () => {
       forceRefresh: false,
     });
 
-    expect(result.accounts).toHaveLength(2);
+    expect(result.accounts).toHaveLength(3);
     expect(result.accounts?.[0]?.providerAccountId).toBe('virtual-checking');
-    expect(result.transactions).toHaveLength(3);
+    expect(result.accounts?.some((account) => account.providerAccountId === 'virtual-credit')).toBe(true);
+    expect(result.transactions).toHaveLength(4);
     expect(result.transactions?.[0]?.metadata?.merchantName).toBe('Corner Market');
   });
 });

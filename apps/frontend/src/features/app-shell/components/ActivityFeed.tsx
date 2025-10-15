@@ -16,6 +16,24 @@ const friendlyDateTime = (timestamp: number) =>
 
 const summarizeTransferEvent = (event: EventJournalRecord) => {
   const payload = (event.payload ?? {}) as Record<string, unknown>;
+  if (event.eventKind === 'transfer_requested' || event.eventKind === 'transfer_executed') {
+    if (payload.intent === 'credit_payoff') {
+      const accountName = typeof payload.destinationAccountName === 'string' ? payload.destinationAccountName : 'credit account';
+      const amountCents =
+        typeof payload.amount === 'object' && payload.amount !== null && 'cents' in payload.amount
+          ? (payload.amount as { cents: number }).cents
+          : null;
+      const amountLabel = amountCents != null ? formatCurrency(amountCents) : 'Payoff';
+      const actor = event.actorProfileId ? `by ${event.actorProfileId}` : 'Auto-approved';
+      const verb = event.eventKind === 'transfer_requested' ? 'Payoff requested' : 'Payoff executed';
+      return {
+        title: `${verb} for ${accountName}`,
+        detail: `${amountLabel} • ${actor}`,
+        timestamp: friendlyDateTime(event.createdAt),
+      };
+    }
+  }
+
   const goalName = typeof payload.goalName === 'string' ? payload.goalName : 'savings goal';
   const amountCents =
     typeof payload.amount === 'object' && payload.amount !== null && 'cents' in payload.amount
@@ -28,6 +46,7 @@ const summarizeTransferEvent = (event: EventJournalRecord) => {
     return {
       title: `Contribution requested for ${goalName}`,
       detail: `${amountLabel} pending approval • ${actor}`,
+      timestamp: friendlyDateTime(event.createdAt),
     };
   }
 
@@ -35,6 +54,7 @@ const summarizeTransferEvent = (event: EventJournalRecord) => {
     return {
       title: `Contribution completed for ${goalName}`,
       detail: `${amountLabel} deposited • ${actor}`,
+      timestamp: friendlyDateTime(event.createdAt),
     };
   }
 
