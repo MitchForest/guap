@@ -11,7 +11,7 @@ import {
 import type {
   FinancialAccountRecord,
   HouseholdRecord,
-  IncomeRecord,
+  IncomeStreamRecord,
   RequestRecord,
 } from '@guap/api';
 import { HouseholdRecordSchema } from '@guap/types';
@@ -26,7 +26,7 @@ type AppDataContextValue = {
   activeHousehold: Accessor<HouseholdRecord | null>;
   setActiveHouseholdId: (householdId: string | null) => void;
   accounts: Accessor<FinancialAccountRecord[]>;
-  incomeStreams: Accessor<IncomeRecord[]>;
+  incomeStreams: Accessor<IncomeStreamRecord[]>;
   requests: Accessor<RequestRecord[]>;
 };
 
@@ -90,8 +90,11 @@ const AppDataProvider: Component<AppDataProviderProps> = (props) => {
 
   const { data: incomeStreamsResource } = createGuapQuery({
     source: activeHouseholdId,
-    initialValue: [] as IncomeRecord[],
-    fetcher: async () => [] as IncomeRecord[],
+    initialValue: [] as IncomeStreamRecord[],
+    fetcher: async (householdId) => {
+      const organizationId = organizationIdFor(householdId);
+      return await guapApi.earn.listStreams({ organizationId });
+    },
   });
   const activeHousehold = createMemo(() => {
     const id = activeHouseholdId();

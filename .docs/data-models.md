@@ -338,6 +338,7 @@ Allowance, chores, or job definitions.
 - `cadence: IncomeCadence`.
 - `amount: CurrencyAmount`.
 - `defaultDestinationAccountId: Id<'financialAccounts'> | null`.
+- `sourceAccountId: Id<'financialAccounts'> | null`.
 - `requiresApproval: boolean`.
 - `autoSchedule: boolean` (whether payouts are generated automatically per cadence).
 - `status: IncomeStreamStatus`.
@@ -347,7 +348,7 @@ Allowance, chores, or job definitions.
 - `createdAt: number`.
 - `updatedAt: number`.
 
-Payout history lives in `transfers` with `intent = 'earn'` referencing `incomeStreamId` inside `metadata`. When `autoSchedule` is true, the earn domain generates transfer drafts on schedule, subject to guardrails.
+Payout history lives in `transfers` with `intent = 'earn'` referencing `incomeStreamId` inside `metadata`. When `autoSchedule` is true, the earn domain generates transfer drafts on schedule, subject to guardrails. Guardrail evaluation prefers account-level rules, then Money Map node rules, and finally organization defaults; events `income_request | income_completed | income_skipped` record each change for the timeline and activity feed.
 
 ## Savings Domain
 

@@ -6,20 +6,21 @@ const CompoundToolPage: Component = () => {
   const { incomeStreams } = useAppData();
   const annualContribution = createMemo(() =>
     incomeStreams().reduce((sum, income) => {
+      const amountCents = income.amount.cents;
       switch (income.cadence) {
         case 'daily':
-          return sum + income.amountCents * 365;
+          return sum + amountCents * 365;
         case 'weekly':
-          return sum + income.amountCents * 52;
+          return sum + amountCents * 52;
         case 'biweekly':
-          return sum + income.amountCents * 26;
+          return sum + amountCents * 26;
         case 'monthly':
-          return sum + income.amountCents * 12;
+          return sum + amountCents * 12;
         case 'quarterly':
-          return sum + income.amountCents * 4;
+          return sum + amountCents * 4;
         case 'yearly':
         default:
-          return sum + income.amountCents;
+          return sum + amountCents;
       }
     }, 0)
   );

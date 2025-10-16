@@ -64,6 +64,8 @@ Create `events` domain with a single Convex mutation to record typed events (`ac
 - Activity timeline generated from EventsJournal to show recent payouts and approvals.
 - Projection widget estimating next goal completion date using AllocationRules and current earnings velocity.
 
+> **Status:** Backend domain, auto-scheduling, approvals integration, and Solid Earn surface are live with stream management, payout actions, activity timeline, projections widget, and pause/resume controls (2025-10-15). Future work: richer goal-based projections when AllocationRules API lands.
+
 #### User Stories
 
 - As a student, I can request a new income stream or log that a chore is complete, triggering a `transfers` draft with `intent = 'earn'` and consulting guardrails to auto-approve if allowed; otherwise my parent is notified.

@@ -10,6 +10,7 @@ import {
   MoneyMapChangeStatusValues,
   MoneyMapNodeKindValues,
   MoneyMapRuleTriggerValues,
+  IncomeStreamStatusValues,
   NeedsVsWantsValues,
   NotificationChannelValues,
   OrderStatusValues,
@@ -20,6 +21,7 @@ import {
   TransferStatusValues,
   UserRoleValues,
   InstrumentTypeValues,
+  IncomeCadenceValues,
 } from '@guap/types';
 
 const literalUnion = (values: readonly string[]) =>
@@ -46,6 +48,8 @@ const eventKind = literalUnion(EventKindValues);
 const notificationChannel = literalUnion(NotificationChannelValues);
 const goalStatus = literalUnion(GoalStatusValues);
 const instrumentType = literalUnion(InstrumentTypeValues);
+const incomeStreamStatus = literalUnion(IncomeStreamStatusValues);
+const incomeCadence = literalUnion(IncomeCadenceValues);
 
 const userRole = literalUnion(UserRoleValues);
 
@@ -389,6 +393,26 @@ export default defineSchema({
     createdAt: v.number(),
     archivedAt: v.optional(v.union(v.number(), v.null())),
   }).index('by_org_period', ['organizationId', 'periodKey']),
+
+  incomeStreams: defineTable({
+    organizationId: v.string(),
+    ownerProfileId: v.string(),
+    name: v.string(),
+    cadence: incomeCadence,
+    amount: currencyAmount,
+    defaultDestinationAccountId: v.optional(v.union(v.id('financialAccounts'), v.null())),
+    sourceAccountId: v.optional(v.union(v.id('financialAccounts'), v.null())),
+    requiresApproval: v.boolean(),
+    autoSchedule: v.boolean(),
+    status: incomeStreamStatus,
+    nextScheduledAt: v.optional(v.union(v.number(), v.null())),
+    lastPaidAt: v.optional(v.union(v.number(), v.null())),
+    createdByProfileId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_organization_status', ['organizationId', 'status'])
+    .index('by_next_schedule', ['nextScheduledAt']),
 
   liabilityTerms: defineTable({
     organizationId: v.string(),

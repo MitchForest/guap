@@ -177,20 +177,21 @@ This checklist turns the feature and data-model plans into a concrete execution 
 
 **Objective:** manage allowances/chores with guardrail-aware payouts and projections.
 
-- [ ] Enhance `incomeStreams` domain:
+- [x] Enhance `incomeStreams` domain:
   - Support `autoSchedule` + cadence scheduling job.
   - Generate transfer drafts on schedule, respecting guardrails.
   - Handle skip/pause/complete actions.
-- [ ] Ensure guardrails allow auto-approval thresholds per stream.
-- [ ] Frontend Earn page:
+- [x] Ensure guardrails allow auto-approval thresholds per stream.
+- [x] Frontend Earn page:
   - Income list with status, cadence, next payout.
   - Request / edit forms using shared form toolkit.
   - Guardrail switches (auto vs parent required).
   - Activity timeline (requests, approvals, missed chores).
-- [ ] Approvals inbox: highlight pending earn payouts with stream metadata.
-- [ ] Activity feed: log outcomes (payout approved, skipped, auto-executed).
-- [ ] Update projections widget (goal completion timeline).
-- [ ] Add/update automated tests (backend/frontend/packages) for Earn domain work and capture coverage snapshot before closing the milestone.
+- [x] Approvals inbox: highlight pending earn payouts with stream metadata.
+- [x] Activity feed: log outcomes (payout approved, skipped, auto-executed).
+- [x] Update projections widget (goal completion timeline).
+- [x] Expose pause/resume controls for income streams in the Earn UI.
+- [x] Add/update automated tests (backend/frontend/packages) for Earn domain work and capture coverage snapshot before closing the milestone.
 
 ---
 

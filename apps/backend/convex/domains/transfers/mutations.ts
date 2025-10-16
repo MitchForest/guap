@@ -1,9 +1,11 @@
+import type { Id } from '@guap/api/codegen/dataModel';
 import { z } from 'zod';
 import { TransferStatusSchema, CurrencyAmountSchema } from '@guap/types';
 import { zid } from 'convex-helpers/server/zod';
 import { defineMutation } from '../../core/functions';
 import { ensureOrganizationAccess, ensureRole, OWNER_ADMIN_ROLES } from '../../core/session';
 import { logEvent } from '../events/services';
+import { advanceStreamSchedule } from '../earn/services';
 import { evaluateGuardrailForSpend } from './services';
 
 const UpdateStatusArgs = {
@@ -18,6 +20,76 @@ const InitiateSpendTransferArgs = {
   amount: CurrencyAmountSchema,
   memo: z.string().optional(),
 } as const;
+
+const handleIncomeTransferSideEffects = async (
+  ctx: any,
+  params: {
+    transferId: Id<'transfers'>;
+    status: 'executed' | 'declined';
+    streamId: string;
+    metadata: Record<string, unknown>;
+    timestamp: number;
+    actorProfileId: string | null;
+  }
+) => {
+  const stream = await ctx.db.get(params.streamId as any);
+  if (!stream) {
+    return;
+  }
+
+  const scheduledFor =
+    typeof params.metadata.scheduledFor === 'number'
+      ? (params.metadata.scheduledFor as number)
+      : null;
+
+  if (params.status === 'executed') {
+    const nextScheduledAt = stream.autoSchedule
+      ? advanceStreamSchedule(stream, scheduledFor ?? params.timestamp)
+      : stream.nextScheduledAt ?? null;
+
+    await ctx.db.patch(stream._id, {
+      lastPaidAt: params.timestamp,
+      nextScheduledAt,
+      updatedAt: Date.now(),
+    });
+
+    await logEvent(ctx.db, {
+      organizationId: stream.organizationId,
+      eventKind: 'income_completed',
+      actorProfileId: params.actorProfileId,
+      primaryEntity: { table: 'incomeStreams', id: stream._id },
+      relatedEntities: [{ table: 'transfers', id: params.transferId }],
+      payload: {
+        amount: params.metadata.amount ?? null,
+        executedAt: params.timestamp,
+        scheduledFor,
+        streamName: stream.name,
+      },
+    });
+  } else if (params.status === 'declined') {
+    const nextScheduledAt = stream.autoSchedule
+      ? advanceStreamSchedule(stream, scheduledFor ?? params.timestamp)
+      : stream.nextScheduledAt ?? null;
+
+    await ctx.db.patch(stream._id, {
+      nextScheduledAt,
+      updatedAt: Date.now(),
+    });
+
+    await logEvent(ctx.db, {
+      organizationId: stream.organizationId,
+      eventKind: 'income_skipped',
+      actorProfileId: params.actorProfileId,
+      primaryEntity: { table: 'incomeStreams', id: stream._id },
+      relatedEntities: [{ table: 'transfers', id: params.transferId }],
+      payload: {
+        scheduledFor,
+        reason: 'declined',
+        streamName: stream.name,
+      },
+    });
+  }
+};
 
 export const updateStatus = defineMutation({
   args: UpdateStatusArgs,
@@ -51,6 +123,10 @@ export const updateStatus = defineMutation({
 
     await ctx.db.patch(args.transferId, patch);
 
+    const metadata = (transfer.metadata ?? {}) as Record<string, unknown>;
+    const incomeStreamId =
+      typeof metadata.incomeStreamId === 'string' ? (metadata.incomeStreamId as string) : null;
+
     const eventKind =
       args.status === 'approved'
         ? 'transfer_approved'
@@ -70,6 +146,17 @@ export const updateStatus = defineMutation({
         status: args.status,
       },
     });
+
+    if (incomeStreamId && (args.status === 'executed' || args.status === 'declined')) {
+      await handleIncomeTransferSideEffects(ctx, {
+        transferId: args.transferId as any,
+        status: args.status,
+        streamId: incomeStreamId,
+        metadata,
+        timestamp,
+        actorProfileId: session.userId,
+      });
+    }
 
     return { ...transfer, ...patch };
   },

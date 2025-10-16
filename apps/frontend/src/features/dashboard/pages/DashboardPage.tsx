@@ -40,7 +40,7 @@ const DashboardPage: Component = () => {
 
   const monthlyIncomeCents = createMemo(() =>
     incomeStreams().reduce(
-      (sum, income) => sum + cadenceToMonthly(income.amountCents, income.cadence),
+      (sum, income) => sum + cadenceToMonthly(income.amount.cents, income.cadence),
       0
     )
   );
@@ -105,9 +105,9 @@ const DashboardPage: Component = () => {
           >
             {(income) => (
               <>
-                <p class="mt-3 text-lg font-semibold text-slate-900">{income().label}</p>
+                <p class="mt-3 text-lg font-semibold text-slate-900">{income().name}</p>
                 <p class="text-sm text-subtle">
-                  {formatCurrency(income().amountCents)} • {income().cadence}
+                  {formatCurrency(income().amount.cents)} • {income().cadence}
                 </p>
               </>
             )}

@@ -19,6 +19,7 @@ import type * as core_config__generated_api from "../core/config/_generated/api.
 import type * as core_config__generated_server from "../core/config/_generated/server.js";
 import type * as core_functions from "../core/functions.js";
 import type * as core_session from "../core/session.js";
+import type * as crons from "../crons.js";
 import type * as domains_accounts_index from "../domains/accounts/index.js";
 import type * as domains_accounts_mutations from "../domains/accounts/mutations.js";
 import type * as domains_accounts_queries from "../domains/accounts/queries.js";
@@ -35,6 +36,7 @@ import type * as domains_donate_queries from "../domains/donate/queries.js";
 import type * as domains_earn_index from "../domains/earn/index.js";
 import type * as domains_earn_mutations from "../domains/earn/mutations.js";
 import type * as domains_earn_queries from "../domains/earn/queries.js";
+import type * as domains_earn_services from "../domains/earn/services.js";
 import type * as domains_events_index from "../domains/events/index.js";
 import type * as domains_events_mutations from "../domains/events/mutations.js";
 import type * as domains_events_queries from "../domains/events/queries.js";
@@ -92,6 +94,7 @@ declare const fullApi: ApiFromModules<{
   "core/config/_generated/server": typeof core_config__generated_server;
   "core/functions": typeof core_functions;
   "core/session": typeof core_session;
+  crons: typeof crons;
   "domains/accounts/index": typeof domains_accounts_index;
   "domains/accounts/mutations": typeof domains_accounts_mutations;
   "domains/accounts/queries": typeof domains_accounts_queries;
@@ -108,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "domains/earn/index": typeof domains_earn_index;
   "domains/earn/mutations": typeof domains_earn_mutations;
   "domains/earn/queries": typeof domains_earn_queries;
+  "domains/earn/services": typeof domains_earn_services;
   "domains/events/index": typeof domains_events_index;
   "domains/events/mutations": typeof domains_events_mutations;
   "domains/events/queries": typeof domains_events_queries;

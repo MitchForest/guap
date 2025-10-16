@@ -61,6 +61,47 @@ const summarizeTransferEvent = (event: EventJournalRecord) => {
   return null;
 };
 
+const summarizeIncomeEvent = (event: EventJournalRecord) => {
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  const streamName = typeof payload.streamName === 'string' ? payload.streamName : 'income stream';
+  const amountCents =
+    typeof payload.amount === 'object' && payload.amount !== null && 'cents' in payload.amount
+      ? (payload.amount as { cents: number }).cents
+      : null;
+  const scheduledFor =
+    typeof payload.scheduledFor === 'number'
+      ? new Date(payload.scheduledFor).toLocaleDateString()
+      : null;
+  const actor = event.actorProfileId ? `by ${event.actorProfileId}` : 'Auto';
+  const amountLabel = amountCents != null ? formatCurrency(amountCents) : null;
+
+  if (event.eventKind === 'income_request') {
+    return {
+      title: `Payout requested for ${streamName}`,
+      detail: `${amountLabel ?? 'Allowance'} pending approval • ${actor}`,
+      timestamp: friendlyDateTime(event.createdAt),
+    };
+  }
+
+  if (event.eventKind === 'income_completed') {
+    return {
+      title: `Payout completed for ${streamName}`,
+      detail: `${amountLabel ?? 'Allowance'} delivered${scheduledFor ? ` • scheduled ${scheduledFor}` : ''}`,
+      timestamp: friendlyDateTime(event.createdAt),
+    };
+  }
+
+  if (event.eventKind === 'income_skipped') {
+    return {
+      title: `Payout skipped for ${streamName}`,
+      detail: `${scheduledFor ? `Next target ${scheduledFor}` : 'Rescheduled to next cadence'} • ${actor}`,
+      timestamp: friendlyDateTime(event.createdAt),
+    };
+  }
+
+  return null;
+};
+
 export const summarizeEvent = (event: EventJournalRecord) => {
   const transferSummary = summarizeTransferEvent(event);
   if (transferSummary) {
@@ -69,6 +110,11 @@ export const summarizeEvent = (event: EventJournalRecord) => {
       detail: transferSummary.detail,
       timestamp: friendlyDateTime(event.createdAt),
     };
+  }
+
+  const incomeSummary = summarizeIncomeEvent(event);
+  if (incomeSummary) {
+    return incomeSummary;
   }
 
   if (event.eventKind.startsWith('order_')) {

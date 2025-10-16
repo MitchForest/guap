@@ -32,7 +32,7 @@ import {
 import { createAccountsApi, AccountsApi } from './domains/accounts';
 import { createTransactionsApi, TransactionsApi } from './domains/transactions';
 import { createBudgetsApi, BudgetsApi } from './domains/budgets';
-import { createEarnApi, EarnApi, type EarnStatus } from './domains/earn';
+import { createEarnApi, EarnApi } from './domains/earn';
 import { createSavingsApi, SavingsApi } from './domains/savings';
 import {
   createInvestingApi,
@@ -78,7 +78,6 @@ export {
   type AuthCompleteSignupInput,
   type AuthCompleteSignupResult,
 } from './domains/auth';
-export type { EarnStatus } from './domains/earn';
 export type { DonateStatus } from './domains/donate';
 export type {
   HouseholdRecord,

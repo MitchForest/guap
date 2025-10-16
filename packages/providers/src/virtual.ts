@@ -86,7 +86,22 @@ const defaultIncome = [
     label: 'Weekly Allowance',
     cadence: 'weekly',
     amount: amount(20_00),
-    metadata: { category: 'allowance' },
+    accountId: 'virtual-checking',
+    metadata: { category: 'allowance', autoSchedule: true },
+  }),
+  ProviderIncomeSchema.parse({
+    providerIncomeId: 'virtual-chore',
+    label: 'Saturday Chores',
+    cadence: 'weekly',
+    amount: amount(15_00),
+    metadata: { category: 'chores', requiresApproval: true },
+  }),
+  ProviderIncomeSchema.parse({
+    providerIncomeId: 'virtual-tutoring',
+    label: 'Tutoring Gig',
+    cadence: 'monthly',
+    amount: amount(80_00),
+    metadata: { category: 'jobs', requiresApproval: false },
   }),
 ];
 

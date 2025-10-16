@@ -133,6 +133,7 @@ export const EventKindValues = [
   'budget_over_limit',
   'income_request',
   'income_completed',
+  'income_skipped',
   'donation_requested',
   'donation_completed',
   'guardrail_updated',

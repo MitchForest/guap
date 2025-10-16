@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   mockSync: vi.fn(),
   mockListAccounts: vi.fn(),
   mockListChangeRequests: vi.fn(),
+  mockListStreams: vi.fn(),
 }));
 
 vi.mock('~/app/contexts/AuthContext', () => ({
@@ -30,6 +31,9 @@ vi.mock('~/shared/services/guapApi', () => ({
     accounts: {
       sync: mocks.mockSync,
       list: mocks.mockListAccounts,
+    },
+    earn: {
+      listStreams: mocks.mockListStreams,
     },
     listChangeRequests: mocks.mockListChangeRequests,
   },
@@ -75,6 +79,7 @@ describe('AppDataProvider', () => {
       },
     ]);
     mocks.mockListChangeRequests.mockResolvedValue([]);
+    mocks.mockListStreams.mockResolvedValue([]);
   });
 
   it('hydrates accounts for the active household', async () => {

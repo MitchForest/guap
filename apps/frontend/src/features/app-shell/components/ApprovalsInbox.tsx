@@ -100,6 +100,9 @@ export const ApprovalsInbox: Component<ApprovalsInboxProps> = (props) => {
         if (transfer.intent === 'credit_payoff') {
           return (metadata.destinationAccountName as string | undefined) ?? 'Credit payoff';
         }
+        if (transfer.intent === 'earn') {
+          return (metadata.streamName as string | undefined) ?? 'Earn payout';
+        }
         return transfer.intent.replace(/_/g, ' ');
       })(),
       amountLabel: formatCurrency(transfer.amount.cents),

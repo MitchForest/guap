@@ -4,6 +4,7 @@ import * as accounts from '../accounts';
 import * as transactions from '../transactions';
 import * as transfers from '../transfers';
 import * as events from '../events';
+import * as earn from '../earn';
 import * as savings from '../savings';
 import * as budgets from '../budgets';
 import * as liabilities from '../liabilities';
@@ -33,6 +34,13 @@ describe('domain exports', () => {
   it('exposes events entry points', () => {
     expect(typeof (events as any).listForOrganization).toBe('function');
     expect(typeof (events as any).markEventRead).toBe('function');
+  });
+
+  it('exposes earn entry points', () => {
+    expect(typeof (earn as any).listForOrganization).toBe('function');
+    expect(typeof (earn as any).summarizeForOrganization).toBe('function');
+    expect(typeof (earn as any).createIncomeStream).toBe('function');
+    expect(typeof (earn as any).requestIncomePayout).toBe('function');
   });
 
   it('exposes savings entry points', () => {
