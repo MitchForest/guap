@@ -1,8 +1,8 @@
 import type { InvestmentOrderRecord } from '@guap/types';
 import { Link, useRouter } from '@tanstack/solid-router';
 import { clsx } from 'clsx';
-import { Component, For, Show, createMemo, createSignal } from 'solid-js';
-import type { EventJournalRecord, TransferRecord } from '@guap/api';
+import { Component, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
+import type { EventJournalWithReceipt, TransferRecord } from '@guap/api';
 import { Button } from '~/shared/components/ui/button';
 import { Input } from '~/shared/components/ui/input';
 import { useAppData } from '~/app/contexts/AppDataContext';
@@ -72,7 +72,10 @@ const AppShell: Component<AppShellProps> = (props) => {
 
   const householdId = createMemo(() => activeHousehold()?._id ?? null);
 
-  const { data: pendingOrders } = createGuapQuery({
+  const {
+    data: pendingOrders,
+    refetch: refetchPendingOrders,
+  } = createGuapQuery({
     source: householdId,
     initialValue: [] as InvestmentOrderRecord[],
     fetcher: async (householdId) => {
@@ -85,7 +88,10 @@ const AppShell: Component<AppShellProps> = (props) => {
     },
   });
 
-  const { data: pendingTransfers } = createGuapQuery({
+  const {
+    data: pendingTransfers,
+    refetch: refetchPendingTransfers,
+  } = createGuapQuery({
     source: householdId,
     initialValue: [] as TransferRecord[],
     fetcher: async (householdId) => {
@@ -97,13 +103,73 @@ const AppShell: Component<AppShellProps> = (props) => {
       });
     },
   });
-  const { data: recentEvents } = createGuapQuery({
+  const [markedEventIds, setMarkedEventIds] = createSignal<Set<string>>(new Set<string>());
+  const [markingEvents, setMarkingEvents] = createSignal(false);
+
+  const {
+    data: recentEvents,
+    refetch: refetchRecentEvents,
+  } = createGuapQuery({
     source: householdId,
-    initialValue: [] as EventJournalRecord[],
+    initialValue: [] as EventJournalWithReceipt[],
     fetcher: async (householdId) => {
       const organizationId = organizationIdFor(householdId);
       return await guapApi.events.list({ organizationId, limit: 25 });
     },
+  });
+
+  const markEventsRead = async (eventIds: string[]) => {
+    const idsToMark = eventIds.filter((id) => !markedEventIds().has(id));
+    if (!idsToMark.length) return;
+
+    setMarkingEvents(true);
+    try {
+      const results = await Promise.allSettled(
+        idsToMark.map(async (eventId) => {
+          await guapApi.events.markRead({ eventId });
+          return eventId;
+        })
+      );
+
+      const succeeded = results
+        .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
+        .map((result) => result.value);
+
+      if (succeeded.length) {
+        setMarkedEventIds((prev) => {
+          const next = new Set(prev);
+          succeeded.forEach((id) => next.add(id));
+          return next;
+        });
+      }
+
+      const hasFailure = results.some((result) => result.status === 'rejected');
+      if (hasFailure) {
+        console.error('Some events failed to mark read');
+      }
+
+      if (succeeded.length) {
+        await refetchRecentEvents();
+      }
+    } catch (error) {
+      console.error('Failed to mark events read', error);
+    } finally {
+      setMarkingEvents(false);
+    }
+  };
+
+  createEffect(() => {
+    if (!activityOpen()) {
+      setMarkedEventIds(() => new Set<string>());
+      return;
+    }
+
+    const unreadIds = recentEvents()
+      .filter((event) => !event.receipt?.readAt)
+      .map((event) => event._id);
+    if (unreadIds.length) {
+      void markEventsRead(unreadIds);
+    }
   });
 
   const pendingApprovalsCount = createMemo(() => pendingTransfers().length + pendingOrders().length);
@@ -118,6 +184,7 @@ const AppShell: Component<AppShellProps> = (props) => {
     ];
     const role = user()?.role;
     if (role === 'owner' || role === 'admin') {
+      items.push({ label: 'Guardrails', path: AppPaths.appSettingsGuardrails, icon: '🛡️' });
       items.push({ label: 'Org roster', path: AppPaths.appSettingsOrganization, icon: '🏫' });
     }
     return items;
@@ -289,10 +356,20 @@ const AppShell: Component<AppShellProps> = (props) => {
         </main>
       </div>
       <Drawer open={approvalsOpen()} onOpenChange={setApprovalsOpen} title="Approvals inbox">
-        <ApprovalsInbox transfers={pendingTransfers()} orders={pendingOrders()} />
+        <ApprovalsInbox
+          transfers={pendingTransfers()}
+          orders={pendingOrders()}
+          onRefresh={async () => {
+            await Promise.all([refetchPendingTransfers(), refetchPendingOrders()]);
+          }}
+        />
       </Drawer>
       <Drawer open={activityOpen()} onOpenChange={setActivityOpen} title="Activity feed">
-        <ActivityFeed events={recentEvents()} />
+        <ActivityFeed
+          events={recentEvents()}
+          onMarkAllRead={markEventsRead}
+          isMarking={markingEvents()}
+        />
       </Drawer>
     </div>
   );

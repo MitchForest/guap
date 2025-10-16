@@ -1,13 +1,17 @@
 export {
   EventJournalRecordSchema,
   EventReceiptRecordSchema,
+  EventReceiptViewSchema,
   EventEntityReferenceSchema,
+  EventJournalWithReceiptSchema,
   NotificationPreferenceRecordSchema,
   NotificationChannelSchema,
   NotificationChannelValues,
   type EventJournalRecord,
   type EventReceiptRecord,
+  type EventReceiptView,
   type EventEntityReference,
+  type EventJournalWithReceipt,
   type NotificationPreferenceRecord,
   type NotificationChannel,
 } from './schema';

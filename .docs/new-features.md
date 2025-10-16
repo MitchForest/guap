@@ -335,6 +335,13 @@ _Status: Implemented — backend donate domain, static causes, scheduling UI, an
 - Shared chart components render across Save, Spend, Invest without duplication.
 - `pnpm lint`, `pnpm typecheck`, and `pnpm build` pass with new domains hooked into Money Map shell navigation.
 
+**Shipped**
+- Approvals inbox now supports per-intent filtering, guardrail reason badges, bulk approve/decline actions, and on-demand CSV export for audit handoffs.
+- Activity feed groups events by day, tracks read state via `eventReceipts`, and marks items read automatically when the drawer opens; unread items display badges with a "Mark all read" control.
+- Spend surfaces expose CSV exports for both budgets and filtered transactions, aligning reporting with the new approvals export.
+- Settings now include a guardrail management overview that lists every transfer guardrail (scope, policy, limits) with quick links to the owning surface.
+- Guardrail mutations already emit `guardrail_updated` events; the audit confirmed matching toasts exist for budget, donation, and spend guardrail edits.
+
 **Tasks**
 - Wire App Shell nav to new pages and gate behind feature flag until ready.
 - Backfill historical AccountSnapshots for charts if missing.

@@ -13,6 +13,7 @@ import {
   ensureRole,
   OWNER_ADMIN_ROLES,
 } from '../../core/session';
+import { deriveGuardrailReason } from '../../core/guardrailReasons';
 import {
   calculateGoalProgress,
   ensureGoalGuardrail,
@@ -170,6 +171,21 @@ export const initiateTransferImpl = async (
     goalName: goal.name,
     memo: args.memo ?? null,
   };
+
+  const guardrailSummary = guardrailDecision.guardrail;
+  const guardrailReason =
+    guardrailDecision.decision === 'execute'
+      ? null
+      : deriveGuardrailReason(guardrailSummary, amountCents);
+
+  if (guardrailSummary || guardrailReason) {
+    (metadata as Record<string, unknown>).guardrail = {
+      approvalPolicy: guardrailSummary.approvalPolicy,
+      autoApproveUpToCents: guardrailSummary.autoApproveUpToCents,
+      reasonCode: guardrailReason?.code ?? null,
+      reasonLimitCents: guardrailReason?.limitCents ?? null,
+    };
+  }
 
   let status: 'pending_approval' | 'approved' | 'executed' = 'pending_approval';
   let approvedByProfileId: string | null = null;

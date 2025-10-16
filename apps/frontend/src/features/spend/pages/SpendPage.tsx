@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal, type Component } from 'solid-js';
+import type { BudgetWithActuals } from '@guap/api';
 import { useAppData } from '~/app/contexts/AppDataContext';
 import { PageContainer } from '~/shared/components/layout/PageContainer';
 import { DataState } from '~/shared/components/data/DataState';
@@ -6,6 +7,7 @@ import { Button } from '~/shared/components/ui/button';
 import { notifyError, notifyInfo, notifySuccess } from '~/shared/services/notifications';
 import { organizationIdFor } from '~/features/money-map/api/cache';
 import { formatCurrency } from '~/shared/utils/format';
+import { downloadCsv } from '~/shared/utils/csv';
 import { guapApi } from '~/shared/services/guapApi';
 import { createSpendData } from '../state/createSpendData';
 import { NeedsWantsDonut } from '../components/NeedsWantsDonut';
@@ -48,6 +50,103 @@ const SpendPage: Component = () => {
       remaining: summary.totalRemaining.cents,
     };
   });
+
+  const csvDateStamp = () => new Date().toISOString().slice(0, 10);
+
+  const exportTransactionsCsv = () => {
+    const transactions = spendData.transactions();
+    if (!transactions.length) {
+      notifyInfo('No transactions available for export');
+      return;
+    }
+    downloadCsv({
+      filename: `transactions-${csvDateStamp()}.csv`,
+      columns: [
+        {
+          label: 'Date',
+          value: (txn) => new Date(txn.occurredAt ?? txn.createdAt ?? Date.now()).toISOString(),
+        },
+        {
+          label: 'Merchant',
+          value: (txn) => txn.merchantName ?? txn.description ?? '',
+        },
+        {
+          label: 'Description',
+          value: (txn) => txn.description ?? '',
+        },
+        {
+          label: 'Category',
+          value: (txn) => txn.categoryKey ?? '',
+        },
+        {
+          label: 'Needs/Wants',
+          value: (txn) => txn.needsVsWants ?? '',
+        },
+        {
+          label: 'Amount',
+          value: (txn) => formatCurrency(txn.amount.cents),
+        },
+        {
+          label: 'Direction',
+          value: (txn) => txn.direction,
+        },
+        {
+          label: 'Status',
+          value: (txn) => txn.status,
+        },
+      ],
+      rows: transactions,
+    });
+  };
+
+  const describeBudgetGuardrail = (record: BudgetWithActuals) => {
+    const summary = record.guardrail;
+    if (!summary) return 'Parent approval required';
+    if (summary.approvalPolicy === 'auto') {
+      const limit = summary.autoApproveUpToCents;
+      if (limit == null) return 'Auto approve';
+      return `Auto approve up to ${formatCurrency(limit)}`;
+    }
+    return 'Parent approval required';
+  };
+
+  const exportBudgetsCsv = () => {
+    const budgets = spendData.budgets();
+    if (!budgets.length) {
+      notifyInfo('No budgets available for export');
+      return;
+    }
+    downloadCsv({
+      filename: `budgets-${csvDateStamp()}.csv`,
+      columns: [
+        {
+          label: 'Budget',
+          value: (record) => spendData.labelForBudget(record),
+        },
+        {
+          label: 'Planned',
+          value: (record) => formatCurrency(record.budget.plannedAmount.cents),
+        },
+        {
+          label: 'Spent',
+          value: (record) => formatCurrency(record.actuals.spentAmount.cents),
+        },
+        {
+          label: 'Remaining',
+          value: (record) => formatCurrency(record.actuals.remainingAmount.cents),
+        },
+        {
+          label: 'Used %',
+          value: (record) => `${Math.round(record.actuals.percentageUsed * 100)}%`,
+        },
+        {
+          label: 'Guardrail',
+          value: describeBudgetGuardrail,
+        },
+      ],
+      rows: budgets,
+    });
+  };
 
   const handleGuardrailSave = async (budgetId: string, autoApproveUpToCents: number | null) => {
     try {
@@ -168,7 +267,18 @@ const SpendPage: Component = () => {
         </section>
 
         <section class="space-y-4">
-          <h2 class="text-lg font-semibold text-slate-900">Budgets</h2>
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-lg font-semibold text-slate-900">Budgets</h2>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={exportBudgetsCsv}
+              disabled={!spendData.budgets().length}
+            >
+              Export CSV
+            </Button>
+          </div>
           <DataState
             status={budgetsStatus()}
             loadingFallback={<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3"><For each={[0,1,2]}>{() => <div class="h-40 animate-pulse rounded-2xl bg-slate-100" />}</For></div>}
@@ -190,7 +300,18 @@ const SpendPage: Component = () => {
         </section>
 
         <section class="space-y-4">
-          <h2 class="text-lg font-semibold text-slate-900">Transactions</h2>
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-lg font-semibold text-slate-900">Transactions</h2>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={exportTransactionsCsv}
+              disabled={!spendData.transactions().length}
+            >
+              Export CSV
+            </Button>
+          </div>
           <DataState
             status={transactionsStatus()}
             loadingFallback={<div class="h-48 animate-pulse rounded-2xl bg-slate-100" />}

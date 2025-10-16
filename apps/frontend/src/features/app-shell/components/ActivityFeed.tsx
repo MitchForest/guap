@@ -1,9 +1,12 @@
-import { For, type Component } from 'solid-js';
-import type { EventJournalRecord } from '@guap/api';
+import { For, Show, createMemo, type Component } from 'solid-js';
+import type { EventJournalWithReceipt } from '@guap/api';
 import { formatCurrency } from '~/shared/utils/format';
+import { Button } from '~/shared/components/ui/button';
 
 type ActivityFeedProps = {
-  events: EventJournalRecord[];
+  events: EventJournalWithReceipt[];
+  onMarkAllRead?: (eventIds: string[]) => Promise<void>;
+  isMarking?: boolean;
 };
 
 const friendlyDateTime = (timestamp: number) =>
@@ -14,7 +17,33 @@ const friendlyDateTime = (timestamp: number) =>
     minute: 'numeric',
   }).format(timestamp);
 
-const summarizeTransferEvent = (event: EventJournalRecord) => {
+const dayLabelFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  day: 'numeric',
+});
+
+const isSameDay = (left: Date, right: Date) =>
+  left.getFullYear() === right.getFullYear() &&
+  left.getMonth() === right.getMonth() &&
+  left.getDate() === right.getDate();
+
+export const friendlyDayLabel = (timestamp: number, now: number = Date.now()) => {
+  const date = new Date(timestamp);
+  const today = new Date(now);
+  if (isSameDay(date, today)) {
+    return 'Today';
+  }
+
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (isSameDay(date, yesterday)) {
+    return 'Yesterday';
+  }
+
+  return dayLabelFormatter.format(date);
+};
+
+const summarizeTransferEvent = (event: EventJournalWithReceipt) => {
   const payload = (event.payload ?? {}) as Record<string, unknown>;
   if (event.eventKind === 'transfer_requested' || event.eventKind === 'transfer_executed') {
     if (payload.intent === 'credit_payoff') {
@@ -61,7 +90,7 @@ const summarizeTransferEvent = (event: EventJournalRecord) => {
   return null;
 };
 
-const summarizeIncomeEvent = (event: EventJournalRecord) => {
+const summarizeIncomeEvent = (event: EventJournalWithReceipt) => {
   const payload = (event.payload ?? {}) as Record<string, unknown>;
   const streamName = typeof payload.streamName === 'string' ? payload.streamName : 'income stream';
   const amountCents =
@@ -102,7 +131,7 @@ const summarizeIncomeEvent = (event: EventJournalRecord) => {
   return null;
 };
 
-const summarizeDonationEvent = (event: EventJournalRecord) => {
+const summarizeDonationEvent = (event: EventJournalWithReceipt) => {
   if (event.eventKind !== 'donation_requested' && event.eventKind !== 'donation_completed') {
     return null;
   }
@@ -137,7 +166,7 @@ const summarizeDonationEvent = (event: EventJournalRecord) => {
   return null;
 };
 
-export const summarizeEvent = (event: EventJournalRecord) => {
+export const summarizeEvent = (event: EventJournalWithReceipt) => {
   const donationSummary = summarizeDonationEvent(event);
   if (donationSummary) {
     return {
@@ -149,11 +178,7 @@ export const summarizeEvent = (event: EventJournalRecord) => {
 
   const transferSummary = summarizeTransferEvent(event);
   if (transferSummary) {
-    return {
-      title: transferSummary.title,
-      detail: transferSummary.detail,
-      timestamp: friendlyDateTime(event.createdAt),
-    };
+    return transferSummary;
   }
 
   const incomeSummary = summarizeIncomeEvent(event);
@@ -209,28 +234,108 @@ export const summarizeEvent = (event: EventJournalRecord) => {
   };
 };
 
-export const ActivityFeed: Component<ActivityFeedProps> = (props) => (
-  <div class="flex flex-col gap-4">
-    <header class="flex flex-col gap-1">
-      <h2 class="text-lg font-semibold text-slate-900">Household activity</h2>
-      <p class="text-sm text-slate-500">Recent approvals, transfers, and guardrail updates.</p>
-    </header>
-    <ol class="flex flex-col gap-3">
-      <For each={props.events}>
-        {(event) => {
-          const summary = summarizeEvent(event);
-          return (
-            <li class="flex items-start gap-3 rounded-2xl border border-slate-200/60 bg-white/80 p-4 shadow-sm">
-              <span class="mt-1 inline-flex size-2.5 rounded-full bg-slate-400" aria-hidden="true" />
-              <div class="flex flex-col gap-1">
-                <p class="text-sm font-medium text-slate-900">{summary.title}</p>
-                <p class="text-xs text-slate-500">{summary.detail}</p>
-                <span class="text-xs text-slate-400">{summary.timestamp}</span>
-              </div>
-            </li>
-          );
-        }}
-      </For>
-    </ol>
-  </div>
-);
+export const ActivityFeed: Component<ActivityFeedProps> = (props) => {
+  const groups = createMemo(() => {
+    const buckets = new Map<string, { label: string; events: EventJournalWithReceipt[] }>();
+    const now = Date.now();
+    for (const event of props.events) {
+      const date = new Date(event.createdAt);
+      const key = date.toISOString().slice(0, 10);
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { label: friendlyDayLabel(event.createdAt, now), events: [] };
+        buckets.set(key, bucket);
+      }
+      bucket.events.push(event);
+    }
+
+    return Array.from(buckets.entries())
+      .sort(([a], [b]) => (a > b ? -1 : a < b ? 1 : 0))
+      .map(([, bucket]) => ({
+        label: bucket.label,
+        events: bucket.events.sort((left, right) => right.createdAt - left.createdAt),
+      }));
+  });
+
+  const unreadIds = createMemo(() =>
+    props.events.filter((event) => !event.receipt?.readAt).map((event) => event._id)
+  );
+
+  return (
+    <div class="flex flex-col gap-4">
+      <header class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-900">Household activity</h2>
+          <p class="text-sm text-slate-500">Recent approvals, transfers, and guardrail updates.</p>
+        </div>
+        <Show when={unreadIds().length > 0 && props.onMarkAllRead}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            class="self-start"
+            disabled={props.isMarking}
+            onClick={() => props.onMarkAllRead?.(unreadIds())}
+          >
+            Mark all read
+          </Button>
+        </Show>
+      </header>
+      <Show
+        when={groups().length > 0}
+        fallback={
+          <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+            No activity yet.
+          </div>
+        }
+      >
+        <div class="flex flex-col gap-4">
+          <For each={groups()}>
+            {(group) => (
+              <section class="flex flex-col gap-3">
+                <h3 class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  {group.label}
+                </h3>
+                <ol class="flex flex-col gap-3">
+                  <For each={group.events}>
+                    {(event) => {
+                      const summary = summarizeEvent(event);
+                      const unread = !event.receipt?.readAt;
+                      return (
+                        <li
+                          class={`flex items-start gap-3 rounded-2xl border p-4 shadow-sm transition ${
+                            unread
+                              ? 'border-slate-900/40 bg-white'
+                              : 'border-slate-200/60 bg-white/80'
+                          }`}
+                        >
+                          <span
+                            class={`mt-1 inline-flex size-2.5 rounded-full ${
+                              unread ? 'bg-emerald-500' : 'bg-slate-300'
+                            }`}
+                            aria-hidden="true"
+                          />
+                          <div class="flex flex-col gap-1">
+                            <p class="text-sm font-medium text-slate-900">{summary.title}</p>
+                            <p class="text-xs text-slate-500">{summary.detail}</p>
+                            <span class="text-xs text-slate-400">{summary.timestamp}</span>
+                            <Show when={unread}>
+                              <span class="text-[10px] font-semibold uppercase tracking-[0.24em] text-emerald-600">
+                                Unread
+                              </span>
+                            </Show>
+                          </div>
+                        </li>
+                      );
+                    }}
+                  </For>
+                </ol>
+              </section>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+};
+

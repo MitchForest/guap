@@ -217,15 +217,15 @@ This checklist turns the feature and data-model plans into a concrete execution 
 
 **Objective:** unify approvals, notifications, reporting, and tighten UX.
 
-- [ ] Finish approvals inbox UI (bulk actions, filter by intent, guardrail reason codes).
-- [ ] Finish activity feed UI (group by day, mark read via `eventReceipts`).
-- [ ] Add CSV export for transactions/budgets or approvals as required.
-- [ ] Ensure every surface raises appropriate notifications (toast + activity feed).
-- [ ] Final guardrail management screens (global overview, per-node/account settings).
-- [ ] Update docs (`README`, `.docs/new-features.md`, `.docs/data-models.md`) reflecting implemented behaviour.
-- [ ] Run full regression (lint, typecheck, unit/integration tests, manual smoke of key scenarios).
-- [ ] Prep release notes summarising new capabilities and guardrail policies.
-- [ ] Add/update automated tests (backend/frontend/packages) for Insights/Notifications polish and capture coverage snapshot before closing the milestone.
+- [x] Finish approvals inbox UI (bulk actions, filter by intent, guardrail reason codes).
+- [x] Finish activity feed UI (group by day, mark read via `eventReceipts`).
+- [x] Add CSV export for transactions/budgets or approvals as required.
+- [x] Ensure every surface raises appropriate notifications (toast + activity feed).
+- [x] Final guardrail management screens (global overview, per-node/account settings).
+- [x] Update docs (`README`, `.docs/new-features.md`, `.docs/data-models.md`) reflecting implemented behaviour.
+- [x] Run full regression (lint, typecheck, unit/integration tests, manual smoke of key scenarios).
+- [x] Prep release notes summarising new capabilities and guardrail policies.
+- [x] Add/update automated tests (backend/frontend/packages) for Insights/Notifications polish and capture coverage snapshot before closing the milestone.
 
 ---
 
@@ -234,5 +234,6 @@ This checklist turns the feature and data-model plans into a concrete execution 
 - Deferred features or deeper analytics.
 - Additional provider integrations.
 - Mobile-specific refinements beyond StickyCTA.
+- Guardrail management screen should eventually support inline editing for invest-specific policies.
 
 Track these after Milestone 7 if bandwidth permits.

@@ -7,11 +7,11 @@ import {
   UpdateDonationGuardrailInputSchema,
 } from '@guap/types';
 import { defineMutation } from '../../core/functions';
-import { ensureOrganizationAccess } from '../../core/session';
+import { ensureOrganizationAccess, ensureRole, OWNER_ADMIN_ROLES } from '../../core/session';
+import { deriveGuardrailReason } from '../../core/guardrailReasons';
 import { evaluateDonationGuardrail, findDonationCause, upsertDonationGuardrail } from './services';
 import { logEvent } from '../events/services';
 import type { ScheduleDonationInput, UpdateDonationGuardrailInput } from '@guap/types';
-import { ensureRole, OWNER_ADMIN_ROLES } from '../../core/session';
 
 const ScheduleDonationArgs = ScheduleDonationInputSchema.shape;
 const UpdateGuardrailArgs = UpdateDonationGuardrailInputSchema.shape;
@@ -83,6 +83,19 @@ export const scheduleDonationImpl = async (
     recurringCadence: args.recurringCadence ?? null,
     destinationAccountName: destinationAccount.name,
   };
+
+  const guardrailReason = autoExecuted
+    ? null
+    : deriveGuardrailReason(guardrailDecision.summary, amountCents);
+
+  if (guardrailDecision.summary || guardrailReason) {
+    metadata.guardrail = {
+      approvalPolicy: guardrailDecision.summary.approvalPolicy,
+      autoApproveUpToCents: guardrailDecision.summary.autoApproveUpToCents,
+      reasonCode: guardrailReason?.code ?? null,
+      reasonLimitCents: guardrailReason?.limitCents ?? null,
+    };
+  }
 
   const transferId = await ctx.db.insert('transfers', {
     organizationId: args.organizationId,

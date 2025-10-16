@@ -42,7 +42,7 @@ Shared Packages ──────────────┘
 
 | Path | Responsibility | Key Dependencies |
 | ---- | -------------- | ---------------- |
-| `apps/frontend` | SolidJS UI organized into `app/`, `features/`, `shared/` | SolidJS, TanStack Router, Tailwind v4, `@guap/api`, `@guap/types`, Better Auth client |
+| `apps/frontend` | SolidJS UI organized into `app/`, `features/`, `shared/`; settings include guardrail management alongside members/billing | SolidJS, TanStack Router, Tailwind v4, `@guap/api`, `@guap/types`, Better Auth client |
 | `apps/backend` | Convex schemas/functions, Better Auth server integration, provider queue | Convex, Better Auth (`@convex-dev/better-auth`), `@guap/types`, `packages/providers` |
 | `packages/types` | Zod schemas/enums, shared TypeScript types | Zod |
 | `packages/api` | Convex client wrapper with validation | Convex browser client, `@guap/types`, Zod |

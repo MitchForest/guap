@@ -4,6 +4,7 @@ import { TransferStatusSchema, CurrencyAmountSchema } from '@guap/types';
 import { zid } from 'convex-helpers/server/zod';
 import { defineMutation } from '../../core/functions';
 import { ensureOrganizationAccess, ensureRole, OWNER_ADMIN_ROLES } from '../../core/session';
+import { deriveGuardrailReason } from '../../core/guardrailReasons';
 import { logEvent } from '../events/services';
 import { advanceStreamSchedule } from '../earn/services';
 import { evaluateGuardrailForSpend } from './services';
@@ -248,6 +249,25 @@ export const initiateSpendTransferImpl = async (
   const approvedAt = shouldExecute ? timestamp : null;
   const executedAt = shouldExecute ? timestamp : null;
 
+  const transferMetadata: Record<string, unknown> = {
+    memo: args.memo ?? null,
+    destinationAccountName: destinationAccount.name,
+    intent: 'credit_payoff',
+  };
+
+  const guardrailReason = shouldExecute
+    ? null
+    : deriveGuardrailReason(guardrail.guardrailSummary, amountCents);
+
+  if (guardrail.guardrailSummary || guardrailReason) {
+    transferMetadata.guardrail = {
+      approvalPolicy: guardrail.guardrailSummary.approvalPolicy,
+      autoApproveUpToCents: guardrail.guardrailSummary.autoApproveUpToCents,
+      reasonCode: guardrailReason?.code ?? null,
+      reasonLimitCents: guardrailReason?.limitCents ?? null,
+    };
+  }
+
   const transferId = await ctx.db.insert('transfers', {
     organizationId: args.organizationId,
     intent: 'credit_payoff',
@@ -262,11 +282,7 @@ export const initiateSpendTransferImpl = async (
     requestedAt: timestamp,
     approvedAt,
     executedAt,
-    metadata: {
-      memo: args.memo ?? null,
-      destinationAccountName: destinationAccount.name,
-      intent: 'credit_payoff',
-    },
+    metadata: transferMetadata,
     createdAt: timestamp,
     updatedAt: timestamp,
   });

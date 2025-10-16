@@ -40,6 +40,7 @@ import {
 } from './domains/investing';
 import { createDonateApi, DonateApi } from './domains/donate';
 import { createEventsApi, EventsApi } from './domains/events';
+import { createGuardrailsApi, GuardrailsApi } from './domains/guardrails';
 import { createTransfersApi, TransfersApi } from './domains/transfers';
 import { createLiabilitiesApi, LiabilitiesApi } from './domains/liabilities';
 import type {
@@ -92,6 +93,9 @@ export type {
   TransferRecord,
   EventJournalRecord,
   EventReceiptRecord,
+  EventReceiptView,
+  EventJournalWithReceipt,
+  GuardrailOverview,
   BudgetRecord,
   BudgetActuals,
   BudgetWithActuals,
@@ -158,6 +162,7 @@ export class GuapApi {
   readonly investing: InvestingApi;
   readonly donate: DonateApi;
   readonly events: EventsApi;
+  readonly guardrails: GuardrailsApi;
   readonly transfers: TransfersApi;
   readonly liabilities: LiabilitiesApi;
 
@@ -172,6 +177,7 @@ export class GuapApi {
     this.investing = createInvestingApi(client);
     this.donate = createDonateApi(client);
     this.events = createEventsApi(client);
+    this.guardrails = createGuardrailsApi(client);
     this.transfers = createTransfersApi(client);
     this.liabilities = createLiabilitiesApi(client);
   }

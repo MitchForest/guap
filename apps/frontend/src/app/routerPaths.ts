@@ -22,6 +22,7 @@ export const AppPaths = {
   appSettingsMembers: '/app/settings/members',
   appSettingsBilling: '/app/settings/billing',
   appSettingsOrganization: '/app/settings/organization',
+  appSettingsGuardrails: '/app/settings/guardrails',
 } as const;
 
 export type AppPathKey = keyof typeof AppPaths;

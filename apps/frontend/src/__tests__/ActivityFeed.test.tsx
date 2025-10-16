@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import type { EventJournalRecord } from '@guap/api';
-import { summarizeEvent } from '../features/app-shell/components/ActivityFeed';
+import { describe, expect, it, vi } from 'vitest';
+import { render, fireEvent, screen } from '@solidjs/testing-library';
+import type { EventJournalWithReceipt } from '@guap/api';
+import { ActivityFeed, friendlyDayLabel, summarizeEvent } from '../features/app-shell/components/ActivityFeed';
 
-const buildEvent = (overrides: Partial<EventJournalRecord> = {}): EventJournalRecord => ({
+const buildEvent = (
+  overrides: Partial<EventJournalWithReceipt> = {}
+): EventJournalWithReceipt => ({
   _id: overrides._id ?? 'evt-1',
   organizationId: overrides.organizationId ?? 'org-1',
   eventKind: overrides.eventKind ?? 'account_synced',
@@ -13,6 +16,7 @@ const buildEvent = (overrides: Partial<EventJournalRecord> = {}): EventJournalRe
   relatedEntities: overrides.relatedEntities ?? [],
   payload: overrides.payload ?? {},
   createdAt: overrides.createdAt ?? 1_700_000_000_000,
+  receipt: overrides.receipt ?? null,
 });
 
 describe('summarizeEvent', () => {
@@ -45,5 +49,41 @@ describe('summarizeEvent', () => {
     expect(result.title).toBe('Order executed for VTI');
     expect(result.detail).toContain('2.50 units');
     expect(result.detail).toContain('buy');
+  });
+});
+
+describe('friendlyDayLabel', () => {
+  it('returns Today for current day', () => {
+    const now = Date.now();
+    expect(friendlyDayLabel(now, now)).toBe('Today');
+  });
+
+  it('returns Yesterday for previous day', () => {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    expect(friendlyDayLabel(yesterday.getTime(), now.getTime())).toBe('Yesterday');
+  });
+
+  it('formats older dates with month and day', () => {
+    const sample = new Date('2024-05-10T12:00:00Z');
+    const label = friendlyDayLabel(sample.getTime(), new Date('2024-05-15T08:00:00Z').getTime());
+    expect(label).toMatch(/May/);
+  });
+});
+
+describe('ActivityFeed interactions', () => {
+  it('invokes mark-all-read handler for unread events', () => {
+    const unread = buildEvent({ _id: 'evt-unread', receipt: null });
+    const read = buildEvent({
+      _id: 'evt-read',
+      receipt: { eventId: 'evt-read', deliveredAt: Date.now(), readAt: Date.now() },
+    });
+    const handler = vi.fn();
+
+    render(() => <ActivityFeed events={[unread, read]} onMarkAllRead={handler} />);
+    fireEvent.click(screen.getByRole('button', { name: /mark all read/i }));
+
+    expect(handler).toHaveBeenCalledWith(['evt-unread']);
   });
 });

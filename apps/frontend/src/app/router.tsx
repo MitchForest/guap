@@ -21,6 +21,7 @@ import SettingsLayout from '~/features/settings/pages/SettingsLayout';
 import HouseholdMembersPage from '~/features/settings/pages/HouseholdMembersPage';
 import HouseholdBillingPage from '~/features/settings/pages/HouseholdBillingPage';
 import OrganizationRosterPage from '~/features/settings/pages/OrganizationRosterPage';
+import GuardrailSettingsPage from '~/features/settings/pages/GuardrailSettingsPage';
 import SpendPage from '~/features/spend/pages/SpendPage';
 import WealthLadderPage from '~/features/tools/pages/WealthLadderPage';
 import GoalSelectionPage from '~/features/onboarding/pages/GoalSelectionPage';
@@ -190,6 +191,12 @@ const settingsOrganizationRoute = new Route({
   component: OrganizationRosterPage,
 });
 
+const settingsGuardrailsRoute = new Route({
+  getParentRoute: () => settingsRoute,
+  path: 'guardrails',
+  component: GuardrailSettingsPage,
+});
+
 const toolsRoute = new Route({
   getParentRoute: () => appRoute,
   path: 'tools',
@@ -226,7 +233,13 @@ const appTree = appRoute.addChildren([
   donateRoute,
   moneyMapRoute,
   toolsTree,
-  settingsRoute.addChildren([settingsIndexRoute, settingsMembersRoute, settingsBillingRoute, settingsOrganizationRoute]),
+  settingsRoute.addChildren([
+    settingsIndexRoute,
+    settingsMembersRoute,
+    settingsBillingRoute,
+    settingsGuardrailsRoute,
+    settingsOrganizationRoute,
+  ]),
 ]);
 
 const routeTree = rootRoute.addChildren([landingRoute, pricingRoute, authTree, onboardingTree, appTree]);

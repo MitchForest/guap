@@ -469,6 +469,8 @@ Separates read tracking from the journal to preserve append-only semantics.
 
 Index: `by_profile_event`: `[profileId, eventId]`.
 
+> The activity feed query now joins `eventReceipts` for the current profile and returns `readAt`/`deliveredAt` metadata alongside each journal entry so the UI can badge unread items and mark them as read.
+
 ### `notificationPreferences`
 
 - `_id: Id<'notificationPreferences'>`.
@@ -486,7 +488,8 @@ Index: `by_profile_event`: `[profileId, eventId]`.
 - **Hero metrics & charts**: Compose from `financialAccounts`, `accountSnapshots`, and `transactions`. Avoid storing computed totals.
 - **Provider sync**: A shared `syncAccounts` mutation writes to `financialAccounts`, `accountSnapshots`, `transactions`, `investmentPositions`, and emits `eventsJournal` entries. Sync health metadata (last run, errors) can remain in memory or log events (`eventKind = 'sync_failed'`) until we need dedicated tables.
 - **Approvals inbox**: Filter `transfers` (and related `investmentOrders`) by `status = 'pending_approval'` with guardrail metadata to power the parent review queue.
-- **Activity feed**: Query `eventsJournal` (optionally joined with `eventReceipts`) for recent events to display household activity timelines and notification badges.
+- **Activity feed**: Query `eventsJournal` (joined with `eventReceipts`) for recent events to display household activity timelines, badge unread items, and hydrate read-state for the drawer.
+- **Guardrail overview**: Aggregate `transferGuardrails` per household and enrich with account/node labels to power the settings guardrail management screen.
 
 ## Minimality Checklist
 

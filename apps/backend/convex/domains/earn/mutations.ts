@@ -11,6 +11,7 @@ import {
   ensureRole,
   OWNER_ADMIN_ROLES,
 } from '../../core/session';
+import { deriveGuardrailReason } from '../../core/guardrailReasons';
 import { logEvent } from '../events/services';
 import {
   advanceStreamSchedule,
@@ -119,6 +120,28 @@ const createPayoutTransfer = async (
   const approvedAt = shouldExecute ? timestamp : null;
   const executedAt = shouldExecute ? timestamp : null;
 
+  const metadata: Record<string, unknown> = {
+    incomeStreamId: stream._id,
+    streamName: stream.name,
+    cadence: stream.cadence,
+    scheduledFor,
+    amount,
+  };
+
+  const guardrailReason =
+    status === 'pending_approval'
+      ? deriveGuardrailReason(decision.summary, amount.cents)
+      : null;
+
+  if (guardrailReason || decision.summary) {
+    metadata.guardrail = {
+      approvalPolicy: decision.summary.approvalPolicy,
+      autoApproveUpToCents: decision.summary.autoApproveUpToCents,
+      reasonCode: guardrailReason?.code ?? null,
+      reasonLimitCents: guardrailReason?.limitCents ?? null,
+    };
+  }
+
   const transferId = await ctx.db.insert('transfers', {
     organizationId: stream.organizationId,
     intent: 'earn',
@@ -133,13 +156,7 @@ const createPayoutTransfer = async (
     requestedAt: timestamp,
     approvedAt,
     executedAt,
-    metadata: {
-      incomeStreamId: stream._id,
-      streamName: stream.name,
-      cadence: stream.cadence,
-      scheduledFor,
-      amount,
-    },
+    metadata,
     createdAt: timestamp,
     updatedAt: timestamp,
   });
