@@ -13,7 +13,7 @@
     "build:frontend": "pnpm --filter @guap/frontend build",
     "serve:frontend": "pnpm --filter @guap/frontend preview",
     "codegen:sync": "node ./scripts/sync-convex-codegen.mjs && node ./scripts/update-better-auth-roles.mjs",
-    "test": "vitest --run"
+    "test": "pnpm -r --if-present --workspace-concurrency 1 run test -- --run"
   },
   "dependencies": {
     "@convex-dev/better-auth": "catalog:"

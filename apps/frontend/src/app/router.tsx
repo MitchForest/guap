@@ -5,7 +5,7 @@ import AppLayout from '~/features/app-shell/pages/AppLayout';
 import CanvasPage from '~/features/money-map/pages/CanvasPage';
 import CompoundToolPage from '~/features/tools/pages/CompoundToolPage';
 import DashboardPage from '~/features/dashboard/pages/DashboardPage';
-import DonatePage from '~/features/app-sections/pages/DonatePage';
+import DonatePage from '~/features/donate/pages/DonatePage';
 import EarnPage from '~/features/earn/pages/EarnPage';
 import InvestPage from '~/features/invest/pages/InvestPage';
 import LandingPage from '~/features/marketing/pages/LandingPage';

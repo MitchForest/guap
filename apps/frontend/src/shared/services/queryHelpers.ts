@@ -20,10 +20,18 @@ export const createGuapQuery = <TKey, TValue>(options: GuapQueryOptions<TKey, TV
     }
   );
 
+  const safeRefetch = async () => {
+    const result = await refetch();
+    if (result === undefined) {
+      return options.initialValue;
+    }
+    return result as TValue;
+  };
+
   return {
     data: () => resource() ?? options.initialValue,
     isLoading: () => resource.loading,
     error: () => resource.error,
-    refetch,
+    refetch: safeRefetch,
   };
 };

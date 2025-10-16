@@ -77,10 +77,10 @@ export const StreamFormModal: Component<StreamFormModalProps> = (props) => {
   const form = createGuapForm({
     schema: StreamFormSchema,
     defaultValues: defaultValues(),
-    onSubmit: async ({ value }) => {
+    onSubmit: async (values) => {
       try {
         setSubmitting(true);
-        await props.onSubmit(value);
+        await props.onSubmit(values);
         props.onOpenChange(false);
       } finally {
         setSubmitting(false);

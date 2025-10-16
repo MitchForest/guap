@@ -38,7 +38,7 @@ import {
   createInvestingApi,
   InvestingApi,
 } from './domains/investing';
-import { createDonateApi, DonateApi, type DonateStatus } from './domains/donate';
+import { createDonateApi, DonateApi } from './domains/donate';
 import { createEventsApi, EventsApi } from './domains/events';
 import { createTransfersApi, TransfersApi } from './domains/transfers';
 import { createLiabilitiesApi, LiabilitiesApi } from './domains/liabilities';
@@ -78,7 +78,6 @@ export {
   type AuthCompleteSignupInput,
   type AuthCompleteSignupResult,
 } from './domains/auth';
-export type { DonateStatus } from './domains/donate';
 export type {
   HouseholdRecord,
   MembershipRecord,
@@ -125,6 +124,26 @@ export type {
   UpdateSavingsGoalInput,
   InitiateSavingsTransferInput,
   UpsertLiabilityTermsInput,
+  IncomeStreamRecord,
+  EarnSummary,
+  EarnTimelineEntry,
+  EarnGuardrailSummary,
+  CreateIncomeStreamInput,
+  UpdateIncomeStreamInput,
+  RequestIncomePayoutInput,
+  SkipIncomePayoutInput,
+  EarnPayoutResult,
+  EarnProjectionEntry,
+  DonationCadence,
+  DonationCause,
+  DonationSummary,
+  DonationHistoryEntry,
+  DonationGuardrailSummary,
+  DonationScheduleEntry,
+  DonationOverview,
+  ScheduleDonationInput,
+  ScheduleDonationResult,
+  UpdateDonationGuardrailInput,
 } from '@guap/types';
 export type { SavingsTransferResult } from './domains/savings/client';
 

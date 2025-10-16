@@ -13,6 +13,9 @@ const UpdateStatusArgs = {
   status: TransferStatusSchema,
 } as const;
 
+const UpdateStatusSchema = z.object(UpdateStatusArgs);
+
+
 const InitiateSpendTransferArgs = {
   organizationId: z.string(),
   sourceAccountId: z.string(),
@@ -91,10 +94,95 @@ const handleIncomeTransferSideEffects = async (
   }
 };
 
+export const updateStatusImpl = async (
+  ctx: any,
+  args: z.infer<typeof UpdateStatusSchema>,
+  session: { userId: string | null }
+) => {
+  const transfer = await ctx.db.get(args.transferId);
+  if (!transfer) {
+    throw new Error('Transfer not found');
+  }
+
+  const timestamp = Date.now();
+  const patch: Record<string, unknown> = {
+    status: args.status,
+    updatedAt: timestamp,
+  };
+
+  if (args.status === 'approved' || args.status === 'executed') {
+    patch.approvedByProfileId = session.userId ?? null;
+  }
+
+  if (args.status === 'approved' && !transfer.approvedAt) {
+    patch.approvedAt = timestamp;
+  }
+
+  if (args.status === 'executed') {
+    patch.executedAt = timestamp;
+  }
+
+  await ctx.db.patch(args.transferId, patch);
+
+  const metadata = (transfer.metadata ?? {}) as Record<string, unknown>;
+  const incomeStreamId =
+    typeof metadata.incomeStreamId === 'string' ? (metadata.incomeStreamId as string) : null;
+
+  const eventKind =
+    args.status === 'approved'
+      ? 'transfer_approved'
+      : args.status === 'declined'
+        ? 'transfer_declined'
+        : args.status === 'executed'
+          ? 'transfer_executed'
+          : 'transfer_requested';
+
+  await logEvent(ctx.db, {
+    organizationId: transfer.organizationId,
+    eventKind,
+    actorProfileId: session.userId,
+    primaryEntity: { table: 'transfers', id: args.transferId },
+    payload: {
+      previousStatus: transfer.status,
+      status: args.status,
+    },
+  });
+
+  if (transfer.intent === 'donate' && args.status === 'executed') {
+    const causeId = typeof metadata.causeId === 'string' ? metadata.causeId : null;
+    const causeName = typeof metadata.causeName === 'string' ? metadata.causeName : 'Donation';
+    await logEvent(ctx.db, {
+      organizationId: transfer.organizationId,
+      eventKind: 'donation_completed',
+      actorProfileId: session.userId,
+      primaryEntity: { table: 'transfers', id: args.transferId },
+      payload: {
+        causeId,
+        causeName,
+        amount: transfer.amount,
+        executedAt: patch.executedAt ?? timestamp,
+      },
+    });
+  }
+
+  if (incomeStreamId && (args.status === 'executed' || args.status === 'declined')) {
+    await handleIncomeTransferSideEffects(ctx, {
+      transferId: args.transferId as any,
+      status: args.status,
+      streamId: incomeStreamId,
+      metadata,
+      timestamp,
+      actorProfileId: session.userId,
+    });
+  }
+
+  return { transfer, patch } as const;
+};
+
 export const updateStatus = defineMutation({
   args: UpdateStatusArgs,
   handler: async (ctx, rawArgs) => {
-    const args = z.object(UpdateStatusArgs).parse(rawArgs);
+    const args = UpdateStatusSchema.parse(rawArgs);
     const transfer = await ctx.db.get(args.transferId);
     if (!transfer) {
       throw new Error('Transfer not found');
@@ -103,62 +191,8 @@ export const updateStatus = defineMutation({
     const session = await ensureOrganizationAccess(ctx, transfer.organizationId);
     ensureRole(session, OWNER_ADMIN_ROLES);
 
-    const timestamp = Date.now();
-    const patch: Record<string, unknown> = {
-      status: args.status,
-      updatedAt: timestamp,
-    };
-
-    if (args.status === 'approved' || args.status === 'executed') {
-      patch.approvedByProfileId = session.userId ?? null;
-    }
-
-    if (args.status === 'approved' && !transfer.approvedAt) {
-      patch.approvedAt = timestamp;
-    }
-
-    if (args.status === 'executed') {
-      patch.executedAt = timestamp;
-    }
-
-    await ctx.db.patch(args.transferId, patch);
-
-    const metadata = (transfer.metadata ?? {}) as Record<string, unknown>;
-    const incomeStreamId =
-      typeof metadata.incomeStreamId === 'string' ? (metadata.incomeStreamId as string) : null;
-
-    const eventKind =
-      args.status === 'approved'
-        ? 'transfer_approved'
-        : args.status === 'declined'
-          ? 'transfer_declined'
-          : args.status === 'executed'
-            ? 'transfer_executed'
-            : 'transfer_requested';
-
-    await logEvent(ctx.db, {
-      organizationId: transfer.organizationId,
-      eventKind,
-      actorProfileId: session.userId,
-      primaryEntity: { table: 'transfers', id: args.transferId },
-      payload: {
-        previousStatus: transfer.status,
-        status: args.status,
-      },
-    });
-
-    if (incomeStreamId && (args.status === 'executed' || args.status === 'declined')) {
-      await handleIncomeTransferSideEffects(ctx, {
-        transferId: args.transferId as any,
-        status: args.status,
-        streamId: incomeStreamId,
-        metadata,
-        timestamp,
-        actorProfileId: session.userId,
-      });
-    }
-
-    return { ...transfer, ...patch };
+    const { transfer: updatedTransfer, patch } = await updateStatusImpl(ctx, args, session);
+    return { ...updatedTransfer, ...patch };
   },
 });
 

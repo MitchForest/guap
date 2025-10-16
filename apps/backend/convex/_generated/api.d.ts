@@ -33,6 +33,7 @@ import type * as domains_budgets_services from "../domains/budgets/services.js";
 import type * as domains_donate_index from "../domains/donate/index.js";
 import type * as domains_donate_mutations from "../domains/donate/mutations.js";
 import type * as domains_donate_queries from "../domains/donate/queries.js";
+import type * as domains_donate_services from "../domains/donate/services.js";
 import type * as domains_earn_index from "../domains/earn/index.js";
 import type * as domains_earn_mutations from "../domains/earn/mutations.js";
 import type * as domains_earn_queries from "../domains/earn/queries.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   "domains/donate/index": typeof domains_donate_index;
   "domains/donate/mutations": typeof domains_donate_mutations;
   "domains/donate/queries": typeof domains_donate_queries;
+  "domains/donate/services": typeof domains_donate_services;
   "domains/earn/index": typeof domains_earn_index;
   "domains/earn/mutations": typeof domains_earn_mutations;
   "domains/earn/queries": typeof domains_earn_queries;

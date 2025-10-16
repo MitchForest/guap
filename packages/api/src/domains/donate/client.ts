@@ -1,29 +1,69 @@
 import { z } from 'zod';
 import type { ConvexClientInstance } from '../../core/client';
+import {
+  DonationCauseSchema,
+  DonationHistoryEntrySchema,
+  DonationOverviewSchema,
+  ScheduleDonationInputSchema,
+  ScheduleDonationResultSchema,
+  DonationGuardrailSummarySchema,
+  UpdateDonationGuardrailInputSchema,
+  type ScheduleDonationInput,
+  type UpdateDonationGuardrailInput,
+} from '@guap/types';
 
-const DonateStatusSchema = z.object({
-  domain: z.literal('donate'),
-  implemented: z.boolean(),
+const ListCausesInputSchema = z.object({
+  organizationId: z.string(),
 });
 
-export type DonateStatus = z.infer<typeof DonateStatusSchema>;
+const OverviewInputSchema = z.object({
+  organizationId: z.string(),
+  historyLimit: z.number().int().min(1).max(100).optional(),
+});
 
-const DonateStatusQuery = 'domains/donate/queries:status' as const;
-const DonateBootstrapMutation = 'domains/donate/mutations:bootstrap' as const;
+const HistoryInputSchema = z.object({
+  organizationId: z.string(),
+  limit: z.number().int().min(1).max(100).optional(),
+});
+
+const ListCausesQuery = 'domains/donate/queries:listCauses' as const;
+const OverviewQuery = 'domains/donate/queries:overview' as const;
+const ListHistoryQuery = 'domains/donate/queries:listHistory' as const;
+const ScheduleDonationMutation = 'domains/donate/mutations:scheduleDonation' as const;
+const UpdateGuardrailMutation = 'domains/donate/mutations:updateGuardrail' as const;
 
 export class DonateApi {
   constructor(private readonly client: ConvexClientInstance) {}
 
-  async status(): Promise<DonateStatus> {
-    const result = await (this.client.query as any)(DonateStatusQuery, {});
-    return DonateStatusSchema.parse(result);
+  async listCauses(organizationId: string) {
+    const payload = ListCausesInputSchema.parse({ organizationId });
+    const result = await (this.client.query as any)(ListCausesQuery, payload);
+    return z.array(DonationCauseSchema).parse(result);
   }
 
-  async bootstrap(): Promise<DonateStatus> {
-    const result = await (this.client.mutation as any)(DonateBootstrapMutation, {});
-    return DonateStatusSchema.parse(result);
+  async overview(input: z.input<typeof OverviewInputSchema>) {
+    const payload = OverviewInputSchema.parse(input);
+    const result = await (this.client.query as any)(OverviewQuery, payload);
+    return DonationOverviewSchema.parse(result);
+  }
+
+  async listHistory(input: z.input<typeof HistoryInputSchema>) {
+    const payload = HistoryInputSchema.parse(input);
+    const result = await (this.client.query as any)(ListHistoryQuery, payload);
+    return z.array(DonationHistoryEntrySchema).parse(result);
+  }
+
+  async scheduleDonation(input: ScheduleDonationInput) {
+    const payload = ScheduleDonationInputSchema.parse(input);
+    const result = await (this.client.mutation as any)(ScheduleDonationMutation, payload);
+    return ScheduleDonationResultSchema.parse(result);
+  }
+
+  async updateGuardrail(input: UpdateDonationGuardrailInput) {
+    const payload = UpdateDonationGuardrailInputSchema.parse(input);
+    const result = await (this.client.mutation as any)(UpdateGuardrailMutation, payload);
+    return DonationGuardrailSummarySchema.parse(result);
   }
 }
 
-export const createDonateApi = (client: ConvexClientInstance) =>
-  new DonateApi(client);
+export const createDonateApi = (client: ConvexClientInstance) => new DonateApi(client);

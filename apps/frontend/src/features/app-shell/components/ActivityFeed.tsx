@@ -102,7 +102,51 @@ const summarizeIncomeEvent = (event: EventJournalRecord) => {
   return null;
 };
 
+const summarizeDonationEvent = (event: EventJournalRecord) => {
+  if (event.eventKind !== 'donation_requested' && event.eventKind !== 'donation_completed') {
+    return null;
+  }
+
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  const causeName = typeof payload.causeName === 'string' ? payload.causeName : 'Donation';
+  const amountCents =
+    typeof payload.amount === 'object' && payload.amount !== null && 'cents' in payload.amount
+      ? (payload.amount as { cents: number }).cents
+      : null;
+  const amountLabel = amountCents != null ? formatCurrency(amountCents) : null;
+  const scheduledForDate =
+    typeof payload.scheduledFor === 'number'
+      ? new Date(payload.scheduledFor).toLocaleDateString()
+      : null;
+
+  if (event.eventKind === 'donation_requested') {
+    return {
+      title: `Donation scheduled for ${causeName}`,
+      detail: `${amountLabel ?? 'Gift'} pending approval${scheduledForDate ? ` • runs ${scheduledForDate}` : ''}`,
+    } as const;
+  }
+
+  if (event.eventKind === 'donation_completed') {
+    return {
+      title: `Donation completed for ${causeName}`,
+      detail: `${amountLabel ?? 'Gift'} delivered` +
+        (event.actorProfileId ? ` • by ${event.actorProfileId}` : ''),
+    } as const;
+  }
+
+  return null;
+};
+
 export const summarizeEvent = (event: EventJournalRecord) => {
+  const donationSummary = summarizeDonationEvent(event);
+  if (donationSummary) {
+    return {
+      title: donationSummary.title,
+      detail: donationSummary.detail,
+      timestamp: friendlyDateTime(event.createdAt),
+    };
+  }
+
   const transferSummary = summarizeTransferEvent(event);
   if (transferSummary) {
     return {

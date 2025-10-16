@@ -103,6 +103,9 @@ export const ApprovalsInbox: Component<ApprovalsInboxProps> = (props) => {
         if (transfer.intent === 'earn') {
           return (metadata.streamName as string | undefined) ?? 'Earn payout';
         }
+        if (transfer.intent === 'donate') {
+          return (metadata.causeName as string | undefined) ?? 'Donation';
+        }
         return transfer.intent.replace(/_/g, ' ');
       })(),
       amountLabel: formatCurrency(transfer.amount.cents),

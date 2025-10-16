@@ -313,6 +313,8 @@ _Status: Backend domain, provider fixtures, API clients, and the Invest surface 
 
 **Objective:** provide a lightweight giving experience tied to donation accounts.
 
+_Status: Implemented — backend donate domain, static causes, scheduling UI, and guardrail controls are live._
+
 **DoD**
 - Donation flows reuse Transfers with destination `donation` accounts and optional external receipt data.
 - Donate page hero, goal tracker, recommended causes list, and history timeline exist under `features/donate`.
@@ -322,6 +324,7 @@ _Status: Backend domain, provider fixtures, API clients, and the Invest surface 
 - Seed provider fixtures with a curated cause list.
 - Allow parents to cap donation budgets via Budgets domain.
 - Add thank-you note generator (static entry) to keep teens engaged.
+- Surface donation guardrail controls in the app shell for parent review.
 
 ### Milestone 7 — Insights, Notifications, and Polish
 

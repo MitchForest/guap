@@ -199,16 +199,17 @@ This checklist turns the feature and data-model plans into a concrete execution 
 
 **Objective:** allow generosity tracking with guardrail-sensitive scheduling.
 
-- [ ] Implement donate helpers (reuse transfers + budgets):
+- [x] Implement donate helpers (reuse transfers + budgets):
   - Cause catalog (static or provider-driven).
   - Donation scheduling (intent `donate`, guardrail evaluation).
-- [ ] Frontend Donate page:
+- [x] Frontend Donate page:
   - Hero (year-to-date, target progress).
   - Cause list + scheduling drawer.
   - History timeline (transfers + events).
-- [ ] Approvals inbox: show pending donations; allow parent overrides.
-- [ ] Activity feed: log donation requested/completed events.
-- [ ] Add/update automated tests (backend/frontend/packages) for Donate domain work and capture coverage snapshot before closing the milestone.
+- [x] Donation guardrail controls surfaced in-product for parents.
+- [x] Approvals inbox: show pending donations; allow parent overrides.
+- [x] Activity feed: log donation requested/completed events.
+- [x] Add/update automated tests (backend/frontend/packages) for Donate domain work and capture coverage snapshot before closing the milestone.
 
 ---
 

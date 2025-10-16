@@ -14,3 +14,4 @@ export * from './domains/budgets';
 export * from './domains/earn';
 export * from './domains/liabilities';
 export * from './domains/investing';
+export * from './domains/donate';

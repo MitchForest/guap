@@ -438,7 +438,7 @@ Index: `by_symbol_time`: `[symbol, capturedAt]`.
 
 ## Donate Domain
 
-No new table required beyond `transfers` (`intent = 'donate'`) and `budgets`. Recommended causes can live in static config or, if parent customisation is needed later, a lightweight `donationCauses` table mirroring `watchlistEntries`. For MVP we keep it static.
+No new table required beyond `transfers` (`intent = 'donate'`) and `budgets`. Recommended causes live in static config (`virtualDonationCauses`) for now; if parent customisation is needed later, a lightweight `donationCauses` table mirroring `watchlistEntries` can graduate the data.
 
 ## Events & Notifications Domain
 

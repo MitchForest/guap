@@ -11,9 +11,10 @@ describe('virtual provider', () => {
       forceRefresh: false,
     });
 
-    expect(result.accounts).toHaveLength(4);
+    expect(result.accounts).toHaveLength(5);
     expect(result.accounts?.[0]?.providerAccountId).toBe('virtual-checking');
     expect(result.accounts?.some((account) => account.providerAccountId === 'virtual-credit')).toBe(true);
+    expect(result.accounts?.some((account) => account.providerAccountId === 'virtual-donate')).toBe(true);
     expect(result.transactions).toHaveLength(4);
     expect(result.transactions?.[0]?.metadata?.merchantName).toBe('Corner Market');
     expect(result.positions).toBeTruthy();

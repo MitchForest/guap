@@ -1,2 +1,2 @@
 export * from './contracts';
-export { virtualProvider, VirtualProvider } from './virtual';
+export { virtualProvider, VirtualProvider, virtualDonationCauses } from './virtual';

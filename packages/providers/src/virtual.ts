@@ -17,6 +17,7 @@ import {
   ProviderOrderExecutionParamsSchema,
   ProviderOrderExecutionResultSchema,
 } from './contracts';
+import { DonationCauseSchema } from '@guap/types';
 
 const amount = (value: number, currency = 'USD') =>
   CurrencyAmountSchema.parse({ cents: Math.round(value), currency });
@@ -47,6 +48,20 @@ const defaultAccounts = [
     metadata: {
       apy: 0.0425,
       moneyMapNodeKey: 'virtual-savings',
+    },
+    lastSyncedAt: Date.now(),
+  }),
+  ProviderAccountSchema.parse({
+    providerAccountId: 'virtual-donate',
+    name: 'Virtual Giving',
+    kind: 'donation',
+    status: 'active',
+    currency: 'USD',
+    balance: amount(1_800_00),
+    available: amount(1_800_00),
+    metadata: {
+      institution: 'Guap Giving Cooperative',
+      moneyMapNodeKey: 'virtual-donate',
     },
     lastSyncedAt: Date.now(),
   }),
@@ -205,12 +220,49 @@ const defaultQuotes = [
   }),
 ];
 
+const defaultDonationCauses = [
+  DonationCauseSchema.parse({
+    id: 'coastal-cleanup',
+    name: 'Coastal Cleanup Fund',
+    description: 'Protect habitats and keep beaches safe through monthly cleanup missions.',
+    tagline: 'Safeguard the shorelines teens grow up on.',
+    icon: '🌊',
+    tags: ['environment'],
+    recommendedAmount: amount(35_00),
+    moneyMapNodeKey: 'virtual-donate',
+    accentColor: '#0ea5e9',
+  }),
+  DonationCauseSchema.parse({
+    id: 'stem-toolkit',
+    name: 'STEM Toolkit Drive',
+    description: 'Provide robotics kits and lab supplies for underfunded classrooms.',
+    tagline: 'Spark curiosity with hands-on science.',
+    icon: '🧪',
+    tags: ['education'],
+    recommendedAmount: amount(25_00),
+    moneyMapNodeKey: 'virtual-donate',
+    accentColor: '#6366f1',
+  }),
+  DonationCauseSchema.parse({
+    id: 'community-pantry',
+    name: 'Community Pantry Network',
+    description: 'Stock neighborhood pantries with fresh produce and essentials every week.',
+    tagline: 'Keep families nourished all month long.',
+    icon: '🥕',
+    tags: ['community'],
+    recommendedAmount: amount(40_00),
+    moneyMapNodeKey: 'virtual-donate',
+    accentColor: '#f97316',
+  }),
+];
+
 const VirtualConfigSchema = z.object({
   accounts: z.array(ProviderAccountSchema).default(defaultAccounts),
   income: z.array(ProviderIncomeSchema).default(defaultIncome),
   transactions: z.array(ProviderTransactionSchema).default(defaultTransactions),
   positions: z.array(ProviderPositionSchema).default(defaultPositions),
   quotes: z.array(ProviderInstrumentQuoteSchema).default(defaultQuotes),
+  donationCauses: z.array(DonationCauseSchema).default(defaultDonationCauses),
 });
 
 const resolveInstrument = (symbol: string) => {
@@ -249,6 +301,9 @@ export class VirtualProvider implements ProviderAdapter {
       transactions: parsedConfig.transactions,
       positions: parsedConfig.positions,
       quotes: parsedConfig.quotes,
+      metadata: {
+        donationCauses: parsedConfig.donationCauses,
+      },
     };
   }
 
@@ -276,3 +331,4 @@ export class VirtualProvider implements ProviderAdapter {
 }
 
 export const virtualProvider = new VirtualProvider();
+export const virtualDonationCauses = defaultDonationCauses;
